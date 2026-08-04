@@ -1,0 +1,188 @@
+<script setup lang="ts">
+definePageMeta({
+  middleware: 'admin',
+})
+
+interface CrawledPage {
+  id: string
+  legal_source_id: string | null
+  url: string
+  crawl_status: 'pending' | 'ok' | 'failed'
+  http_status: number | null
+  title: string | null
+  law_name: string | null
+  gr_number: string | null
+  promulgation_date: string | null
+  last_error: string | null
+  last_crawled_at: string | null
+  legal_source: { id: string; name: string } | null
+}
+
+interface Paginated<T> {
+  data: T[]
+  meta: {
+    current_page: number
+    last_page: number
+    total: number
+  }
+}
+
+const api = useApi()
+
+const pages = ref<CrawledPage[]>([])
+const meta = ref<Paginated<CrawledPage>['meta'] | null>(null)
+const loading = ref(false)
+const page = ref(1)
+const statusFilter = ref('')
+
+const statusStyles: Record<string, { label: string; class: string }> = {
+  pending: { label: 'Pending', class: 'bg-muted text-muted-foreground' },
+  ok: { label: 'OK', class: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  failed: { label: 'Failed', class: 'bg-destructive/10 text-destructive' },
+}
+
+function badgeFor(status: string) {
+  return statusStyles[status] ?? { label: status, class: 'bg-muted text-muted-foreground' }
+}
+
+function formatDate(value: string | null) {
+  if (!value) return '—'
+  return new Date(value).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+async function loadPages() {
+  loading.value = true
+  try {
+    const query: Record<string, string | number> = { page: page.value }
+    if (statusFilter.value) query.status = statusFilter.value
+
+    const res = await api<Paginated<CrawledPage>>(`/admin/crawled-pages?${new URLSearchParams(String(query))}`)
+    pages.value = res.data
+    meta.value = res.meta
+  } catch {
+    pages.value = []
+    meta.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
+function goTo(next: number) {
+  if (!meta.value || next < 1 || next > meta.value.last_page) return
+  page.value = next
+  loadPages()
+}
+
+watch(statusFilter, () => {
+  page.value = 1
+  loadPages()
+})
+
+onMounted(loadPages)
+</script>
+
+<template>
+  <div class="mx-auto w-full max-w-6xl px-4 py-8">
+    <div class="mb-6">
+      <h1 class="text-xl font-semibold">Admin</h1>
+      <nav class="mt-2 flex items-center gap-1 text-sm">
+        <NuxtLink to="/admin/legal-sources" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
+          Legal sources
+        </NuxtLink>
+        <NuxtLink to="/admin/crawled-pages" class="rounded-md bg-muted px-3 py-1.5 font-medium">
+          Crawled pages
+        </NuxtLink>
+        <NuxtLink to="/admin/system-prompts" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
+          System prompts
+        </NuxtLink>
+      </nav>
+    </div>
+
+    <div class="mb-4 flex items-center justify-between">
+      <p class="text-sm text-muted-foreground">
+        {{ meta?.total ?? 0 }} pages crawled
+      </p>
+      <div class="flex items-center gap-2">
+        <Select :model-value="statusFilter" @update:model-value="statusFilter = String($event)">
+          <SelectTrigger class="h-8 w-36">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">All statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="ok">OK</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+
+    <Card>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead class="w-36">Source</TableHead>
+            <TableHead>URL / title</TableHead>
+            <TableHead class="w-24">Status</TableHead>
+            <TableHead class="w-32">HTTP</TableHead>
+            <TableHead class="w-44">Last crawled</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow v-for="p in pages" :key="p.id">
+            <TableCell class="font-medium">{{ p.legal_source?.name ?? '—' }}</TableCell>
+            <TableCell>
+              <a
+                :href="p.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="block max-w-md truncate text-primary hover:underline"
+              >
+                {{ p.title || p.url }}
+              </a>
+              <p class="mt-0.5 max-w-md truncate text-xs text-muted-foreground">{{ p.url }}</p>
+              <p v-if="p.law_name || p.gr_number" class="mt-0.5 text-xs text-muted-foreground">
+                {{ [p.law_name, p.gr_number].filter(Boolean).join(' · ') }}
+              </p>
+              <p v-if="p.crawl_status === 'failed' && p.last_error" class="mt-0.5 text-xs text-destructive">
+                {{ p.last_error }}
+              </p>
+            </TableCell>
+            <TableCell>
+              <span class="rounded-full px-2 py-0.5 text-[10px] font-medium" :class="badgeFor(p.crawl_status).class">
+                {{ badgeFor(p.crawl_status).label }}
+              </span>
+            </TableCell>
+            <TableCell class="text-muted-foreground">{{ p.http_status ?? '—' }}</TableCell>
+            <TableCell class="text-xs text-muted-foreground">{{ formatDate(p.last_crawled_at) }}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+
+      <div v-if="loading" class="p-8 text-center text-sm text-muted-foreground">Loading…</div>
+      <div v-else-if="pages.length === 0" class="p-8 text-center text-sm text-muted-foreground">
+        No crawled pages match.
+      </div>
+
+      <div v-if="meta && meta.last_page > 1" class="flex items-center justify-between border-t px-4 py-3">
+        <p class="text-xs text-muted-foreground">
+          Page {{ meta.current_page }} of {{ meta.last_page }}
+        </p>
+        <div class="flex gap-1">
+          <Button variant="outline" size="sm" :disabled="meta.current_page <= 1" @click="goTo(meta.current_page - 1)">
+            Previous
+          </Button>
+          <Button variant="outline" size="sm" :disabled="meta.current_page >= meta.last_page" @click="goTo(meta.current_page + 1)">
+            Next
+          </Button>
+        </div>
+      </div>
+    </Card>
+  </div>
+</template>
