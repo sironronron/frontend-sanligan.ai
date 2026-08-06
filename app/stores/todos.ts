@@ -4,9 +4,13 @@ export interface Todo {
   id: string
   conversation_id: string
   title: string
+  description: string | null
   status: 'pending' | 'on-going' | 'completed'
   priority: 'low' | 'medium' | 'high' | null
   due_hint: string | null
+  due_date: string | null
+  assignee: string | null
+  order: number
   created_at: string
   updated_at: string
 }
@@ -46,8 +50,27 @@ export const useTodoStore = defineStore('todos', () => {
           due_hint: item.due_hint ?? null,
         },
       })
-      todos.value.unshift(data)
+      todos.value.push(data)
     }
+  }
+
+  async function addTodo(payload: Partial<Todo> & { conversation_id: string; title: string }) {
+    const { data } = await api<{ data: Todo }>('/todos', {
+      method: 'POST',
+      body: payload,
+    })
+    todos.value.push(data)
+    return data
+  }
+
+  async function updateTodo(id: string, payload: Partial<Todo>) {
+    const { data } = await api<{ data: Todo }>(`/todos/${id}`, {
+      method: 'PATCH',
+      body: payload,
+    })
+    const index = todos.value.findIndex((t) => t.id === id)
+    if (index !== -1) todos.value[index] = data
+    return data
   }
 
   async function toggleStatus(id: string) {
@@ -56,12 +79,14 @@ export const useTodoStore = defineStore('todos', () => {
 
     const nextStatus = todo.status === 'completed' ? 'pending' : todo.status === 'pending' ? 'on-going' : 'completed'
 
-    const { data } = await api<{ data: Todo }>(`/todos/${id}`, {
-      method: 'PATCH',
-      body: { status: nextStatus },
-    })
+    await updateTodo(id, { status: nextStatus })
+  }
 
-    Object.assign(todo, data)
+  async function reorderTodos(conversationId: string, orderedIds: string[]) {
+    await api('/todos/reorder', {
+      method: 'POST',
+      body: { conversation_id: conversationId, ordered_ids: orderedIds },
+    })
   }
 
   async function deleteTodo(id: string) {
@@ -74,7 +99,10 @@ export const useTodoStore = defineStore('todos', () => {
     loading,
     fetchTodos,
     addTodos,
+    addTodo,
+    updateTodo,
     toggleStatus,
+    reorderTodos,
     deleteTodo,
   }
 })

@@ -18,7 +18,7 @@ import {
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
 import { useTodoStore } from '~/stores/todos'
 import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
-import TodoPanel from '~/components/TodoPanel.vue'
+import TaskPanel from '~/components/TaskPanel.vue'
 import type { IntakeField } from '~/components/IntakeFormSheet.vue'
 
 definePageMeta({
@@ -71,18 +71,14 @@ const streaming = ref(false)
 const streamError = ref('')
 const sending = ref(false)
 const currentStatus = ref<string | null>(null)
+const lastQuestion = ref('')
+let messageStartIndex = -1
 
 const busy = computed(() => sending.value || streaming.value)
 
 const messagesContainer = ref<HTMLElement | null>(null)
 
-const previewDoc = ref<{
-  blobUrl: string | null
-  type: 'word' | 'pdf'
-  title: string
-  loading: boolean
-  error: string
-} | null>(null)
+const { previewDoc, openExport, closePreview } = useDocumentExport()
 
 const todoStore = useTodoStore()
 const showTodos = ref(false)
@@ -221,7 +217,7 @@ function handleFrame(frame: string, target: Message) {
     currentStatus.value = null
     completeStep('composing')
   } else if (event === 'tool_call') {
-    handleToolCall(payload)
+    handleToolCall(payload, target)
   } else if (event === 'tool_result' && payload.name === 'create_todo') {
     todoToolCalled.value = true
     refreshTodos()
@@ -233,12 +229,15 @@ function handleFrame(frame: string, target: Message) {
   }
 }
 
-function handleToolCall(payload: Record<string, any>) {
+function handleToolCall(payload: Record<string, any>, target: Message) {
   if (payload.name === 'request_intake_form' && Array.isArray(payload.arguments?.fields)) {
     intakeFields.value = payload.arguments.fields as IntakeField[]
     awaitingIntake.value = true
     completeActiveSteps()
     markStepActive('request_intake_form', 'Collecting facts from you')
+    // The document is drafted only after the intake form is submitted. Drop
+    // the streaming bubble so no partial draft appears before the form.
+    messages.value = messages.value.filter((m) => m.id !== target.id)
   }
 }
 
@@ -255,7 +254,7 @@ function extractTodoItems(text: string): Array<{ title: string; status?: string 
   let match: RegExpExecArray | null
   while ((match = regex.exec(text)) !== null) {
     items.push({
-      title: match[2].trim(),
+      title: (match[2] ?? '').trim(),
       status: match[1] === ' ' ? 'pending' : 'completed',
     })
   }
@@ -342,6 +341,8 @@ function stopTypewriter() {
 
 function getDisplayedContent(msg: Message): string {
   if (msg.role !== 'assistant') return msg.content
+  const isStreaming = streaming.value && msg.id === messages.value[messages.value.length - 1]?.id
+  if (!isStreaming) return msg.content
   const len = displayedLengths.value[msg.id]
   if (len === undefined) return msg.content
   return msg.content.slice(0, len)
@@ -353,8 +354,11 @@ function renderMarkdown(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
+  html = html.replace(/^\s*\[\[DOCUMENT_START\]\]\s*$/gm, '')
+  html = html.replace(/^\s*\[\[DOCUMENT_END\]\]\s*$/gm, '')
+
   html = html.replace(/\[Download as (Word|PDF)\]\(\/api\/messages\/([^)]+)\/export\/(word|pdf)\)/g,
-    '<a href="/api/messages/$2/export/$3" data-export-url="/api/messages/$2/export/$3" data-export-type="$3" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 rounded-md border bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"><svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>Preview as $1</a>'
+    '<a href="#" data-export-url="#" data-export-type="$3" class="inline-flex items-center gap-1.5 rounded-md border bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"><svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>Preview as $1</a>'
   )
 
   html = html.replace(/^### (.+)$/gm, '<h3 class="mt-4 mb-2 text-base font-semibold">$1</h3>')
@@ -388,55 +392,14 @@ function parseUrl(url: string): { hostname: string; pathname: string } {
   }
 }
 
-async function openPreview(url: string, type: 'word' | 'pdf', title: string) {
-  previewDoc.value = { blobUrl: null, type, title, loading: true, error: '' }
-
-  try {
-    await ensureCsrfCookie(apiBase)
-
-    const endpoint = url.startsWith('/api') ? `${apiBase}${url}` : url
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/octet-stream',
-        'X-XSRF-TOKEN': getXsrfToken() ?? '',
-      },
-    })
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => null)
-      throw new Error(errBody?.message ?? `Export failed (HTTP ${response.status})`)
-    }
-
-    const blob = await response.blob()
-
-    if (previewDoc.value?.blobUrl) {
-      URL.revokeObjectURL(previewDoc.value.blobUrl)
-    }
-
-    previewDoc.value = { blobUrl: URL.createObjectURL(blob), type, title, loading: false, error: '' }
-  } catch (err: any) {
-    previewDoc.value = { blobUrl: null, type, title, loading: false, error: err?.message ?? 'Could not load the export.' }
-  }
-}
-
-function closePreview() {
-  if (previewDoc.value?.blobUrl) {
-    URL.revokeObjectURL(previewDoc.value.blobUrl)
-  }
-  previewDoc.value = null
-}
-
 function handleExportClick(event: MouseEvent, msg: Message) {
   const target = event.target as HTMLElement
   const link = target.closest('a[data-export-url]')
   if (link) {
     event.preventDefault()
-    const url = link.getAttribute('data-export-url') ?? ''
-    const type = link.getAttribute('data-export-type') as 'word' | 'pdf'
-    openPreview(url, type, `${type.toUpperCase()} Document`)
+    const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
+    const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
+    void openExport(msg.content, type, title)
   }
 }
 
@@ -444,6 +407,8 @@ async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
   if (!question || sending.value) return
 
+  messageStartIndex = messages.value.length
+  lastQuestion.value = question
   sending.value = true
   streamError.value = ''
   currentStatus.value = null
@@ -556,6 +521,15 @@ function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
+}
+
+function retryLast() {
+  if (!lastQuestion.value || busy.value) return
+  if (messageStartIndex >= 0) {
+    messages.value.splice(messageStartIndex)
+  }
+  streamError.value = ''
+  void send(lastQuestion.value)
 }
 
 onMounted(async () => {
@@ -712,13 +686,13 @@ watch(activeId, async (id) => {
                 <div v-else class="prose-invert break-words" v-html="renderMarkdown(getDisplayedContent(m))" @click="handleExportClick($event, m)" /><span v-if="streaming && m.id === messages[messages.length - 1]?.id" class="ml-0.5 inline-block h-[1em] w-[3px] animate-pulse rounded-sm bg-primary align-text-bottom" aria-hidden="true" />
               </div>
 
-              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-') && m.content.trim()" class="mt-1 flex items-center gap-1.5">
+              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-') && m.content.trim() && m.content.includes('/export/')" class="mt-1 flex items-center gap-1.5">
                 <span class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Export</span>
-                <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="openPreview(`/api/messages/${m.id}/export/word`, 'word', 'Word Document')">
+                <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="openExport(m.content, 'word', activeConversation?.title ?? 'Word Document')">
                   <FileTextIcon class="size-3.5" />
                   Word
                 </Button>
-                <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="openPreview(`/api/messages/${m.id}/export/pdf`, 'pdf', 'PDF Document')">
+                <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="openExport(m.content, 'pdf', activeConversation?.title ?? 'PDF Document')">
                   <FileTextIcon class="size-3.5" />
                   PDF
                 </Button>
@@ -777,9 +751,13 @@ watch(activeId, async (id) => {
             </div>
           </div>
 
-          <p v-if="streamError" class="rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            {{ streamError }}
-          </p>
+          <div v-if="streamError" class="flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            <span class="flex-1">{{ streamError }}</span>
+            <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" :disabled="!lastQuestion || busy" @click="retryLast">
+              <Loader2Icon v-if="busy" class="size-3.5 animate-spin" />
+              Retry
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -802,7 +780,7 @@ watch(activeId, async (id) => {
       </div>
     </section>
 
-    <TodoPanel v-if="showTodos && activeId" :conversation-id="activeId" />
+    <TaskPanel v-if="showTodos && activeId" :conversation-id="activeId" />
 
     <!-- Floating Document Preview Panel (Large Screens) -->
     <aside

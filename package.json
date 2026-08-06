@@ -18,7 +18,9 @@
     "@vueuse/core": "^14.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "docx": "^9.7.1",
     "nuxt": "^4.5.1",
+    "pdfmake": "^0.3.11",
     "pinia": "^4.0.2",
     "reka-ui": "^2.10.1",
     "shadcn-vue": "^2.8.1",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "@types/pdfmake": "^0.3.3",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.3.9"
   }

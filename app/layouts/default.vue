@@ -6,6 +6,7 @@ const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 
 const navItems = computed(() => [
+  { to: '/cases', label: 'Cases' },
   { to: '/chat', label: 'Chat' },
   { to: '/documents', label: 'Documents' },
   { to: '/todos', label: 'Tasks' },
@@ -33,7 +34,7 @@ const initials = computed(() =>
 
 <template>
   <div class="flex min-h-dvh flex-col bg-background text-foreground">
-    <header class="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
+    <header v-if="auth.user" class="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
       <div class="flex h-14 w-full max-w-full items-center gap-6 px-4">
         <NuxtLink to="/chat" class="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
           <span class="size-2.5 rounded-full bg-primary" />
