@@ -84,6 +84,7 @@ const streaming = ref(false)
 const streamError = ref('')
 const sending = ref(false)
 const currentStatus = ref<string | null>(null)
+const currentStatusLabel = ref<string | null>(null)
 const lastQuestion = ref('')
 let messageStartIndex = -1
 
@@ -245,6 +246,7 @@ function handleFrame(frame: string, target: Message) {
   if (event === 'status' && typeof payload.status === 'string') {
     completeActiveSteps()
     currentStatus.value = payload.status
+    currentStatusLabel.value = typeof payload.label === 'string' && payload.label !== '' ? payload.label : null
     if (payload.status === 'collecting_facts') {
       awaitingIntake.value = true
       markStepActive('collecting_facts', 'Collecting the facts I need')
@@ -415,7 +417,7 @@ function getDisplayedContent(msg: Message): string {
 
 const statusLabel = computed(() => {
   if (!currentStatus.value) return null
-  return statusLabels[currentStatus.value] ?? currentStatus.value
+  return currentStatusLabel.value ?? statusLabels[currentStatus.value] ?? currentStatus.value
 })
 
 function parseUrl(url: string): { hostname: string; pathname: string } {
@@ -488,6 +490,7 @@ async function send(questionOverride?: string | Event) {
   sending.value = true
   streamError.value = ''
   currentStatus.value = null
+  currentStatusLabel.value = null
   input.value = ''
   todoToolCalled.value = false
   resetSteps()
@@ -586,6 +589,7 @@ async function send(questionOverride?: string | Event) {
   } finally {
     stopTypewriter()
     currentStatus.value = null
+    currentStatusLabel.value = null
     streaming.value = false
     sending.value = false
 

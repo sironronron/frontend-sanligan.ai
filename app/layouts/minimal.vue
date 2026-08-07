@@ -37,6 +37,7 @@ const initials = computed(() =>
           >
             <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
           </button>
+          <TasksDropdown />
           <DropdownMenu>
             <DropdownMenuTrigger
               class="flex items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted"

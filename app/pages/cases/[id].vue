@@ -97,6 +97,7 @@ const streaming = ref(false)
 const sending = ref(false)
 const streamError = ref('')
 const currentStatus = ref<string | null>(null)
+const currentStatusLabel = ref<string | null>(null)
 const intakeFields = ref<IntakeField[] | null>(null)
 const intakeDefaults = ref<Record<string, string> | null>(null)
 const awaitingIntake = ref(false)
@@ -444,6 +445,7 @@ function handleFrame(frame: string, target: Message) {
   if (event === 'status' && typeof payload.status === 'string') {
     completeActiveSteps()
     currentStatus.value = payload.status
+    currentStatusLabel.value = typeof payload.label === 'string' && payload.label !== '' ? payload.label : null
     if (payload.status === 'collecting_facts') {
       awaitingIntake.value = true
       markStepActive('collecting_facts', 'Collecting the facts I need')
@@ -520,6 +522,44 @@ async function maybeCreateTodosFromText(text: string) {
   }
 }
 
+const displayedLengths = ref<Record<string, number>>({})
+let typewriterInterval: ReturnType<typeof setInterval> | null = null
+
+function startTypewriter() {
+  if (typewriterInterval) return
+  typewriterInterval = setInterval(() => {
+    for (const msg of messages.value) {
+      if (msg.role === 'assistant' && msg.content.length > 0) {
+        const current = displayedLengths.value[msg.id] ?? 0
+        if (current < msg.content.length) {
+          displayedLengths.value[msg.id] = Math.min(current + 2, msg.content.length)
+        }
+      }
+    }
+  }, 20)
+}
+
+function stopTypewriter() {
+  if (typewriterInterval) {
+    clearInterval(typewriterInterval)
+    typewriterInterval = null
+  }
+  for (const msg of messages.value) {
+    if (msg.role === 'assistant') {
+      displayedLengths.value[msg.id] = msg.content.length
+    }
+  }
+}
+
+function getDisplayedContent(msg: Message): string {
+  if (msg.role !== 'assistant') return msg.content
+  const isStreaming = streaming.value && msg.id === messages.value[messages.value.length - 1]?.id
+  if (!isStreaming) return msg.content
+  const len = displayedLengths.value[msg.id]
+  if (len === undefined) return msg.content
+  return msg.content.slice(0, len)
+}
+
 async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
   if (!question || sending.value || !conversationId.value) return
@@ -529,6 +569,7 @@ async function send(questionOverride?: string | Event) {
   sending.value = true
   streamError.value = ''
   currentStatus.value = null
+  currentStatusLabel.value = null
   input.value = ''
   todoToolCalled.value = false
   resetSteps()
@@ -557,6 +598,7 @@ async function send(questionOverride?: string | Event) {
     })
     messages.value.push(assistant)
     streaming.value = true
+    startTypewriter()
 
     await nextTick()
     scrollToBottom()
@@ -616,14 +658,19 @@ async function send(questionOverride?: string | Event) {
   } catch (err: any) {
     streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
   } finally {
+    stopTypewriter()
     streaming.value = false
     sending.value = false
     currentStatus.value = null
+    currentStatusLabel.value = null
 
     if (conversationId.value && caseDetail.value) {
       const data = await caseStore.fetchCase(String(route.params.id), activeConversationId.value)
       caseDetail.value = data
       threads.value = data.conversations ?? []
+      if (!awaitingIntake.value) {
+        messages.value = (data.messages ?? []) as Message[]
+      }
     }
     await maybeCreateTodosFromText(lastAssistantText)
     await refreshTodos()
@@ -816,7 +863,7 @@ async function restoreCase() {
 
 const statusLabelNow = computed(() => {
   if (!currentStatus.value) return null
-  return statusLabels[currentStatus.value] ?? currentStatus.value
+  return currentStatusLabel.value ?? statusLabels[currentStatus.value] ?? currentStatus.value
 })
 
 watch(messages, async () => {
@@ -1218,7 +1265,7 @@ watch(
                       <div class="whitespace-pre-wrap break-words">{{ m.content }}</div>
                     </template>
                   </div>
-                  <div v-else class="break-words" v-html="renderMarkdown(m.content)" @click="handleMarkdownClick($event, m)" />
+                  <div v-else class="break-words" v-html="renderMarkdown(getDisplayedContent(m))" @click="handleMarkdownClick($event, m)" /><span v-if="streaming && m.id === messages[messages.length - 1]?.id" class="ml-0.5 inline-block h-[1em] w-[3px] animate-pulse rounded-sm bg-primary align-text-bottom" aria-hidden="true" />
                 </div>
 
                 <div v-if="m.role === 'assistant' && !m.id.startsWith('local-')" class="mt-1 flex items-center gap-1">
