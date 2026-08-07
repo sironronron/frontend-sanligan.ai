@@ -15,6 +15,37 @@ export interface DocumentPreview {
 export function useDocumentExport() {
   const previewDoc = ref<DocumentPreview | null>(null)
 
+  // Width of the desktop preview panel. Draggable via the panel's left-edge
+  // handle. The optional getter caps how far the panel may grow so it never
+  // crosses into the main chat area.
+  const previewWidth = ref(450)
+
+  function startResize(event: PointerEvent, getMaxWidth?: () => number) {
+    event.preventDefault()
+
+    const startX = event.clientX
+    const startWidth = previewWidth.value
+    const viewportLimit = Math.max(window.innerWidth - 24, 320)
+
+    const onMove = (e: PointerEvent) => {
+      const desired = startWidth + (startX - e.clientX)
+      const upper = getMaxWidth ? Math.max(getMaxWidth(), 320) : viewportLimit
+      previewWidth.value = Math.min(Math.max(desired, 320), Math.min(viewportLimit, upper))
+    }
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp, { once: true })
+  }
+
   async function openExport(content: string, type: 'word' | 'pdf', title: string) {
     previewDoc.value = { blobUrl: null, type, title, loading: true, error: '' }
 
@@ -40,6 +71,8 @@ export function useDocumentExport() {
 
   return {
     previewDoc,
+    previewWidth,
+    startResize,
     openExport,
     closePreview,
   }

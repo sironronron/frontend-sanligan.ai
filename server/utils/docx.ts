@@ -55,7 +55,7 @@ export async function buildDocx(content: string, title: string): Promise<Buffer>
   const children = parseMarkdown(documentText)
 
   const doc = new Document({
-    creator: 'Saligan.AI',
+    creator: 'Batayan',
     title,
     styles: {
       default: {

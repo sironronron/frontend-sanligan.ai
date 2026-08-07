@@ -4,7 +4,7 @@ definePageMeta({
   layout: 'default',
 })
 
-import { toast } from 'vue-sonner'
+import { toast } from '~/components/ui/sonner'
 
 const auth = useAuthStore()
 
@@ -32,7 +32,7 @@ async function handleSubmit() {
           <span class="size-2.5 rounded-full bg-primary" />
         </div>
         <CardTitle class="text-xl">Welcome back</CardTitle>
-        <CardDescription>Sign in to your Saligan.AI account</CardDescription>
+        <CardDescription>Sign in to your Batayan account</CardDescription>
       </CardHeader>
       <CardContent>
         <form class="space-y-4" @submit.prevent="handleSubmit">

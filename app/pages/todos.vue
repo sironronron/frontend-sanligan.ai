@@ -3,7 +3,7 @@ import { CheckIcon, CircleIcon, ClockIcon, Loader2Icon, TrashIcon } from '@lucid
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 definePageMeta({
-  middleware: 'auth',
+  middleware: ['auth', 'subscription'],
 })
 
 const todoStore = useTodoStore()

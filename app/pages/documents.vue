@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { toast } from 'vue-sonner'
-import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon } from '@lucide/vue'
+import { toast } from '~/components/ui/sonner'
+import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon, LinkIcon } from '@lucide/vue'
+import { useCaseStore } from '~/stores/cases'
+import { upgradeMessage } from '~/stores/billing'
 
 definePageMeta({
-  middleware: 'auth',
+  middleware: ['auth', 'subscription'],
 })
 
 interface Document {
@@ -14,10 +16,18 @@ interface Document {
   status: 'queued' | 'processing' | 'ready' | 'failed'
   error_message: string | null
   chunk_count: number
+  case_id: string | null
   created_at: string
 }
 
 const api = useApi()
+const caseStore = useCaseStore()
+const fileDrop = useFileDrop()
+
+const cases = computed(() => caseStore.cases)
+const attachTarget = ref<Document | null>(null)
+const attachCaseId = ref('')
+const attaching = ref(false)
 
 const documents = ref<Document[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -112,7 +122,40 @@ async function loadDocuments() {
   }
 }
 
-onMounted(() => loadDocuments())
+onMounted(() => {
+  loadDocuments()
+  if (caseStore.cases.length === 0) void caseStore.fetchCases()
+})
+
+function toggleAttach(doc: Document) {
+  if (attachTarget.value?.id === doc.id) {
+    attachTarget.value = null
+    return
+  }
+  attachTarget.value = doc
+  attachCaseId.value = ''
+}
+
+async function attachDocument() {
+  if (!attachTarget.value || !attachCaseId.value || attaching.value) return
+  attaching.value = true
+  const target = attachTarget.value
+  const caseTitle = cases.value.find((c) => c.id === attachCaseId.value)?.title ?? 'a case'
+  try {
+    await api(`/documents/${target.id}/attach`, {
+      method: 'POST',
+      body: { case_id: attachCaseId.value },
+    })
+    toast.success(`Attached "${target.original_filename}" to ${caseTitle}`)
+    attachTarget.value = null
+    attachCaseId.value = ''
+    await loadDocuments()
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not attach the document')
+  } finally {
+    attaching.value = false
+  }
+}
 
 onBeforeUnmount(() => {
   if (pollTimer !== null) {
@@ -131,6 +174,17 @@ function onFileSelected(event: Event) {
   selectedFiles.value.push(...picked)
   target.value = ''
   errorMessage.value = ''
+}
+
+function onFilesDropped(event: DragEvent) {
+  const rejected = fileDrop.onDrop(event, (files) => {
+    selectedFiles.value.push(...files)
+    errorMessage.value = ''
+  })
+
+  if (rejected.length > 0) {
+    errorMessage.value = `"${rejected[0].name}" is not a supported file type. Use PDF, DOCX, TXT, MD, or an image.`
+  }
 }
 
 function removeSelected(index: number) {
@@ -157,6 +211,12 @@ async function upload() {
       })
       selectedFiles.value = selectedFiles.value.filter((f) => f !== file)
     } catch (err: any) {
+      const upgrade = upgradeMessage(err)
+      if (upgrade) {
+        toast.error(`${upgrade}. Upgrade your plan to continue.`, { action: { label: 'Upgrade', onClick: () => navigateTo('/settings/billing') } })
+        selectedFiles.value = selectedFiles.value.filter((f) => f !== file)
+        break
+      }
       failures.push(err?.data?.message ?? `"${file.name}" failed`)
     }
   }
@@ -199,15 +259,26 @@ async function removeDocument(doc: Document) {
       </div>
     </div>
 
-    <div class="rounded-xl border border-dashed bg-muted/30 p-6">
+    <div
+      class="rounded-xl border border-dashed bg-muted/30 p-6 transition-colors"
+      :class="fileDrop.dragging.value ? 'border-primary bg-primary/5' : ''"
+      @dragenter="fileDrop.onDragEnter"
+      @dragover="fileDrop.onDragOver"
+      @dragleave="fileDrop.onDragLeave"
+      @drop="onFilesDropped"
+    >
       <div class="flex flex-col items-center gap-3 text-center">
         <div class="flex size-12 items-center justify-center rounded-full bg-background shadow-sm">
           <FileUpIcon class="size-5 text-muted-foreground" />
         </div>
         <div>
-          <p class="text-sm font-medium">PDF, DOCX, TXT, or MD — up to 15 MB</p>
+          <p class="text-sm font-medium">PDF, DOCX, TXT, MD, or image (OCR) — up to 25 MB</p>
           <p class="mt-0.5 text-xs text-muted-foreground">
-            Files are parsed, chunked, and embedded for retrieval.
+            Drag and drop files here, or
+            <button type="button" class="font-medium text-primary underline-offset-2 hover:underline" @click="pickFile">
+              choose them
+            </button>
+            .
           </p>
         </div>
         <Button @click="pickFile" :disabled="uploading">
@@ -217,7 +288,7 @@ async function removeDocument(doc: Document) {
         <input
           ref="fileInput"
           type="file"
-          accept=".pdf,.docx,.txt,.md"
+          accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic"
           multiple
           class="hidden"
           @change="onFileSelected"
@@ -265,34 +336,76 @@ async function removeDocument(doc: Document) {
         <span v-else>No documents yet. Upload your first file to get started.</span>
       </div>
 
-      <div v-for="doc in documents" :key="doc.id" class="flex items-center gap-3 rounded-xl border bg-card p-4">
-        <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <FileIcon class="size-4" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <p class="truncate text-sm font-medium">{{ doc.title }}</p>
-            <span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" :class="statusStyles[doc.status]">
-              <Loader2Icon v-if="doc.status === 'queued' || doc.status === 'processing'" class="size-3 animate-spin" />
-              {{ statusLabel[doc.status] }}
-            </span>
+      <div v-for="doc in documents" :key="doc.id" class="rounded-xl border bg-card">
+        <div class="flex items-center gap-3 p-4">
+          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+            <FileIcon class="size-4" />
           </div>
-          <p class="mt-0.5 truncate text-xs text-muted-foreground">
-            {{ doc.original_filename }}
-            <span v-if="doc.status === 'ready'"> · {{ doc.chunk_count }} chunks</span>
-            <span v-else-if="doc.status === 'failed' && doc.error_message"> · {{ doc.error_message }}</span>
-            <span> · {{ formatDate(doc.created_at) }}</span>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <p class="truncate text-sm font-medium">{{ doc.title }}</p>
+              <span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" :class="statusStyles[doc.status]">
+                <Loader2Icon v-if="doc.status === 'queued' || doc.status === 'processing'" class="size-3 animate-spin" />
+                {{ statusLabel[doc.status] }}
+              </span>
+              <span
+                v-if="doc.case_id"
+                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+              >
+                <LinkIcon class="size-3" />
+                In case
+              </span>
+            </div>
+            <p class="mt-0.5 truncate text-xs text-muted-foreground">
+              {{ doc.original_filename }}
+              <span v-if="doc.status === 'ready'"> · {{ doc.chunk_count }} chunks</span>
+              <span v-else-if="doc.status === 'failed' && doc.error_message"> · {{ doc.error_message }}</span>
+              <span> · {{ formatDate(doc.created_at) }}</span>
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="shrink-0 text-muted-foreground hover:text-foreground"
+            :class="{ 'bg-accent text-foreground': attachTarget?.id === doc.id }"
+            @click="toggleAttach(doc)"
+          >
+            <LinkIcon class="size-4" />
+            <span class="sr-only">Attach {{ doc.title }} to a case</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="shrink-0 text-muted-foreground hover:text-destructive"
+            @click="removeDocument(doc)"
+          >
+            <TrashIcon class="size-4" />
+            <span class="sr-only">Delete {{ doc.title }}</span>
+          </Button>
+        </div>
+
+        <div v-if="attachTarget?.id === doc.id" class="flex flex-wrap items-center gap-2 border-t bg-muted/30 px-4 py-3">
+          <Select v-model="attachCaseId" class="w-64">
+            <SelectTrigger class="text-sm">
+              <SelectValue :placeholder="cases.length === 0 ? 'No cases yet' : 'Choose a case…'" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="c in cases" :key="c.id" :value="c.id">
+                {{ c.title }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" :disabled="attaching || !attachCaseId" @click="attachDocument">
+            <Loader2Icon v-if="attaching" class="size-3 animate-spin" />
+            Attach
+          </Button>
+          <Button variant="ghost" size="sm" @click="attachTarget = null">
+            Cancel
+          </Button>
+          <p class="ml-auto text-[11px] text-muted-foreground">
+            This document becomes retrievable in that case's conversations.
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          class="shrink-0 text-muted-foreground hover:text-destructive"
-          @click="removeDocument(doc)"
-        >
-          <TrashIcon class="size-4" />
-          <span class="sr-only">Delete {{ doc.title }}</span>
-        </Button>
       </div>
     </div>
   </div>

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { FolderOpenIcon, Loader2Icon, PlusIcon, SearchIcon } from '@lucide/vue'
-import { toast } from 'vue-sonner'
+import { toast } from '~/components/ui/sonner'
 import { useCaseStore, CASE_STATUSES, CASE_PRIORITIES, CASE_TYPES } from '~/stores/cases'
+import { upgradeMessage } from '~/stores/billing'
 import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
 
 definePageMeta({
-  middleware: 'auth',
+  middleware: ['auth', 'subscription'],
 })
 
 const caseStore = useCaseStore()
@@ -117,7 +118,14 @@ async function handleIntakeSubmit(payload: CaseIntakePayload) {
     toast.success('Case created')
     await router.push({ path: `/cases/${created.id}` })
   } catch (err: any) {
-    toast.error(err?.data?.message ?? 'Could not create the case')
+    const upgrade = upgradeMessage(err)
+    if (upgrade) {
+      toast.error(`${upgrade}. Upgrade your plan to continue.`, {
+        action: { label: 'Upgrade', onClick: () => navigateTo('/settings/billing') },
+      })
+    } else {
+      toast.error(err?.data?.message ?? 'Could not create the case')
+    }
   } finally {
     creating.value = false
   }

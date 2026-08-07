@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toast } from 'vue-sonner'
+import { toast } from '~/components/ui/sonner'
 import {
   ExternalLinkIcon,
   FileIcon,
@@ -14,20 +14,30 @@ import {
   CheckIcon,
   ClipboardCheckIcon,
   FileTextIcon,
+  ThumbsUpIcon,
+  ThumbsDownIcon,
+  BookOpenIcon,
 } from '@lucide/vue'
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
+import { renderMarkdown } from '~/utils/markdown'
 import { useTodoStore } from '~/stores/todos'
+import { useBillingStore, upgradeMessage } from '~/stores/billing'
 import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
+import CitationPanel from '~/components/CitationPanel.vue'
 import type { IntakeField } from '~/components/IntakeFormSheet.vue'
 
 definePageMeta({
-  middleware: 'auth',
+  middleware: ['auth', 'subscription'],
 })
 
 interface Source {
-  type: 'legal' | 'document'
-  label: string
+  type: 'legal' | 'document' | 'web'
+  index?: number
+  id?: string
+  chunk_index?: number
+  document_id?: string
+  label?: string | null
   law_name?: string | null
   gr_number?: string | null
   promulgation_date?: string | null
@@ -35,6 +45,8 @@ interface Source {
   url?: string | null
   title?: string | null
   excerpt?: string
+  content?: string
+  domain?: string | null
 }
 
 interface Message {
@@ -43,6 +55,7 @@ interface Message {
   content: string
   provider?: string | null
   sources: Source[]
+  feedback?: string | null
   created_at: string
 }
 
@@ -74,16 +87,33 @@ const currentStatus = ref<string | null>(null)
 const lastQuestion = ref('')
 let messageStartIndex = -1
 
+const showCitations = ref(true)
+const activeCitation = ref<{ kind: string; index: number } | null>(null)
+const ratingBusy = ref<string | null>(null)
+
+const activeAssistantMessage = computed<Message | null>(() => {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i]
+    if (m && m.role === 'assistant' && m.sources.length > 0) return m
+  }
+  return null
+})
+
+const hasCitations = computed(() => activeAssistantMessage.value !== null)
+
 const busy = computed(() => sending.value || streaming.value)
 
 const messagesContainer = ref<HTMLElement | null>(null)
 
-const { previewDoc, openExport, closePreview } = useDocumentExport()
+const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
 
 const todoStore = useTodoStore()
+const billing = useBillingStore()
 const showTodos = ref(false)
 const intakeFields = ref<IntakeField[] | null>(null)
+const intakeDefaults = ref<Record<string, string> | null>(null)
 const awaitingIntake = ref(false)
+const intakeDismissed = ref(false)
 const todoToolCalled = ref(false)
 
 const statusLabels: Record<string, string> = {
@@ -147,7 +177,9 @@ async function loadConversation(id: string) {
     activeId.value = id
     messages.value = data.messages ?? []
     intakeFields.value = null
+    intakeDefaults.value = null
     awaitingIntake.value = false
+    intakeDismissed.value = false
     await router.replace({ query: { c: id } })
   } catch {
     toast.error('Could not load the conversation')
@@ -170,7 +202,9 @@ async function startNewChat() {
   messages.value = []
   streamError.value = ''
   intakeFields.value = null
+  intakeDefaults.value = null
   awaitingIntake.value = false
+  intakeDismissed.value = false
   await router.replace({ query: {} })
 }
 
@@ -211,10 +245,16 @@ function handleFrame(frame: string, target: Message) {
   if (event === 'status' && typeof payload.status === 'string') {
     completeActiveSteps()
     currentStatus.value = payload.status
-    markStepActive(payload.status, statusLabels[payload.status] ?? payload.status)
+    if (payload.status === 'collecting_facts') {
+      awaitingIntake.value = true
+      markStepActive('collecting_facts', 'Collecting the facts I need')
+    } else {
+      markStepActive(payload.status, statusLabels[payload.status] ?? payload.status)
+    }
   } else if (event === 'delta' && typeof payload.delta === 'string') {
     target.content += payload.delta
     currentStatus.value = null
+    awaitingIntake.value = false
     completeStep('composing')
   } else if (event === 'tool_call') {
     handleToolCall(payload, target)
@@ -224,15 +264,21 @@ function handleFrame(frame: string, target: Message) {
     completeStep('create_todo')
   } else if (event === 'done') {
     completeActiveSteps()
+    if (intakeFields.value === null) {
+      awaitingIntake.value = false
+    }
   } else if (event === 'error') {
     streamError.value = String(payload.message ?? 'The AI provider could not complete the response.')
+    awaitingIntake.value = false
   }
 }
 
 function handleToolCall(payload: Record<string, any>, target: Message) {
   if (payload.name === 'request_intake_form' && Array.isArray(payload.arguments?.fields)) {
     intakeFields.value = payload.arguments.fields as IntakeField[]
+    intakeDefaults.value = payload.arguments.default_values ?? null
     awaitingIntake.value = true
+    intakeDismissed.value = false
     completeActiveSteps()
     markStepActive('request_intake_form', 'Collecting facts from you')
     // The document is drafted only after the intake form is submitted. Drop
@@ -250,9 +296,12 @@ async function refreshTodos() {
 
 function extractTodoItems(text: string): Array<{ title: string; status?: string }> {
   const items: Array<{ title: string; status?: string }> = []
+  const cleaned = text
+    .replace(/^\s*\[\[TODO_START\]\]\s*$/gm, '')
+    .replace(/^\s*\[\[TODO_END\]\]\s*$/gm, '')
   const regex = /^\s*[-*]\s+\[( |x|X)\]\s+(.+)$/gm
   let match: RegExpExecArray | null
-  while ((match = regex.exec(text)) !== null) {
+  while ((match = regex.exec(cleaned)) !== null) {
     items.push({
       title: (match[2] ?? '').trim(),
       status: match[1] === ' ' ? 'pending' : 'completed',
@@ -276,7 +325,9 @@ async function maybeCreateTodosFromText(text: string, conversationId: string | n
 
 async function handleIntakeSubmit(data: Record<string, string>) {
   intakeFields.value = null
+  intakeDefaults.value = null
   awaitingIntake.value = false
+  intakeDismissed.value = false
   const formatted = Object.entries(data)
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n')
@@ -284,8 +335,22 @@ async function handleIntakeSubmit(data: Record<string, string>) {
 }
 
 function handleIntakeCancel() {
-  intakeFields.value = null
+  // Keep the pending intake fields so the user can reopen the form, but stop
+  // the "waiting" bubble and surface a dismiss/fill-requirement prompt instead.
+  intakeDismissed.value = true
   awaitingIntake.value = false
+}
+
+function reopenIntake() {
+  intakeDismissed.value = false
+  awaitingIntake.value = true
+}
+
+function abandonIntake() {
+  intakeFields.value = null
+  intakeDefaults.value = null
+  awaitingIntake.value = false
+  intakeDismissed.value = false
 }
 
 interface IntakePair {
@@ -348,36 +413,6 @@ function getDisplayedContent(msg: Message): string {
   return msg.content.slice(0, len)
 }
 
-function renderMarkdown(text: string): string {
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
-  html = html.replace(/^\s*\[\[DOCUMENT_START\]\]\s*$/gm, '')
-  html = html.replace(/^\s*\[\[DOCUMENT_END\]\]\s*$/gm, '')
-
-  html = html.replace(/\[Download as (Word|PDF)\]\(\/api\/messages\/([^)]+)\/export\/(word|pdf)\)/g,
-    '<a href="#" data-export-url="#" data-export-type="$3" class="inline-flex items-center gap-1.5 rounded-md border bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"><svg class="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>Preview as $1</a>'
-  )
-
-  html = html.replace(/^### (.+)$/gm, '<h3 class="mt-4 mb-2 text-base font-semibold">$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2 class="mt-5 mb-2 text-lg font-bold">$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1 class="mt-6 mb-2 text-xl font-bold">$1</h1>')
-
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  html = html.replace(/`(.+?)`/g, '<code class="rounded bg-muted px-1.5 py-0.5 text-xs">$1</code>')
-
-  html = html.replace(/^\- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-  html = html.replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
-
-  html = html.replace(/\n{2,}/g, '</p><p class="mt-2">')
-  html = html.replace(/\n/g, '<br>')
-
-  return `<p>${html}</p>`
-}
-
 const statusLabel = computed(() => {
   if (!currentStatus.value) return null
   return statusLabels[currentStatus.value] ?? currentStatus.value
@@ -392,14 +427,55 @@ function parseUrl(url: string): { hostname: string; pathname: string } {
   }
 }
 
-function handleExportClick(event: MouseEvent, msg: Message) {
+function handleMarkdownClick(event: MouseEvent, msg: Message) {
   const target = event.target as HTMLElement
+  const badge = target.closest('button[data-cite-kind]')
+  if (badge) {
+    const kind = badge.getAttribute('data-cite-kind')
+    const index = Number(badge.getAttribute('data-cite-index'))
+    if (kind && Number.isFinite(index)) {
+      showCitations.value = true
+      activeCitation.value = { kind, index }
+    }
+    return
+  }
+
   const link = target.closest('a[data-export-url]')
   if (link) {
     event.preventDefault()
     const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
     const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
     void openExport(msg.content, type, title)
+  }
+}
+
+async function refreshMessages() {
+  if (!activeId.value) return
+  try {
+    const { data } = await api<{ data: Conversation }>(`/conversations/${activeId.value}`)
+    messages.value = data.messages ?? []
+  } catch {
+    // keep the streamed state if the refresh fails
+  }
+}
+
+async function rateMessage(m: Message, feedback: 'up' | 'down') {
+  if (m.id.startsWith('local-') || ratingBusy.value === m.id) return
+  const rating = m.feedback === feedback ? null : feedback
+  const previous = m.feedback
+  m.feedback = rating
+  ratingBusy.value = m.id
+  try {
+    if (rating) {
+      await api(`/messages/${m.id}/feedback`, { method: 'POST', body: { feedback: rating } })
+    } else {
+      await api(`/messages/${m.id}/feedback`, { method: 'DELETE' })
+    }
+  } catch {
+    m.feedback = previous
+    toast.error('Could not save your feedback')
+  } finally {
+    ratingBusy.value = null
   }
 }
 
@@ -453,20 +529,26 @@ async function send(questionOverride?: string | Event) {
 
     await ensureCsrfCookie(apiBase)
 
+    const xsrfToken = getXsrfToken()
     const response = await fetch(`${apiBase}/api/conversations/${conv.id}/messages`, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        'X-XSRF-TOKEN': getXsrfToken() ?? '',
+        ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
       },
       body: JSON.stringify({ message: question }),
     })
 
     if (!response.ok) {
-      const errBody = await response.json().catch(() => null)
-      throw new Error(errBody?.message ?? 'The request failed')
+      const payload = await response.json().catch(() => null)
+      const upgrade = upgradeMessage({ status: response.status, data: payload })
+      if (upgrade) {
+        await navigateTo('/pricing')
+        return
+      }
+      throw new Error(upgrade ?? 'Something went wrong while streaming the response.')
     }
 
     if (!response.body) {
@@ -507,11 +589,11 @@ async function send(questionOverride?: string | Event) {
     streaming.value = false
     sending.value = false
 
-    if (activeId.value && intakeFields.value === null) {
-      await loadConversation(activeId.value)
-    }
     await loadConversations()
     await maybeCreateTodosFromText(lastAssistantText, activeId.value)
+    if (!awaitingIntake.value) {
+      await refreshMessages()
+    }
     await nextTick()
     scrollToBottom()
   }
@@ -533,6 +615,13 @@ function retryLast() {
 }
 
 onMounted(async () => {
+  await billing.fetchSubscription()
+
+  if (!billing.accessGranted) {
+    await navigateTo('/pricing')
+    return
+  }
+
   await loadConversations()
 
   if (route.query.c) {
@@ -595,23 +684,39 @@ watch(activeId, async (id) => {
 
     <section class="flex min-w-0 flex-1 flex-col">
       <div class="flex items-center justify-between border-b px-4 py-2.5">
-        <span class="text-xs text-muted-foreground">
-          {{ sending ? 'Creating…' : streaming ? (statusLabel ?? 'Responding…') : (activeConversation ? 'Ready' : 'New conversation') }}
-        </span>
-        <Button
-          v-if="activeConversation"
-          variant="ghost"
-          size="sm"
-          class="gap-1.5 text-xs"
-          :class="{ 'text-primary': showTodos }"
-          @click="showTodos = !showTodos"
-        >
-          <ListChecksIcon class="size-4" />
-          <span>{{ showTodos ? 'Hide tasks' : 'Tasks' }}</span>
-          <Badge v-if="todoStore.todos.length > 0" variant="secondary" class="px-1.5 text-[10px]">
-            {{ todoStore.todos.length }}
-          </Badge>
-        </Button>
+          <span class="text-xs text-muted-foreground">
+            {{ sending ? 'Creating…' : streaming ? (statusLabel ?? 'Responding…') : (activeConversation ? 'Ready' : 'New conversation') }}
+          </span>
+          <div class="flex items-center gap-1.5">
+            <Button
+              v-if="activeAssistantMessage"
+              variant="ghost"
+              size="sm"
+              class="gap-1.5 text-xs"
+              :class="{ 'text-primary': showCitations }"
+              @click="showCitations = !showCitations"
+            >
+              <BookOpenIcon class="size-4" />
+              <span>{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
+              <Badge v-if="activeAssistantMessage.sources.length > 0" variant="secondary" class="px-1.5 text-[10px]">
+                {{ activeAssistantMessage.sources.length }}
+              </Badge>
+            </Button>
+            <Button
+              v-if="activeConversation"
+              variant="ghost"
+              size="sm"
+              class="gap-1.5 text-xs"
+              :class="{ 'text-primary': showTodos }"
+              @click="showTodos = !showTodos"
+            >
+              <ListChecksIcon class="size-4" />
+              <span>{{ showTodos ? 'Hide tasks' : 'Tasks' }}</span>
+              <Badge v-if="todoStore.todos.length > 0" variant="secondary" class="px-1.5 text-[10px]">
+                {{ todoStore.todos.length }}
+              </Badge>
+            </Button>
+          </div>
       </div>
 
       <div ref="messagesContainer" class="flex-1 overflow-y-auto">
@@ -619,7 +724,7 @@ watch(activeId, async (id) => {
           <div class="mb-4 flex size-12 items-center justify-center rounded-xl bg-primary/10">
             <ScaleIcon class="size-6 text-primary" />
           </div>
-          <h2 class="text-lg font-semibold">Research Philippine law with Saligan.AI</h2>
+          <h2 class="text-lg font-semibold">Research Philippine law with Batayan</h2>
           <p class="mt-1 max-w-md text-sm text-muted-foreground">
             Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are
             grounded in retrieved sources and cited inline.
@@ -650,7 +755,7 @@ watch(activeId, async (id) => {
             </div>
             <div class="flex min-w-0 flex-1 flex-col space-y-2" :class="m.role === 'user' ? 'items-end' : 'items-start'">
               <div
-                v-if="m.role === 'assistant' && streaming && m.id === messages[messages.length - 1]?.id && !m.content && statusLabel"
+                v-if="m.role === 'assistant' && streaming && m.id === messages[messages.length - 1]?.id && !m.content && statusLabel && !awaitingIntake"
                 class="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed bg-transparent"
               >
                 <span class="inline-flex items-center gap-1.5 text-muted-foreground">
@@ -683,7 +788,30 @@ watch(activeId, async (id) => {
                     <div class="whitespace-pre-wrap break-words">{{ m.content }}</div>
                   </template>
                 </div>
-                <div v-else class="prose-invert break-words" v-html="renderMarkdown(getDisplayedContent(m))" @click="handleExportClick($event, m)" /><span v-if="streaming && m.id === messages[messages.length - 1]?.id" class="ml-0.5 inline-block h-[1em] w-[3px] animate-pulse rounded-sm bg-primary align-text-bottom" aria-hidden="true" />
+                <div v-else class="prose-invert break-words" v-html="renderMarkdown(getDisplayedContent(m))" @click="handleMarkdownClick($event, m)" /><span v-if="streaming && m.id === messages[messages.length - 1]?.id" class="ml-0.5 inline-block h-[1em] w-[3px] animate-pulse rounded-sm bg-primary align-text-bottom" aria-hidden="true" />
+              </div>
+
+              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-')" class="mt-1 flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-6"
+                  :class="{ 'bg-primary/10 text-primary': m.feedback === 'up' }"
+                  :title="m.feedback === 'up' ? 'Remove rating' : 'Helpful'"
+                  @click="rateMessage(m, 'up')"
+                >
+                  <ThumbsUpIcon class="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="size-6"
+                  :class="{ 'bg-destructive/10 text-destructive': m.feedback === 'down' }"
+                  :title="m.feedback === 'down' ? 'Remove rating' : 'Not helpful'"
+                  @click="rateMessage(m, 'down')"
+                >
+                  <ThumbsDownIcon class="size-3.5" />
+                </Button>
               </div>
 
               <div v-if="m.role === 'assistant' && !m.id.startsWith('local-') && m.content.trim() && m.content.includes('/export/')" class="mt-1 flex items-center gap-1.5">
@@ -698,7 +826,7 @@ watch(activeId, async (id) => {
                 </Button>
               </div>
 
-              <div v-if="m.sources.length > 0" class="w-full max-w-[85%] space-y-1.5">
+              <div v-if="m.sources.length > 0" class="w-full max-w-[85%] space-y-1.5 lg:hidden">
                 <p class="text-xs font-medium text-muted-foreground">Sources</p>
                 <div
                   v-for="(source, index) in m.sources"
@@ -707,12 +835,12 @@ watch(activeId, async (id) => {
                 >
                   <div class="flex items-start gap-2">
                     <Badge variant="secondary" class="mt-0.5 h-5 shrink-0 text-[10px]">
-                      {{ source.type === 'legal' ? 'LEGAL' : 'DOCUMENT' }}
+                      {{ source.type === 'legal' ? 'LEGAL' : source.type === 'web' ? 'WEB' : 'DOCUMENT' }}
                     </Badge>
                     <div class="min-w-0 flex-1">
-                      <p class="text-sm font-medium leading-tight">{{ source.label }}</p>
-                      <p v-if="source.title && source.title !== source.label" class="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-                        {{ source.title }}
+                      <p class="text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
+                      <p v-if="source.title && source.label && source.title !== source.label" class="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                        {{ source.label }}
                       </p>
                       <a
                         v-if="source.url"
@@ -740,7 +868,7 @@ watch(activeId, async (id) => {
             </div>
             <div class="intake-waiting max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed">
               <div class="flex items-center gap-2.5">
-                <span class="shining-text font-medium">Needed more information from you</span>
+                <span class="shining-text font-medium">{{ currentStatus === 'collecting_facts' ? 'Tinkering with your request' : 'Needed more information from you' }}</span>
                 <span class="flex items-center gap-1">
                   <span class="waiting-dot" />
                   <span class="waiting-dot" style="animation-delay: 0.15s" />
@@ -748,6 +876,24 @@ watch(activeId, async (id) => {
                 </span>
               </div>
               <ActivityTimeline v-if="activitySteps.length > 0" :steps="activitySteps" class="mt-3" />
+            </div>
+          </div>
+
+          <div v-if="intakeFields && intakeDismissed" class="flex items-start gap-3">
+            <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
+              AI
+            </div>
+            <div class="flex max-w-[85%] flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-sm">
+              <div class="min-w-0 flex-1">
+                <p class="font-medium">Information form closed</p>
+                <p class="mt-0.5 text-xs text-muted-foreground">
+                  Fill in the required details to continue drafting, or cancel this request.
+                </p>
+              </div>
+              <div class="flex shrink-0 gap-2">
+                <Button variant="outline" size="sm" class="h-8 text-xs" @click="abandonIntake">Cancel</Button>
+                <Button size="sm" class="h-8 text-xs" @click="reopenIntake">Fill requirement</Button>
+              </div>
             </div>
           </div>
 
@@ -782,11 +928,26 @@ watch(activeId, async (id) => {
 
     <TaskPanel v-if="showTodos && activeId" :conversation-id="activeId" />
 
+    <CitationPanel
+      v-if="hasCitations && showCitations"
+      :message="activeAssistantMessage"
+      :active-citation="activeCitation"
+      @close="showCitations = false"
+    />
+
     <!-- Floating Document Preview Panel (Large Screens) -->
     <aside
       v-if="previewDoc"
-      class="hidden lg:flex w-[450px] shrink-0 flex-col border-l bg-background"
+      class="relative hidden lg:flex shrink-0 flex-col border-l bg-background"
+      :style="{ width: `${previewWidth}px` }"
     >
+      <div
+        class="group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize touch-none select-none"
+        aria-hidden="true"
+        @pointerdown="startResize"
+      >
+        <div class="mx-auto h-full w-px bg-border transition-colors group-hover:bg-primary/60" />
+      </div>
       <div class="flex items-center justify-between border-b px-4 py-2.5">
         <span class="text-sm font-medium truncate">{{ previewDoc.title }}</span>
         <div class="flex items-center gap-2">
@@ -884,8 +1045,9 @@ watch(activeId, async (id) => {
     </Teleport>
 
     <IntakeFormSheet
-      v-if="intakeFields"
+      v-if="intakeFields && !intakeDismissed"
       :fields="intakeFields"
+      :initial-values="intakeDefaults ?? {}"
       @submit="handleIntakeSubmit"
       @cancel="handleIntakeCancel"
     />

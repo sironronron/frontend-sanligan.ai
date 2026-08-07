@@ -19,11 +19,33 @@ const STYLES: Record<string, Style> = {
 /**
  * Extract only the marked document from a drafted reply. Mirrors
  * server/utils/document.ts so the browser build produces the same output.
+ * Drafts missing the closing marker are exported from the opening marker
+ * onward, and hidden todo/document markers are never exported.
  */
 function extractDocumentText(content: string): string {
   const match = content.match(/\[\[DOCUMENT_START\]\]\s*([\s\S]*?)\s*\[\[DOCUMENT_END\]\]/)
 
-  return (match?.[1] ?? content).trim()
+  let body: string
+
+  if (match) {
+    body = match[1]
+  } else if (content.includes('[[DOCUMENT_START]]')) {
+    body = content.slice(content.indexOf('[[DOCUMENT_START]]') + '[[DOCUMENT_START]]'.length)
+  } else {
+    body = content
+  }
+
+  return stripHiddenMarkers(body).trim()
+}
+
+/**
+ * Remove hidden markers and any meta commentary the model wrote around the
+ * checklist so exported files only contain user-visible text.
+ */
+function stripHiddenMarkers(text: string): string {
+  return text
+    .replace(/^\s*\[\[(?:TODO|DOCUMENT)_(?:START|END)\]\]\s*$/gm, '')
+    .replace(/^\s*Next Steps Checklist Created Below Using create_todo Tool:\s*$/gim, '')
 }
 
 /**
@@ -33,13 +55,14 @@ function stripExportLinks(text: string): string {
   return text
     .replace(/\s*\[[^\]]*(?:download|export)[^\]]*\]\((?:https?:\/\/|\/)[^)]*\)/gi, '')
     .replace(/^[ \t]*(?:\*\*)?\s*(?:export|download)\s+links?\s*(?:\*\*)?\s*:?\s*$/gim, '')
+    .replace(/\[\s*\[[^\]]*\]\s*(?:\|\s*\[[^\]]+\]\s*)*[.:;]?|\[[^\]]*(?:download|word document|exported|pdf|insert export)[^\]]*\]\s*(?:\|\s*\[[^\]]+\]\s*)*|\s*(?:as|for|to)\s+word\s+and\s+pdf\s+export\s*:?\s*\[[^\]]+\]\s*[.:;]?[\r\n]*/gi, '')
     .trim()
 }
 
 /**
  * Derive a title from the message content when none is supplied.
  */
-function deriveTitleFromContent(content: string, fallback = 'Saligan AI Response'): string {
+function deriveTitleFromContent(content: string, fallback = 'Batayan Response'): string {
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim().replace(/^#+\s*/, '').replace(/\*\*/g, '').trim()
     if (line && !line.startsWith('[[')) {
@@ -184,7 +207,7 @@ export function markdownToPdfDefinition(content: string, title: string): TDocume
   flush()
 
   return {
-    info: { title, author: 'Saligan.AI' },
+    info: { title, author: 'Batayan' },
     pageSize: 'A4',
     pageMargins: [60, 60, 60, 60],
     defaultStyle: { font: 'Roboto', fontSize: 11, lineHeight: 1.4 },

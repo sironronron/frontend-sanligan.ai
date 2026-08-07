@@ -38,7 +38,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'Saligan.AI',
+      title: 'Batayan',
       htmlAttrs: { lang: 'en' },
     },
   },

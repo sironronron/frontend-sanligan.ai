@@ -71,7 +71,7 @@ function humanizeSubtype(subtype: string | null) {
 
         <div class="flex-1 overflow-y-auto px-4 py-3">
           <p class="mb-4 text-xs text-muted-foreground">
-            Choose a template to guide the letter. Saligan will fill it using this case's details.
+            Choose a template to guide the letter. Batayan will fill it using this case's details.
           </p>
 
           <div v-if="loading" class="space-y-2">

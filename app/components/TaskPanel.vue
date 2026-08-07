@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CheckIcon, CircleIcon, ClockIcon, GripVerticalIcon, PlusIcon, TrashIcon } from '@lucide/vue'
-import { toast } from 'vue-sonner'
+import { toast } from '~/components/ui/sonner'
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 const props = defineProps<{

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toast } from 'vue-sonner'
+import { toast } from '~/components/ui/sonner'
 import { PlusIcon, CheckIcon } from '@lucide/vue'
 
 definePageMeta({
@@ -111,7 +111,7 @@ onMounted(loadPrompts)
     <div class="mb-6 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
       <span class="font-medium">Active prompt:</span>
       <span v-if="activePrompt">
-        {{ activePrompt.name }} v{{ activePrompt.version }} · {{ activePrompt.name === 'saligan' ? 'Saligan.AI assistant' : '' }}
+        {{ activePrompt.name }} v{{ activePrompt.version }} · {{ activePrompt.name === 'saligan' ? 'Batayan assistant' : '' }}
       </span>
       <span v-else class="text-muted-foreground">none — chat is disabled until one is activated</span>
     </div>
@@ -140,7 +140,7 @@ onMounted(loadPrompts)
               id="content"
               v-model="form.content"
               rows="10"
-              placeholder="You are Saligan.AI, a legal research assistant…"
+              placeholder="You are Batayan, a legal research assistant…"
               required
             />
           </div>

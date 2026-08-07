@@ -32,7 +32,7 @@ async function handleSubmit() {
           <span class="size-2.5 rounded-full bg-primary" />
         </div>
         <CardTitle class="text-xl">Create an account</CardTitle>
-        <CardDescription>Start researching Philippine law with Saligan.AI</CardDescription>
+        <CardDescription>Start researching Philippine law with Batayan</CardDescription>
       </CardHeader>
       <CardContent>
         <form class="space-y-4" @submit.prevent="handleSubmit">
