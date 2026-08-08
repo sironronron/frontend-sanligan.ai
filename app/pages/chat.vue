@@ -429,6 +429,23 @@ function parseUrl(url: string): { hostname: string; pathname: string } {
   }
 }
 
+function faviconUrl(url?: string | null): string | undefined {
+  if (!url) return undefined
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parseUrl(url).hostname)}&sz=64`
+}
+
+function webSourcesFor(m: Message): Source[] {
+  return m.sources.filter((s) => s.type === 'web')
+}
+
+function nonWebSources(m: Message): Source[] {
+  return m.sources.filter((s) => s.type !== 'web')
+}
+
+function openUrl(url?: string | null) {
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 function handleMarkdownClick(event: MouseEvent, msg: Message) {
   const target = event.target as HTMLElement
   const badge = target.closest('button[data-cite-kind]')
@@ -830,10 +847,45 @@ watch(activeId, async (id) => {
                 </Button>
               </div>
 
-              <div v-if="m.sources.length > 0" class="w-full max-w-[85%] space-y-1.5 lg:hidden">
+              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-') && webSourcesFor(m).length > 0" class="mt-1 w-full max-w-[85%] space-y-2">
+                <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Web sources</p>
+                <div
+                  v-for="source in webSourcesFor(m)"
+                  :key="source.url ?? source.label"
+                  class="rounded-lg border bg-card p-3"
+                >
+                  <div class="flex items-start gap-2.5">
+                    <img
+                      v-if="faviconUrl(source.url)"
+                      :src="faviconUrl(source.url)"
+                      alt=""
+                      class="mt-0.5 size-4 shrink-0 rounded-sm"
+                      loading="lazy"
+                    />
+                    <GlobeIcon v-else class="mt-0.5 size-4 shrink-0 text-primary" />
+                    <p class="min-w-0 flex-1 break-words text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
+                  </div>
+                  <div v-if="source.excerpt" class="mt-2.5 rounded-md border-l-2 border-primary/50 bg-primary/5 px-2.5 py-2">
+                    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Cited source</p>
+                    <p class="line-clamp-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">{{ source.excerpt }}</p>
+                  </div>
+                  <Button
+                    v-if="source.url"
+                    variant="outline"
+                    size="sm"
+                    class="mt-2.5 h-7 gap-1.5 px-2.5 text-xs"
+                    @click="openUrl(source.url)"
+                  >
+                    <ExternalLinkIcon class="size-3.5" />
+                    Go to source
+                  </Button>
+                </div>
+              </div>
+
+              <div v-if="nonWebSources(m).length > 0" class="w-full max-w-[85%] space-y-1.5 lg:hidden">
                 <p class="text-xs font-medium text-muted-foreground">Sources</p>
                 <div
-                  v-for="(source, index) in m.sources"
+                  v-for="(source, index) in nonWebSources(m)"
                   :key="`${source.label}-${index}`"
                   class="rounded-lg border bg-card p-3"
                 >
