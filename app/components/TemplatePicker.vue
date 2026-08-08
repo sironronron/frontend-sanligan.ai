@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileTextIcon, ScaleIcon, XIcon } from '@lucide/vue'
+import { ChevronDownIcon, FileTextIcon, ScaleIcon, XIcon } from '@lucide/vue'
 
 export interface TemplateOption {
   id: string
@@ -31,9 +31,12 @@ const CATEGORY_LABELS: Record<TemplateOption['category'], string> = {
 
 const CATEGORY_ORDER: TemplateOption['category'][] = ['legal', 'formal', 'basic', 'custom']
 
-const grouped = computed(() => {
+const systemTemplates = computed(() => props.templates.filter((t) => t.is_system))
+const userTemplates = computed(() => props.templates.filter((t) => !t.is_system))
+
+const groupedSystem = computed(() => {
   const map: Record<string, TemplateOption[]> = {}
-  for (const template of props.templates) {
+  for (const template of systemTemplates.value) {
     const list = map[template.category] ?? []
     list.push(template)
     map[template.category] = list
@@ -78,39 +81,95 @@ function humanizeSubtype(subtype: string | null) {
             <Skeleton v-for="i in 4" :key="i" class="h-16 w-full rounded-lg" />
           </div>
 
-          <div v-for="group in grouped" :key="group.category" class="mb-5">
-            <p class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              <ScaleIcon v-if="group.category === 'legal'" class="size-3.5 text-primary" />
-              {{ CATEGORY_LABELS[group.category] }}
-            </p>
+          <template v-else>
+            <details class="group mb-4" open>
+              <summary class="flex cursor-pointer select-none items-center justify-between rounded-lg px-1 py-2">
+                <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  System templates
+                </p>
+                <ChevronDownIcon class="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
 
-            <div v-if="group.category === 'legal'" class="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
-              These templates follow common Philippine legal-correspondence conventions but are not a substitute for
-              review by a licensed PH lawyer.
-            </div>
+              <div v-for="group in groupedSystem" :key="group.category" class="mb-4">
+                <p class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <ScaleIcon v-if="group.category === 'legal'" class="size-3.5 text-primary" />
+                  {{ CATEGORY_LABELS[group.category] }}
+                </p>
 
-            <div class="space-y-1.5">
-              <button
-                v-for="template in group.templates"
-                :key="template.id"
-                type="button"
-                class="flex w-full items-start justify-between gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
-                @click="emit('select', template)"
-              >
-                <div class="min-w-0">
-                  <p class="text-sm font-medium">{{ template.name }}</p>
-                  <p v-if="template.legal_subtype" class="mt-0.5 text-[11px] text-muted-foreground">
-                    {{ humanizeSubtype(template.legal_subtype) }}
-                  </p>
+                <div v-if="group.category === 'legal'" class="mb-2 rounded-lg border border-espresso/20 bg-peach/40 px-3 py-2 text-[11px] leading-relaxed text-espresso dark:border-peach/30 dark:bg-cream/10 dark:text-peach">
+                  These templates follow common Philippine legal-correspondence conventions but are not a substitute for
+                  review by a licensed PH lawyer.
                 </div>
-                <Badge v-if="group.category === 'legal'" variant="secondary" class="shrink-0 text-[10px]">
-                  PH
-                </Badge>
-              </button>
-            </div>
-          </div>
 
-          <p v-if="!loading && grouped.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+                <div class="space-y-1.5">
+                  <button
+                    v-for="template in group.templates"
+                    :key="template.id"
+                    type="button"
+                    class="flex w-full items-start justify-between gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                    @click="emit('select', template)"
+                  >
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium">{{ template.name }}</p>
+                      <p v-if="template.legal_subtype" class="mt-0.5 text-[11px] text-muted-foreground">
+                        {{ humanizeSubtype(template.legal_subtype) }}
+                      </p>
+                    </div>
+                    <Badge v-if="group.category === 'legal'" variant="secondary" class="shrink-0 text-[10px]">
+                      PH
+                    </Badge>
+                  </button>
+                </div>
+              </div>
+            </details>
+
+            <details class="group">
+              <summary class="flex cursor-pointer select-none items-center justify-between rounded-lg px-1 py-2">
+                <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  My templates
+                </p>
+                <ChevronDownIcon class="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+
+              <div v-if="userTemplates.length === 0" class="rounded-lg border border-dashed px-3 py-4 text-center">
+                <p class="text-[11px] leading-relaxed text-muted-foreground">
+                  No custom templates yet.
+                </p>
+                <NuxtLink to="/templates" class="mt-1.5 inline-block text-[11px] font-medium text-primary hover:underline">
+                  Upload your own template
+                </NuxtLink>
+              </div>
+
+              <div v-else class="space-y-1.5">
+                <button
+                  v-for="template in userTemplates"
+                  :key="template.id"
+                  type="button"
+                  class="flex w-full items-start justify-between gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                  @click="emit('select', template)"
+                >
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium">{{ template.name }}</p>
+                    <p class="mt-0.5 text-[11px] text-muted-foreground">
+                      {{ CATEGORY_LABELS[template.category] }}
+                    </p>
+                  </div>
+                  <Badge variant="secondary" class="shrink-0 text-[10px]">
+                    Yours
+                  </Badge>
+                </button>
+
+                <NuxtLink
+                  to="/templates"
+                  class="mt-1.5 inline-block px-1 text-[11px] font-medium text-primary hover:underline"
+                >
+                  Manage your templates
+                </NuxtLink>
+              </div>
+            </details>
+          </template>
+
+          <p v-if="!loading && templates.length === 0" class="py-8 text-center text-sm text-muted-foreground">
             No templates available yet.
           </p>
         </div>

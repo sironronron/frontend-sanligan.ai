@@ -69,12 +69,27 @@ export function useDocumentExport() {
     previewDoc.value = null
   }
 
+  async function downloadExport(content: string, type: 'word' | 'pdf', title: string) {
+    const blob = type === 'pdf' ? await buildPdfLocally(content, title) : await buildWordFromServer(content, title)
+    const url = URL.createObjectURL(blob)
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${title}.${type === 'pdf' ? 'pdf' : 'docx'}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
   return {
     previewDoc,
     previewWidth,
     startResize,
     openExport,
     closePreview,
+    downloadExport,
   }
 }
 

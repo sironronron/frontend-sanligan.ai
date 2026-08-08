@@ -32,8 +32,8 @@ const counts = computed(() => ({
 
 const statusStyles: Record<Todo['status'], string> = {
   pending: 'bg-muted text-muted-foreground',
-  'on-going': 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  completed: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  'on-going': 'bg-peach/60 text-espresso dark:bg-cream/10 dark:text-peach',
+  completed: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
 }
 
 const statusLabel: Record<Todo['status'], string> = {
@@ -44,8 +44,8 @@ const statusLabel: Record<Todo['status'], string> = {
 
 const priorityStyles: Record<string, string> = {
   low: 'bg-muted text-muted-foreground',
-  medium: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
-  high: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  medium: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
+  high: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
 }
 
 function statusIcon(status: Todo['status']) {

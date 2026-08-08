@@ -26,6 +26,10 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+function humanize(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 const formData = ref<Record<string, string>>({})
 const checkboxValues = ref<Record<string, string[]>>({})
 const validationError = ref('')
@@ -110,7 +114,7 @@ function toggleCheckbox(key: string, option: string) {
 function missingRequiredCheckboxes(): string[] {
   return visibleFields.value
     .filter((field) => field.required && field.type === 'checkbox' && (checkboxValues.value[field.key] ?? []).length === 0)
-    .map((field) => field.label)
+    .map((field) => humanize(field.label))
 }
 
 function serialize(): Record<string, string> {
@@ -161,12 +165,12 @@ function handleSubmit() {
 
           <div v-for="group in fieldGroups" :key="group.section ?? ''" class="space-y-4">
             <p v-if="group.section" class="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {{ group.section }}
+              {{ humanize(group.section) }}
             </p>
 
             <div v-for="field in group.fields" :key="field.key" class="space-y-1.5">
               <Label :for="field.key" class="text-xs">
-                {{ field.label }}
+                {{ humanize(field.label) }}
                 <span v-if="field.required" class="text-destructive">*</span>
               </Label>
 
@@ -183,7 +187,7 @@ function handleSubmit() {
               <template v-else-if="field.type === 'select'">
                 <Select v-model="formData[field.key]">
                   <SelectTrigger class="w-full text-sm">
-                    <SelectValue :placeholder="`Select ${field.label}`" />
+                    <SelectValue :placeholder="`Select ${humanize(field.label)}`" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem v-for="option in field.options" :key="option" :value="option">

@@ -8,6 +8,7 @@ import {
   ScaleIcon,
   XIcon,
 } from '@lucide/vue'
+import CitedText from '~/components/CitedText.vue'
 
 export interface CitationSource {
   type: 'legal' | 'document' | 'web'
@@ -23,7 +24,6 @@ export interface CitationSource {
   url?: string | null
   title?: string | null
   excerpt?: string
-  content?: string
   domain?: string | null
 }
 
@@ -75,7 +75,7 @@ function openUrl(url: string | null | undefined) {
 }
 
 async function copyText(source: CitationSource) {
-  const text = source.url ?? source.content ?? ''
+  const text = source.url ?? source.excerpt ?? ''
   try {
     await navigator.clipboard.writeText(text)
   } catch {
@@ -189,22 +189,13 @@ watch(
                 :title="source.url ? 'Copy link' : 'Copy cited text'"
                 @click="copyText(source)"
               >
-                <CheckIcon v-if="copiedKey === cardKey(source)" class="size-3 text-emerald-600" />
+                <CheckIcon v-if="copiedKey === cardKey(source)" class="size-3 text-forest dark:text-peach" />
                 <CopyIcon v-else class="size-3" />
               </Button>
             </div>
           </div>
 
-          <div
-            v-if="source.type === 'document' && source.content"
-            class="mt-2.5 rounded-md border-l-2 border-primary/50 bg-primary/5 px-2.5 py-2"
-          >
-            <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Cited text</p>
-            <p class="whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">{{ source.content }}</p>
-          </div>
-          <p v-else-if="source.excerpt" class="mt-2 line-clamp-3 text-xs text-muted-foreground">
-            {{ source.excerpt }}
-          </p>
+          <CitedText v-if="source.excerpt" :text="source.excerpt" />
         </div>
       </div>
     </div>

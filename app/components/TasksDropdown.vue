@@ -15,12 +15,12 @@ function statusIcon(status: Todo['status']) {
 }
 
 function statusColor(status: Todo['status']) {
-  return status === 'completed' ? 'text-green-500' : status === 'on-going' ? 'text-yellow-500' : 'text-muted-foreground'
+  return status === 'completed' ? 'text-forest dark:text-peach' : status === 'on-going' ? 'text-espresso dark:text-peach' : 'text-muted-foreground'
 }
 
 function priorityBadge(priority: Todo['priority']) {
   if (!priority) return ''
-  return priority === 'high' ? 'bg-red-100 text-red-700' : priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'
+  return priority === 'high' ? 'bg-destructive/10 text-destructive' : priority === 'medium' ? 'bg-peach/60 text-espresso' : 'bg-muted text-muted-foreground'
 }
 
 async function openConversation(conversationId: string) {
@@ -108,7 +108,7 @@ onMounted(() => {
             :key="todo.id"
             class="flex items-start gap-2 rounded-md px-3 py-1.5 opacity-60"
           >
-            <button class="mt-0.5 shrink-0 text-green-500" @click="todoStore.toggleStatus(todo.id)">
+            <button class="mt-0.5 shrink-0 text-forest dark:text-peach" @click="todoStore.toggleStatus(todo.id)">
               <CheckIcon class="size-4" />
             </button>
             <p class="min-w-0 flex-1 truncate text-sm leading-tight line-through">{{ todo.title }}</p>

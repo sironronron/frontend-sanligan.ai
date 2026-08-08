@@ -197,7 +197,7 @@ onMounted(loadSources)
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
                 <p class="truncate text-sm font-medium">{{ source.name }}</p>
-                <Badge variant="outline" :class="source.is_active ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'">
+                <Badge variant="outline" :class="source.is_active ? 'text-forest dark:text-peach' : 'text-muted-foreground'">
                   {{ source.is_active ? 'Active' : 'Inactive' }}
                 </Badge>
               </div>

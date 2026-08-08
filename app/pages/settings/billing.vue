@@ -37,11 +37,11 @@ const statusLabel: Record<string, string> = {
 }
 
 const statusStyles: Record<string, string> = {
-  active: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  past_due: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  incomplete: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  incomplete_cancelled: 'bg-red-500/10 text-red-600 dark:text-red-400',
-  unpaid: 'bg-red-500/10 text-red-600 dark:text-red-400',
+  active: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
+  past_due: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
+  incomplete: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
+  incomplete_cancelled: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
+  unpaid: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
   cancelled: 'bg-muted text-muted-foreground',
 }
 
@@ -224,7 +224,7 @@ function limitLabel(limit: number | null) {
             <div class="h-2 overflow-hidden rounded-full bg-muted">
               <div
                 class="h-full rounded-full transition-all"
-                :class="isAtLimit(meter.used, meter.limit) ? 'bg-destructive' : limitPct(meter.used, meter.limit) > 80 ? 'bg-amber-500' : 'bg-primary'"
+                :class="isAtLimit(meter.used, meter.limit) ? 'bg-destructive' : limitPct(meter.used, meter.limit) > 80 ? 'bg-espresso' : 'bg-primary'"
                 :style="{ width: `${limitPct(meter.used, meter.limit)}%` }"
               />
             </div>
@@ -233,7 +233,7 @@ function limitLabel(limit: number | null) {
             </p>
             <p
               v-else-if="meter.overage && meter.overage > 0"
-              class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+              class="mt-1 text-xs text-espresso dark:text-peach"
             >
               {{ meter.overage.toLocaleString() }} over the cap · ₱{{ formatPesos(meter.overage_due_pesos) }} due this cycle.
             </p>

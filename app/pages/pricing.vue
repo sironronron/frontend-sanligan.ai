@@ -144,7 +144,7 @@ onMounted(async () => {
             @click="billingInterval = 'annual'"
           >
             Annual
-            <span class="ml-1 text-xs text-emerald-600 dark:text-emerald-400">2 months free</span>
+            <span class="ml-1 text-xs text-forest dark:text-peach">2 months free</span>
           </button>
         </div>
       </div>

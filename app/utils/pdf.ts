@@ -187,6 +187,15 @@ export function markdownToPdfDefinition(content: string, title: string): TDocume
       continue
     }
 
+    if (/^x-{4,}x$/.test(line.trim())) {
+      flush()
+      body.push({
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#999999' }],
+        margin: [0, 6, 0, 6],
+      })
+      continue
+    }
+
     const bullet = line.match(/^[-*]\s+(.+)$/)
     if (bullet) {
       flush()

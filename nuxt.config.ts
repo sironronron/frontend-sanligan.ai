@@ -40,6 +40,18 @@ export default defineNuxtConfig({
     head: {
       title: 'Batayan',
       htmlAttrs: { lang: 'en' },
+      link: [
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+      ],
+    },
+    pageTransition: {
+      name: 'page',
+      mode: 'out-in',
+    },
+    layoutTransition: {
+      name: 'layout',
+      mode: 'out-in',
     },
   },
 })

@@ -37,7 +37,7 @@ const statusFilter = ref('')
 
 const statusStyles: Record<string, { label: string; class: string }> = {
   pending: { label: 'Pending', class: 'bg-muted text-muted-foreground' },
-  ok: { label: 'OK', class: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+  ok: { label: 'OK', class: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach' },
   failed: { label: 'Failed', class: 'bg-destructive/10 text-destructive' },
 }
 

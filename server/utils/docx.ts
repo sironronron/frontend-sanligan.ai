@@ -1,5 +1,6 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   HeadingLevel,
   LevelFormat,
@@ -141,6 +142,12 @@ function parseMarkdown(markdown: string): Paragraph[] {
       continue
     }
 
+    if (/^x-{4,}x$/.test(line.trim())) {
+      flush()
+      paragraphs.push(divider())
+      continue
+    }
+
     if (line.startsWith('## ')) {
       flush()
       paragraphs.push(heading(2, line.slice(3)))
@@ -194,6 +201,16 @@ function listItem(text: string, reference: 'bullets' | 'numbered'): Paragraph {
     numbering: { reference, level: 0 },
     children: parseRuns(text),
     spacing: { after: 120 },
+  })
+}
+
+function divider(): Paragraph {
+  return new Paragraph({
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 6, color: '999999', space: 6 },
+    },
+    spacing: { before: 120, after: 120 },
+    children: [new TextRun('')],
   })
 }
 

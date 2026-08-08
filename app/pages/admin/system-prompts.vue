@@ -179,7 +179,7 @@ onMounted(loadPrompts)
                     </p>
                     <Badge
                       v-if="prompt.is_active"
-                      class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                      class="bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach"
                     >
                       Active
                     </Badge>

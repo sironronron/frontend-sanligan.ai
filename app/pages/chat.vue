@@ -1,31 +1,26 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import {
-  ExternalLinkIcon,
   FileIcon,
   Loader2Icon,
   ScaleIcon,
-  SendIcon,
   SparklesIcon,
-  TrashIcon,
   XIcon,
   DownloadIcon,
   ListChecksIcon,
-  CheckIcon,
-  ClipboardCheckIcon,
-  FileTextIcon,
-  ThumbsUpIcon,
-  ThumbsDownIcon,
   BookOpenIcon,
 } from '@lucide/vue'
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
-import { renderMarkdown } from '~/utils/markdown'
 import { useTodoStore } from '~/stores/todos'
 import { useBillingStore, upgradeMessage } from '~/stores/billing'
 import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
 import CitationPanel from '~/components/CitationPanel.vue'
 import type { IntakeField } from '~/components/IntakeFormSheet.vue'
+import ChatThread from '~/components/chat/ChatThread.vue'
+import ChatComposer from '~/components/chat/ChatComposer.vue'
+import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
+import ChatConversationList from '~/components/chat/ChatConversationList.vue'
 
 definePageMeta({
   middleware: ['auth', 'subscription'],
@@ -83,6 +78,7 @@ const input = ref('')
 const streaming = ref(false)
 const streamError = ref('')
 const sending = ref(false)
+const streamController = ref<AbortController | null>(null)
 const currentStatus = ref<string | null>(null)
 const currentStatusLabel = ref<string | null>(null)
 const lastQuestion = ref('')
@@ -121,6 +117,7 @@ const statusLabels: Record<string, string> = {
   checking_sources: 'Checking legal sources',
   searching_web: 'Searching the web',
   composing: 'Composing response',
+  collecting_facts: 'Collecting the facts I need',
 }
 
 interface ActivityStep {
@@ -355,28 +352,6 @@ function abandonIntake() {
   intakeDismissed.value = false
 }
 
-interface IntakePair {
-  key: string
-  label: string
-  value: string
-}
-
-function intakePairs(content: string): IntakePair[] | null {
-  if (!content.startsWith('[Intake Form Submission]')) return null
-  const pairs: IntakePair[] = []
-  for (const line of content.split('\n').slice(1)) {
-    const idx = line.indexOf(': ')
-    if (idx === -1) continue
-    const key = line.slice(0, idx).trim()
-    pairs.push({
-      key,
-      label: key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-      value: line.slice(idx + 2).trim(),
-    })
-  }
-  return pairs.length > 0 ? pairs : null
-}
-
 const displayedLengths = ref<Record<string, number>>({})
 let typewriterInterval: ReturnType<typeof setInterval> | null = null
 
@@ -419,32 +394,6 @@ const statusLabel = computed(() => {
   if (!currentStatus.value) return null
   return currentStatusLabel.value ?? statusLabels[currentStatus.value] ?? currentStatus.value
 })
-
-function parseUrl(url: string): { hostname: string; pathname: string } {
-  try {
-    const parsed = new window.URL(url)
-    return { hostname: parsed.hostname, pathname: parsed.pathname }
-  } catch {
-    return { hostname: url, pathname: '' }
-  }
-}
-
-function faviconUrl(url?: string | null): string | undefined {
-  if (!url) return undefined
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parseUrl(url).hostname)}&sz=64`
-}
-
-function webSourcesFor(m: Message): Source[] {
-  return m.sources.filter((s) => s.type === 'web')
-}
-
-function nonWebSources(m: Message): Source[] {
-  return m.sources.filter((s) => s.type !== 'web')
-}
-
-function openUrl(url?: string | null) {
-  if (url) window.open(url, '_blank', 'noopener,noreferrer')
-}
 
 function handleMarkdownClick(event: MouseEvent, msg: Message) {
   const target = event.target as HTMLElement
@@ -496,6 +445,11 @@ async function rateMessage(m: Message, feedback: 'up' | 'down') {
   } finally {
     ratingBusy.value = null
   }
+}
+
+function handleExport(m: Message, type: 'word' | 'pdf') {
+  const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
+  void openExport(m.content, type, title)
 }
 
 async function send(questionOverride?: string | Event) {
@@ -550,6 +504,7 @@ async function send(questionOverride?: string | Event) {
     await ensureCsrfCookie(apiBase)
 
     const xsrfToken = getXsrfToken()
+    streamController.value = new AbortController()
     const response = await fetch(`${apiBase}/api/conversations/${conv.id}/messages`, {
       method: 'POST',
       credentials: 'include',
@@ -559,6 +514,7 @@ async function send(questionOverride?: string | Event) {
         ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
       },
       body: JSON.stringify({ message: question }),
+      signal: streamController.value.signal,
     })
 
     if (!response.ok) {
@@ -602,9 +558,14 @@ async function send(questionOverride?: string | Event) {
 
     lastAssistantText = assistant.content
   } catch (err: any) {
-    streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
+    if (err?.name === 'AbortError') {
+      streamError.value = ''
+    } else {
+      streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
+    }
   } finally {
     stopTypewriter()
+    streamController.value = null
     currentStatus.value = null
     currentStatusLabel.value = null
     streaming.value = false
@@ -624,6 +585,15 @@ function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
+}
+
+function stopStreaming() {
+  streamController.value?.abort()
+  streamController.value = null
+  currentStatus.value = null
+  currentStatusLabel.value = null
+  awaitingIntake.value = false
+  streamError.value = ''
 }
 
 function retryLast() {
@@ -668,40 +638,14 @@ watch(activeId, async (id) => {
 
 <template>
   <div class="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
-    <aside class="flex w-72 shrink-0 flex-col border-r bg-muted/30">
-      <div class="flex items-center gap-2 border-b p-3">
-        <Button class="flex-1" variant="outline" @click="startNewChat">
-          <span class="text-sm">New chat</span>
-        </Button>
-      </div>
-
-      <ScrollArea class="flex-1">
-        <div class="space-y-1 p-2">
-          <div
-            v-for="c in conversations"
-            :key="c.id"
-            class="group flex w-full items-center gap-1 rounded-lg transition-colors"
-            :class="c.id === activeId ? 'bg-muted' : 'hover:bg-muted/60'"
-          >
-            <button
-              class="min-w-0 flex-1 truncate rounded-lg px-3 py-2 text-left text-sm"
-              @click="switchConversation(c.id)"
-            >
-              {{ c.title || 'New conversation' }}
-            </button>
-            <button
-              class="mr-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-              @click.stop="deleteConversation(c.id)"
-            >
-              <TrashIcon class="size-3.5" />
-            </button>
-          </div>
-          <p v-if="conversations.length === 0" class="px-3 py-6 text-center text-sm text-muted-foreground">
-            No conversations yet
-          </p>
-        </div>
-      </ScrollArea>
-    </aside>
+    <ChatConversationList
+      :conversations="conversations"
+      :active-id="activeId"
+      :busy="busy"
+      @new="startNewChat"
+      @select="switchConversation"
+      @delete="deleteConversation"
+    />
 
     <section class="flex min-w-0 flex-1 flex-col">
       <div class="flex items-center justify-between border-b px-4 py-2.5">
@@ -741,244 +685,58 @@ watch(activeId, async (id) => {
       </div>
 
       <div ref="messagesContainer" class="flex-1 overflow-y-auto">
-        <div v-if="messages.length === 0" class="flex h-full flex-col items-center justify-center px-6 text-center">
-          <div class="mb-4 flex size-12 items-center justify-center rounded-xl bg-primary/10">
-            <ScaleIcon class="size-6 text-primary" />
-          </div>
-          <h2 class="text-lg font-semibold">Research Philippine law with Batayan</h2>
-          <p class="mt-1 max-w-md text-sm text-muted-foreground">
-            Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are
-            grounded in retrieved sources and cited inline.
-          </p>
-          <div class="mt-6 grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-3">
-            <Button variant="outline" class="justify-start text-left" @click="input = 'What is the scope of the Comprehensive Agrarian Reform Program?'">
-              <SparklesIcon class="size-4 text-primary" />
-              <span class="truncate text-xs">Agrarian reform scope</span>
-            </Button>
-            <Button variant="outline" class="justify-start text-left" @click="input = 'Summarize the ruling in G.R. No. 143491.'">
-              <ScaleIcon class="size-4 text-primary" />
-              <span class="truncate text-xs">Summarize a ruling</span>
-            </Button>
-            <Button variant="outline" class="justify-start text-left" @click="input = 'Compare RA 6657 with my uploaded documents.'">
-              <FileIcon class="size-4 text-primary" />
-              <span class="truncate text-xs">Compare my documents</span>
-            </Button>
-          </div>
-        </div>
+        <ChatEmptyState
+          v-if="messages.length === 0"
+          title="Research Philippine law with Batayan"
+          description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
+          eyebrow="Batayan AI"
+        >
+          <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'What is the scope of the Comprehensive Agrarian Reform Program?'">
+            <SparklesIcon class="size-4 text-primary" />
+            <span class="truncate text-xs">Agrarian reform scope</span>
+          </Button>
+          <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'Summarize the ruling in G.R. No. 143491.'">
+            <ScaleIcon class="size-4 text-primary" />
+            <span class="truncate text-xs">Summarize a ruling</span>
+          </Button>
+          <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'Compare RA 6657 with my uploaded documents.'">
+            <FileIcon class="size-4 text-primary" />
+            <span class="truncate text-xs">Compare my documents</span>
+          </Button>
+        </ChatEmptyState>
 
-        <div v-else class="mx-auto max-w-3xl space-y-6 px-4 py-6">
-          <div v-for="m in messages" :key="m.id" class="flex items-start gap-3" :class="m.role === 'user' ? 'flex-row-reverse' : ''">
-            <div
-              class="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-              :class="m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'"
-            >
-              {{ m.role === 'user' ? 'You' : 'AI' }}
-            </div>
-            <div class="flex min-w-0 flex-1 flex-col space-y-2" :class="m.role === 'user' ? 'items-end' : 'items-start'">
-              <div
-                v-if="m.role === 'assistant' && streaming && m.id === messages[messages.length - 1]?.id && !m.content && statusLabel && !awaitingIntake"
-                class="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed bg-transparent"
-              >
-                <span class="inline-flex items-center gap-1.5 text-muted-foreground">
-                  <span class="size-1.5 animate-pulse rounded-full bg-primary" />
-                  {{ statusLabel }}
-                </span>
-                <ActivityTimeline v-if="activitySteps.length > 0" :steps="activitySteps" class="mt-3" />
-              </div>
-              <div
-                v-else
-                class="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed"
-                :class="m.role === 'user' ? 'bg-muted' : 'bg-transparent'"
-              >
-                <div v-if="m.role === 'user'">
-                  <template v-if="intakePairs(m.content)">
-                    <div class="rounded-xl border bg-background/70 px-3 py-2.5 shadow-sm">
-                      <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-                        <ClipboardCheckIcon class="size-3.5" />
-                        Intake Form Submitted
-                      </p>
-                      <dl class="mt-2.5 space-y-2">
-                        <div v-for="pair in intakePairs(m.content)" :key="pair.key">
-                          <dt class="text-[10px] uppercase tracking-wide text-muted-foreground/80">{{ pair.label }}</dt>
-                          <dd class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ pair.value || '—' }}</dd>
-                        </div>
-                      </dl>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div class="whitespace-pre-wrap break-words">{{ m.content }}</div>
-                  </template>
-                </div>
-                <div v-else class="prose-invert break-words" v-html="renderMarkdown(getDisplayedContent(m))" @click="handleMarkdownClick($event, m)" /><span v-if="streaming && m.id === messages[messages.length - 1]?.id" class="ml-0.5 inline-block h-[1em] w-[3px] animate-pulse rounded-sm bg-primary align-text-bottom" aria-hidden="true" />
-              </div>
-
-              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-')" class="mt-1 flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="size-6"
-                  :class="{ 'bg-primary/10 text-primary': m.feedback === 'up' }"
-                  :title="m.feedback === 'up' ? 'Remove rating' : 'Helpful'"
-                  @click="rateMessage(m, 'up')"
-                >
-                  <ThumbsUpIcon class="size-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="size-6"
-                  :class="{ 'bg-destructive/10 text-destructive': m.feedback === 'down' }"
-                  :title="m.feedback === 'down' ? 'Remove rating' : 'Not helpful'"
-                  @click="rateMessage(m, 'down')"
-                >
-                  <ThumbsDownIcon class="size-3.5" />
-                </Button>
-              </div>
-
-              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-') && m.content.trim() && m.content.includes('/export/')" class="mt-1 flex items-center gap-1.5">
-                <span class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Export</span>
-                <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="openExport(m.content, 'word', activeConversation?.title ?? 'Word Document')">
-                  <FileTextIcon class="size-3.5" />
-                  Word
-                </Button>
-                <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="openExport(m.content, 'pdf', activeConversation?.title ?? 'PDF Document')">
-                  <FileTextIcon class="size-3.5" />
-                  PDF
-                </Button>
-              </div>
-
-              <div v-if="m.role === 'assistant' && !m.id.startsWith('local-') && webSourcesFor(m).length > 0" class="mt-1 w-full max-w-[85%] space-y-2">
-                <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Web sources</p>
-                <div
-                  v-for="source in webSourcesFor(m)"
-                  :key="source.url ?? source.label"
-                  class="rounded-lg border bg-card p-3"
-                >
-                  <div class="flex items-start gap-2.5">
-                    <img
-                      v-if="faviconUrl(source.url)"
-                      :src="faviconUrl(source.url)"
-                      alt=""
-                      class="mt-0.5 size-4 shrink-0 rounded-sm"
-                      loading="lazy"
-                    />
-                    <GlobeIcon v-else class="mt-0.5 size-4 shrink-0 text-primary" />
-                    <p class="min-w-0 flex-1 break-words text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
-                  </div>
-                  <div v-if="source.excerpt" class="mt-2.5 rounded-md border-l-2 border-primary/50 bg-primary/5 px-2.5 py-2">
-                    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Cited source</p>
-                    <p class="line-clamp-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground">{{ source.excerpt }}</p>
-                  </div>
-                  <Button
-                    v-if="source.url"
-                    variant="outline"
-                    size="sm"
-                    class="mt-2.5 h-7 gap-1.5 px-2.5 text-xs"
-                    @click="openUrl(source.url)"
-                  >
-                    <ExternalLinkIcon class="size-3.5" />
-                    Go to source
-                  </Button>
-                </div>
-              </div>
-
-              <div v-if="nonWebSources(m).length > 0" class="w-full max-w-[85%] space-y-1.5 lg:hidden">
-                <p class="text-xs font-medium text-muted-foreground">Sources</p>
-                <div
-                  v-for="(source, index) in nonWebSources(m)"
-                  :key="`${source.label}-${index}`"
-                  class="rounded-lg border bg-card p-3"
-                >
-                  <div class="flex items-start gap-2">
-                    <Badge variant="secondary" class="mt-0.5 h-5 shrink-0 text-[10px]">
-                      {{ source.type === 'legal' ? 'LEGAL' : source.type === 'web' ? 'WEB' : 'DOCUMENT' }}
-                    </Badge>
-                    <div class="min-w-0 flex-1">
-                      <p class="text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
-                      <p v-if="source.title && source.label && source.title !== source.label" class="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-                        {{ source.label }}
-                      </p>
-                      <a
-                        v-if="source.url"
-                        :href="source.url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-                      >
-                        <ExternalLinkIcon class="size-3" />
-                        {{ parseUrl(source.url).hostname }}{{ parseUrl(source.url).pathname.length > 1 ? parseUrl(source.url).pathname : '' }}
-                      </a>
-                    </div>
-                  </div>
-                  <p v-if="source.excerpt" class="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                    {{ source.excerpt }}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="awaitingIntake" class="flex items-start gap-3">
-            <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
-              AI
-            </div>
-            <div class="intake-waiting max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed">
-              <div class="flex items-center gap-2.5">
-                <span class="shining-text font-medium">{{ currentStatus === 'collecting_facts' ? 'Tinkering with your request' : 'Needed more information from you' }}</span>
-                <span class="flex items-center gap-1">
-                  <span class="waiting-dot" />
-                  <span class="waiting-dot" style="animation-delay: 0.15s" />
-                  <span class="waiting-dot" style="animation-delay: 0.3s" />
-                </span>
-              </div>
-              <ActivityTimeline v-if="activitySteps.length > 0" :steps="activitySteps" class="mt-3" />
-            </div>
-          </div>
-
-          <div v-if="intakeFields && intakeDismissed" class="flex items-start gap-3">
-            <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
-              AI
-            </div>
-            <div class="flex max-w-[85%] flex-wrap items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-sm">
-              <div class="min-w-0 flex-1">
-                <p class="font-medium">Information form closed</p>
-                <p class="mt-0.5 text-xs text-muted-foreground">
-                  Fill in the required details to continue drafting, or cancel this request.
-                </p>
-              </div>
-              <div class="flex shrink-0 gap-2">
-                <Button variant="outline" size="sm" class="h-8 text-xs" @click="abandonIntake">Cancel</Button>
-                <Button size="sm" class="h-8 text-xs" @click="reopenIntake">Fill requirement</Button>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="streamError" class="flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            <span class="flex-1">{{ streamError }}</span>
-            <Button variant="outline" size="sm" class="h-7 gap-1.5 text-xs" :disabled="!lastQuestion || busy" @click="retryLast">
-              <Loader2Icon v-if="busy" class="size-3.5 animate-spin" />
-              Retry
-            </Button>
-          </div>
-        </div>
+        <ChatThread
+          v-else
+          :messages="messages"
+          :streaming="streaming"
+          :status-label="statusLabel"
+          :current-status="currentStatus"
+          :activity-steps="activitySteps"
+          :awaiting-intake="awaitingIntake"
+          :intake-dismissed="intakeDismissed"
+          :has-intake-fields="intakeFields !== null"
+          :last-question="lastQuestion"
+          :busy="busy"
+          :stream-error="streamError"
+          :display-content="getDisplayedContent"
+          @markdown-click="handleMarkdownClick"
+          @rate="rateMessage"
+          @export="handleExport"
+          @retry="retryLast"
+          @abandon-intake="abandonIntake"
+          @reopen-intake="reopenIntake"
+        />
       </div>
 
       <div class="border-t p-3">
-        <form class="mx-auto flex max-w-3xl items-end gap-2" @submit.prevent="send()">
-          <Textarea
-            v-model="input"
-            rows="1"
-            class="max-h-40 min-h-10 resize-none"
-            placeholder="Ask about Philippine law or your documents…"
-            :disabled="busy"
-            @keydown.enter.exact.prevent="send()"
-          />
-          <Button type="submit" size="icon" :disabled="!input.trim() || busy">
-            <Loader2Icon v-if="busy" class="size-4 animate-spin" />
-            <SendIcon v-else class="size-4" />
-            <span class="sr-only">Send</span>
-          </Button>
-        </form>
+        <ChatComposer
+          v-model="input"
+          :disabled="busy"
+          :streaming="streaming"
+          placeholder="Ask about Philippine law or your documents…"
+          @send="send()"
+          @stop="stopStreaming"
+        />
       </div>
     </section>
 
@@ -1109,63 +867,3 @@ watch(activeId, async (id) => {
     />
   </div>
 </template>
-
-<style scoped>
-.intake-waiting {
-  position: relative;
-  overflow: hidden;
-  background: color-mix(in oklab, var(--primary) 6%, transparent);
-  border: 1px solid color-mix(in oklab, var(--primary) 22%, transparent);
-}
-
-.intake-waiting::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklab, var(--primary) 10%, transparent),
-    transparent
-  );
-  animation: shine-sweep 2.4s ease-in-out infinite;
-}
-
-@keyframes shine-sweep {
-  0% { left: -50%; }
-  55%, 100% { left: 120%; }
-}
-
-.shining-text {
-  background: linear-gradient(
-    90deg,
-    var(--primary),
-    color-mix(in oklab, var(--primary) 45%, transparent),
-    var(--primary)
-  );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: text-shine 2.4s linear infinite;
-}
-
-@keyframes text-shine {
-  to { background-position: -200% center; }
-}
-
-.waiting-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 9999px;
-  background: var(--primary);
-  animation: dot-bounce 1.2s ease-in-out infinite;
-}
-
-@keyframes dot-bounce {
-  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-2px); }
-}
-</style>

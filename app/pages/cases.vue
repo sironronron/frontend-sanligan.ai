@@ -28,17 +28,17 @@ const creating = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const statusStyles: Record<string, string> = {
-  open: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  in_progress: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  on_hold: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  open: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
+  in_progress: 'bg-peach/60 text-espresso dark:bg-cream/10 dark:text-peach',
+  on_hold: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
   closed: 'bg-muted text-muted-foreground',
 }
 
 const priorityStyles: Record<string, string> = {
   low: 'bg-muted text-muted-foreground',
-  medium: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
-  high: 'bg-red-500/10 text-red-600 dark:text-red-400',
-  urgent: 'bg-red-600/10 text-red-700 dark:text-red-500',
+  medium: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
+  high: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
+  urgent: 'bg-destructive/15 text-destructive dark:bg-cream/10 dark:text-destructive',
 }
 
 const typeLabels: Record<string, string> = {

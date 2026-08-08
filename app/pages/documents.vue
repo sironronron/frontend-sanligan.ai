@@ -40,8 +40,8 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const statusStyles: Record<Document['status'], string> = {
   queued: 'bg-muted text-muted-foreground',
-  processing: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  ready: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  processing: 'bg-peach/60 text-espresso dark:bg-cream/10 dark:text-peach',
+  ready: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
   failed: 'bg-destructive/10 text-destructive',
 }
 

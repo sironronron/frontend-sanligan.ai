@@ -1,11 +1,18 @@
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
 
 @import 'tailwindcss';
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+
+:root {
+  --forest: #1D4533;
+  --cream: #F7EAE0;
+  --peach: #F9D2BA;
+  --espresso: #5E3122;
+}
 
 @theme inline {
   --color-background: var(--background);
@@ -33,8 +40,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-sans: 'Geist Variable', sans-serif;
-  --font-heading: var(--font-sans);
+  --font-sans: 'Inter', sans-serif;
+  --font-heading: 'Fraunces', serif;
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-chart-5: var(--chart-5);
@@ -46,42 +53,46 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --color-forest: var(--forest);
+  --color-cream: var(--cream);
+  --color-peach: var(--peach);
+  --color-espresso: var(--espresso);
 }
 
 :root {
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background: #F7EAE0;
+  --foreground: #5E3122;
+  --card: #FCEADE;
+  --card-foreground: #5E3122;
+  --popover: #FCEADE;
+  --popover-foreground: #5E3122;
+  --primary: #1D4533;
+  --primary-foreground: #F7EAE0;
+  --secondary: #F9D2BA;
+  --secondary-foreground: #5E3122;
+  --muted: #EFE0D2;
+  --muted-foreground: #8A6A58;
+  --accent: #F9D2BA;
+  --accent-foreground: #5E3122;
+  --destructive: #B4482E;
+  --destructive-foreground: #FCEADE;
+  --border: #E5BA9A;
+  --input: #E5BA9A;
+  --ring: #2F6650;
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar: #F2E2D3;
+  --sidebar-foreground: #5E3122;
+  --sidebar-accent: #F9D2BA;
+  --sidebar-accent-foreground: #5E3122;
+  --sidebar-border: #E5BA9A;
+  --sidebar-ring: #2F6650;
+  --sidebar-primary: #1D4533;
+  --sidebar-primary-foreground: #F7EAE0;
+  --chart-1: #1D4533;
+  --chart-2: #5E3122;
+  --chart-3: #F9D2BA;
+  --chart-4: #8A6A58;
+  --chart-5: #B4482E;
 }
 
 * {
@@ -94,37 +105,38 @@ body {
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #14231C;
+  --foreground: #F2E4D8;
+  --card: #1D2E25;
+  --card-foreground: #F2E4D8;
+  --popover: #1D2E25;
+  --popover-foreground: #F2E4D8;
+  --primary: #4E9B77;
+  --primary-foreground: #14231C;
+  --secondary: #1D2E25;
+  --secondary-foreground: #F2E4D8;
+  --muted: #1D2E25;
+  --muted-foreground: #C9A98F;
+  --accent: #F9D2BA;
+  --accent-foreground: #14231C;
+  --destructive: #E0705A;
+  --destructive-foreground: #14231C;
+  --border: #33473C;
+  --input: #33473C;
+  --ring: #4E9B77;
+  --chart-1: #4E9B77;
+  --chart-2: #F2E4D8;
+  --chart-3: #C9A98F;
+  --chart-4: #33473C;
+  --chart-5: #E0705A;
+  --sidebar: #14231C;
+  --sidebar-foreground: #F2E4D8;
+  --sidebar-primary: #4E9B77;
+  --sidebar-primary-foreground: #14231C;
+  --sidebar-accent: #1D2E25;
+  --sidebar-accent-foreground: #F2E4D8;
+  --sidebar-border: #33473C;
+  --sidebar-ring: #4E9B77;
 }
 
 @layer base {
@@ -135,7 +147,34 @@ body {
     @apply bg-background text-foreground;
     @apply font-sans;
   }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+@layer base {
+  .page-enter-active,
+  .page-leave-active {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .page-enter-from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  .page-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  .layout-enter-active,
+  .layout-leave-active {
+    transition: opacity 0.15s ease;
+  }
+  .layout-enter-from,
+  .layout-leave-to {
+    opacity: 0;
   }
 }
