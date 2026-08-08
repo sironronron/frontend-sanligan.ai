@@ -14,6 +14,10 @@ export function ensureCsrfCookie(base: string): Promise<void> {
   return csrfReady
 }
 
+export function resetCsrfCookie(): void {
+  csrfReady = null
+}
+
 export function getXsrfToken(): string | null {
   if (typeof document === 'undefined') return null
 

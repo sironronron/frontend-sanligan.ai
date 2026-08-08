@@ -1,17 +1,11 @@
-import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
+import { ensureCsrfCookie, getXsrfToken, resetCsrfCookie } from '~/lib/http'
 
 export function useApi() {
   const {
     public: { apiBase },
   } = useRuntimeConfig()
 
-  return async <T = unknown>(path: string, options?: Parameters<typeof $fetch>[1]) => {
-    const method = String(options?.method ?? 'GET').toUpperCase()
-
-    if (!['GET', 'HEAD'].includes(method)) {
-      await ensureCsrfCookie(apiBase)
-    }
-
+  const send = <T = unknown>(path: string, options?: Parameters<typeof $fetch>[1]) => {
     const token = getXsrfToken()
 
     return $fetch<T>(`/api${path}`, {
@@ -24,6 +18,30 @@ export function useApi() {
       },
       ...options,
     })
+  }
+
+  return async <T = unknown>(path: string, options?: Parameters<typeof $fetch>[1]) => {
+    const method = String(options?.method ?? 'GET').toUpperCase()
+
+    if (!['GET', 'HEAD'].includes(method)) {
+      await ensureCsrfCookie(apiBase)
+    }
+
+    try {
+      return await send<T>(path, options)
+    } catch (error) {
+      const status = (error as { status?: number } | undefined)?.status
+        ?? (error as { statusCode?: number } | undefined)?.statusCode
+
+      if (status === 419) {
+        resetCsrfCookie()
+        await ensureCsrfCookie(apiBase)
+
+        return send<T>(path, options)
+      }
+
+      throw error
+    }
   }
 }
 
