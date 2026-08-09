@@ -22,6 +22,7 @@ export interface ChatMessage {
   provider?: string | null
   sources: ChatSource[]
   feedback?: string | null
+  template_id?: string | null
   created_at: string
 }
 

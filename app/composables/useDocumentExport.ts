@@ -1,3 +1,5 @@
+import { ensureCsrfCookie, getXsrfToken, resetCsrfCookie } from '~/lib/http'
+
 export interface DocumentPreview {
   blobUrl: string | null
   type: 'word' | 'pdf'
@@ -11,8 +13,17 @@ export interface DocumentPreview {
  * generated in the browser via pdfmake so no server-side PDF converter
  * (e.g. LibreOffice) is required — this keeps the app deployable to
  * serverless hosts like Laravel Cloud.
+ *
+ * Drafts produced from an uploaded .docx template are exempt: they are always
+ * exported server-side, where the original template file is filled and
+ * converted (Word and PDF), so the exported file keeps the template's logo
+ * and formatting.
  */
 export function useDocumentExport() {
+  const {
+    public: { apiBase },
+  } = useRuntimeConfig()
+
   const previewDoc = ref<DocumentPreview | null>(null)
 
   // Width of the desktop preview panel. Draggable via the panel's left-edge
@@ -46,11 +57,15 @@ export function useDocumentExport() {
     window.addEventListener('pointerup', onUp, { once: true })
   }
 
-  async function openExport(content: string, type: 'word' | 'pdf', title: string) {
+  async function openExport(content: string, type: 'word' | 'pdf', title: string, messageId?: string) {
     previewDoc.value = { blobUrl: null, type, title, loading: true, error: '' }
 
     try {
-      const blob = type === 'pdf' ? await buildPdfLocally(content, title) : await buildWordFromServer(content, title)
+      const blob = messageId
+        ? await buildFromMessage(messageId, type)
+        : type === 'pdf'
+          ? await buildPdfLocally(content, title)
+          : await buildWordFromServer(content, title)
 
       if (previewDoc.value?.blobUrl) {
         URL.revokeObjectURL(previewDoc.value.blobUrl)
@@ -69,8 +84,12 @@ export function useDocumentExport() {
     previewDoc.value = null
   }
 
-  async function downloadExport(content: string, type: 'word' | 'pdf', title: string) {
-    const blob = type === 'pdf' ? await buildPdfLocally(content, title) : await buildWordFromServer(content, title)
+  async function downloadExport(content: string, type: 'word' | 'pdf', title: string, messageId?: string) {
+    const blob = messageId
+      ? await buildFromMessage(messageId, type)
+      : type === 'pdf'
+        ? await buildPdfLocally(content, title)
+        : await buildWordFromServer(content, title)
     const url = URL.createObjectURL(blob)
 
     const link = document.createElement('a')
@@ -91,6 +110,39 @@ export function useDocumentExport() {
     closePreview,
     downloadExport,
   }
+}
+
+async function buildFromMessage(messageId: string, type: 'word' | 'pdf'): Promise<Blob> {
+  const {
+    public: { apiBase },
+  } = useRuntimeConfig()
+
+  await ensureCsrfCookie(apiBase)
+
+  const request = () =>
+    fetch(`${apiBase}/api/messages/${messageId}/export/${type}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/octet-stream',
+        ...(getXsrfToken() ? { 'X-XSRF-TOKEN': getXsrfToken() as string } : {}),
+      },
+    })
+
+  let response = await request()
+
+  if (response.status === 419) {
+    resetCsrfCookie()
+    await ensureCsrfCookie(apiBase)
+    response = await request()
+  }
+
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => null)
+    throw new Error(errBody?.message ?? `Export failed (HTTP ${response.status})`)
+  }
+
+  return response.blob()
 }
 
 async function buildWordFromServer(content: string, title: string): Promise<Blob> {

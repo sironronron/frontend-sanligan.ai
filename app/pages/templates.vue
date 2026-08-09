@@ -11,7 +11,7 @@ import {
 } from '@lucide/vue'
 
 definePageMeta({
-  middleware: ['auth', 'subscription'],
+  middleware: ['auth', 'organization', 'subscription'],
 })
 
 interface Template {
@@ -106,11 +106,7 @@ const selectedFileExt = computed(() => {
 
 const binaryFile = computed(() => selectedFileExt.value === '.pdf' || selectedFileExt.value === '.docx')
 
-async function onFileSelected(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
+async function handleFile(file: File) {
   fileError.value = ''
 
   const dot = file.name.lastIndexOf('.')
@@ -134,6 +130,26 @@ async function onFileSelected(event: Event) {
     }
   } else {
     form.content = ''
+  }
+}
+
+async function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  await handleFile(file)
+}
+
+const fileDrop = useFileDrop(['.pdf', '.docx', '.txt', '.md', '.markdown'])
+
+function onFilesDropped(event: DragEvent) {
+  const rejected = fileDrop.onDrop(event, (files) => {
+    void handleFile(files[0])
+  })
+
+  if (rejected.length > 0) {
+    fileError.value = `"${rejected[0].name}" is not a supported file type. Use PDF, DOCX, TXT, or MD.`
   }
 }
 
@@ -238,9 +254,14 @@ onMounted(loadTemplates)
 
           <div>
             <div
-              class="flex items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center text-xs text-muted-foreground"
+              class="flex items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center text-xs text-muted-foreground transition-colors"
+              :class="fileDrop.dragging.value ? 'border-primary bg-primary/5' : ''"
               @click="fileInput?.click()"
               @keydown.enter="fileInput?.click()"
+              @dragenter="fileDrop.onDragEnter"
+              @dragover="fileDrop.onDragOver"
+              @dragleave="fileDrop.onDragLeave"
+              @drop="onFilesDropped"
               role="button"
               tabindex="0"
             >

@@ -5,6 +5,9 @@ export interface User {
   name: string
   email: string
   is_admin: boolean
+  organization_id: string | null
+  org_role: 'owner' | 'admin' | 'member' | null
+  org_status: 'active' | 'invited' | 'suspended' | null
   created_at: string
 }
 
@@ -14,6 +17,13 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const initialized = ref(false)
   const busy = ref(false)
+
+  const hasOrganization = computed(() => user.value?.organization_id != null)
+
+  function homePath() {
+    if (!hasOrganization.value) return '/organization/setup'
+    return '/chat'
+  }
 
   async function fetchUser() {
     try {
@@ -52,6 +62,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function createOrganization(name: string) {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: User }>('/organizations', {
+        method: 'POST',
+        body: { name },
+      })
+      user.value = data
+      return data
+    } finally {
+      busy.value = false
+    }
+  }
+
   async function logout() {
     try {
       await api('/logout', { method: 'POST' })
@@ -78,9 +102,12 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     initialized,
     busy,
+    hasOrganization,
+    homePath,
     fetchUser,
     login,
     register,
+    createOrganization,
     logout,
     sendPasswordResetLink,
     resetPassword,

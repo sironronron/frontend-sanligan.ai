@@ -23,7 +23,7 @@ import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
 import ChatConversationList from '~/components/chat/ChatConversationList.vue'
 
 definePageMeta({
-  middleware: ['auth', 'subscription'],
+  middleware: ['auth', 'organization', 'subscription'],
 })
 
 interface Source {
@@ -51,6 +51,7 @@ interface Message {
   provider?: string | null
   sources: Source[]
   feedback?: string | null
+  template_id?: string | null
   created_at: string
 }
 
@@ -413,7 +414,7 @@ function handleMarkdownClick(event: MouseEvent, msg: Message) {
     event.preventDefault()
     const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
     const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-    void openExport(msg.content, type, title)
+    void openExport(msg.content, type, title, msg.template_id ?? undefined)
   }
 }
 
@@ -449,7 +450,7 @@ async function rateMessage(m: Message, feedback: 'up' | 'down') {
 
 function handleExport(m: Message, type: 'word' | 'pdf') {
   const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-  void openExport(m.content, type, title)
+  void openExport(m.content, type, title, m.template_id ?? undefined)
 }
 
 async function send(questionOverride?: string | Event) {
@@ -628,11 +629,16 @@ watch(messages, async () => {
 watch(activeId, async (id) => {
   if (id) {
     await todoStore.fetchTodos(id)
-    showTodos.value = todoStore.todos.length > 0
+    showTodos.value = todoStore.todos.filter((t) => t.conversation_id === id).length > 0
   } else {
-    todoStore.todos = []
     showTodos.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  stopTypewriter()
+  streamController.value?.abort()
+  streamController.value = null
 })
 </script>
 
@@ -677,8 +683,8 @@ watch(activeId, async (id) => {
             >
               <ListChecksIcon class="size-4" />
               <span>{{ showTodos ? 'Hide tasks' : 'Tasks' }}</span>
-              <Badge v-if="todoStore.todos.length > 0" variant="secondary" class="px-1.5 text-[10px]">
-                {{ todoStore.todos.length }}
+              <Badge v-if="activeId && todoStore.todos.some((t) => t.conversation_id === activeId)" variant="secondary" class="px-1.5 text-[10px]">
+                {{ todoStore.todos.filter((t) => t.conversation_id === activeId).length }}
               </Badge>
             </Button>
           </div>

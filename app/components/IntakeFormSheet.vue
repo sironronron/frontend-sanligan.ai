@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ClipboardListIcon, XIcon } from '@lucide/vue'
+import { ClipboardListIcon, Loader2Icon, XIcon } from '@lucide/vue'
 
 export interface IntakeField {
   key: string
@@ -16,10 +16,20 @@ interface FieldGroup {
   fields: IntakeField[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   fields: IntakeField[]
   initialValues?: Record<string, string>
-}>()
+  title?: string
+  description?: string
+  submitLabel?: string
+  busy?: boolean
+}>(), {
+  initialValues: () => ({}),
+  title: 'Information Needed',
+  description: 'Please provide the following information so I can draft your document accurately.',
+  submitLabel: 'Submit',
+  busy: false,
+})
 
 const emit = defineEmits<{
   submit: [data: Record<string, string>]
@@ -151,7 +161,7 @@ function handleSubmit() {
         <div class="flex items-center justify-between border-b px-4 py-3">
           <div class="flex items-center gap-2">
             <ClipboardListIcon class="size-4 text-primary" />
-            <h3 class="text-sm font-semibold">Information Needed</h3>
+            <h3 class="text-sm font-semibold">{{ props.title }}</h3>
           </div>
           <Button variant="ghost" size="icon" class="size-7" @click="emit('cancel')">
             <XIcon class="size-4" />
@@ -160,7 +170,7 @@ function handleSubmit() {
 
         <form class="flex-1 overflow-y-auto px-4 pb-2 pt-3 space-y-4" @submit.prevent="handleSubmit">
           <p class="text-xs text-muted-foreground">
-            Please provide the following information so I can draft your document accurately.
+            {{ props.description }}
           </p>
 
           <div v-for="group in fieldGroups" :key="group.section ?? ''" class="space-y-4">
@@ -259,8 +269,9 @@ function handleSubmit() {
             <Button type="button" variant="outline" class="flex-1" @click="emit('cancel')">
               Cancel
             </Button>
-            <Button type="submit" class="flex-1">
-              Submit
+            <Button type="submit" class="flex-1" :disabled="props.busy">
+              <Loader2Icon v-if="props.busy" class="size-4 animate-spin" />
+              {{ props.busy ? 'Working…' : props.submitLabel }}
             </Button>
           </div>
         </form>

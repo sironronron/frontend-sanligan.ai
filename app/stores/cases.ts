@@ -45,6 +45,7 @@ export interface LegalCase {
     content: string
     provider?: string | null
     sources: unknown[]
+    template_id?: string | null
     created_at: string
   }>
   tasks?: Array<{

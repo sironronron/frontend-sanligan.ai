@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
-import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon, LinkIcon } from '@lucide/vue'
+import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon, LinkIcon, EyeIcon, DownloadIcon } from '@lucide/vue'
 import { useCaseStore } from '~/stores/cases'
 import { upgradeMessage } from '~/stores/billing'
+import DocumentViewer from '~/components/DocumentViewer.vue'
 
 definePageMeta({
-  middleware: ['auth', 'subscription'],
+  middleware: ['auth', 'organization', 'subscription'],
 })
 
 interface Document {
@@ -23,11 +24,13 @@ interface Document {
 const api = useApi()
 const caseStore = useCaseStore()
 const fileDrop = useFileDrop()
+const { fileUrl } = useDocumentFile()
 
 const cases = computed(() => caseStore.cases)
 const attachTarget = ref<Document | null>(null)
 const attachCaseId = ref('')
 const attaching = ref(false)
+const viewing = ref<Document | null>(null)
 
 const documents = ref<Document[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -249,7 +252,8 @@ async function removeDocument(doc: Document) {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl px-4 py-8">
+  <div>
+    <div class="mx-auto w-full max-w-4xl px-4 py-8">
     <div class="mb-6 flex items-center justify-between">
       <div>
         <h1 class="text-xl font-semibold">My documents</h1>
@@ -367,6 +371,22 @@ async function removeDocument(doc: Document) {
             variant="ghost"
             size="icon"
             class="shrink-0 text-muted-foreground hover:text-foreground"
+            @click="viewing = doc"
+          >
+            <EyeIcon class="size-4" />
+            <span class="sr-only">View {{ doc.title }}</span>
+          </Button>
+          <a
+            :href="fileUrl(doc.id, 'attachment')"
+            class="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :aria-label="`Download ${doc.title}`"
+          >
+            <DownloadIcon class="size-4" />
+          </a>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="shrink-0 text-muted-foreground hover:text-foreground"
             :class="{ 'bg-accent text-foreground': attachTarget?.id === doc.id }"
             @click="toggleAttach(doc)"
           >
@@ -407,6 +427,9 @@ async function removeDocument(doc: Document) {
           </p>
         </div>
       </div>
+    </div>
+
+    <DocumentViewer v-if="viewing" :document="viewing" @close="viewing = null" />
     </div>
   </div>
 </template>

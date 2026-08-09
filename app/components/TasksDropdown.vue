@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, CircleIcon, ClockIcon, ListChecksIcon, Loader2Icon } from '@lucide/vue'
+import { CheckIcon, CircleIcon, ClockIcon, Loader2Icon } from '@lucide/vue'
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 const todoStore = useTodoStore()
@@ -41,16 +41,13 @@ onMounted(() => {
 <template>
   <DropdownMenu v-model:open="open">
     <DropdownMenuTrigger
-      class="relative flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      class="flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors hover:bg-muted"
       aria-label="Next steps"
     >
-      <ListChecksIcon class="size-4" />
-      <span
-        v-if="todoStore.todos.length > 0"
-        class="absolute -right-0.5 -top-0.5 rounded-full bg-primary px-1 text-[10px] font-medium leading-4 text-primary-foreground"
-      >
-        {{ pendingTodos.length }}/{{ todoStore.todos.length }}
+      <span class="font-medium tabular-nums text-foreground">
+        {{ completedTodos.length }}/{{ todoStore.todos.length }}
       </span>
+      <span class="text-muted-foreground">Tasks</span>
     </DropdownMenuTrigger>
 
     <DropdownMenuContent align="end" class="w-80">

@@ -17,7 +17,7 @@ async function handleSubmit() {
 
   try {
     await auth.register(name.value, email.value, password.value)
-    await navigateTo('/chat')
+    await navigateTo(auth.homePath())
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Registration failed. Please try again.'
   }

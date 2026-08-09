@@ -8,7 +8,7 @@ import {
 import { useDocumentExport } from '~/composables/useDocumentExport'
 
 definePageMeta({
-  middleware: ['auth', 'subscription'],
+  middleware: ['auth', 'organization', 'subscription'],
 })
 
 interface GeneratedDocument {

@@ -4,7 +4,7 @@ import { toast } from '~/components/ui/sonner'
 import { useBillingStore, isAtLimit, limitPct } from '~/stores/billing'
 
 definePageMeta({
-  middleware: 'auth',
+  middleware: ['auth', 'organization'],
   layout: 'default',
 })
 

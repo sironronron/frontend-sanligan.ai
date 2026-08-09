@@ -10,6 +10,7 @@ export interface TemplateOption {
   structure: string[]
   placeholder_fields: Array<{ key: string; label: string; required: boolean }> | string[]
   is_system: boolean
+  is_docx: boolean
 }
 
 const props = defineProps<{
@@ -155,7 +156,7 @@ function humanizeSubtype(subtype: string | null) {
                     </p>
                   </div>
                   <Badge variant="secondary" class="shrink-0 text-[10px]">
-                    Yours
+                    {{ template.is_docx ? 'DOCX' : 'Yours' }}
                   </Badge>
                 </button>
 

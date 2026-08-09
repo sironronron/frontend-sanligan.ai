@@ -6,6 +6,6 @@ export default defineNuxtRouteMiddleware(async () => {
   }
 
   if (auth.user) {
-    return navigateTo('/chat')
+    return navigateTo(auth.homePath())
   }
 })

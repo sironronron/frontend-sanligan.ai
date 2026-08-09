@@ -12,7 +12,6 @@ const navItems = computed(() => [
   { to: '/documents', label: 'Documents' },
   { to: '/generated-documents', label: 'Generated' },
   { to: '/templates', label: 'Templates' },
-  { to: '/todos', label: 'Tasks' },
   ...(auth.user?.is_admin ? [{ to: '/admin/legal-sources', label: 'Admin' }] : []),
 ])
 
@@ -89,6 +88,12 @@ onMounted(() => {
                 <span class="text-muted-foreground text-xs">{{ auth.user?.email }}</span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem v-if="!auth.hasOrganization" @click="navigateTo('/organization/setup')">
+                Set up organization
+              </DropdownMenuItem>
+              <DropdownMenuItem v-if="auth.hasOrganization" @click="navigateTo('/settings/organization')">
+                Manage organization
+              </DropdownMenuItem>
               <DropdownMenuItem @click="navigateTo('/settings/billing')">
                 Billing
               </DropdownMenuItem>

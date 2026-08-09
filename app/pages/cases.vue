@@ -6,7 +6,7 @@ import { upgradeMessage } from '~/stores/billing'
 import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
 
 definePageMeta({
-  middleware: ['auth', 'subscription'],
+  middleware: ['auth', 'organization', 'subscription'],
 })
 
 const caseStore = useCaseStore()

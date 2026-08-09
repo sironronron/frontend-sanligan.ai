@@ -15,12 +15,14 @@ import {
   FileIcon,
   FileUpIcon,
   BookOpenIcon,
+  EyeIcon,
 } from '@lucide/vue'
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
 import { useCaseStore, type LegalCase, type CaseIntake, type CaseConversation } from '~/stores/cases'
 import { useTodoStore } from '~/stores/todos'
 import { upgradeMessage } from '~/stores/billing'
 import { useDocumentExport } from '~/composables/useDocumentExport'
+import DocumentViewer from '~/components/DocumentViewer.vue'
 import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
 import TemplatePicker, { type TemplateOption } from '~/components/TemplatePicker.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
@@ -31,7 +33,7 @@ import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
 
 definePageMeta({
-  middleware: 'auth',
+  middleware: ['auth', 'organization'],
 })
 
 interface Source {
@@ -59,6 +61,7 @@ interface Message {
   provider?: string | null
   sources: Source[]
   feedback?: string | null
+  template_id?: string | null
   created_at: string
 }
 
@@ -72,6 +75,7 @@ const {
 const caseStore = useCaseStore()
 const todoStore = useTodoStore()
 const { downloadExport } = useDocumentExport()
+const { fileUrl } = useDocumentFile()
 
 const caseDetail = ref<LegalCase | null>(null)
 const loading = ref(true)
@@ -137,6 +141,7 @@ const uploadingDocument = ref(false)
 const caseFileInput = ref<HTMLInputElement | null>(null)
 const documentsError = ref('')
 const caseFileDrop = useFileDrop()
+const viewingDocument = ref<CaseDocument | null>(null)
 let documentPollTimer: ReturnType<typeof setInterval> | null = null
 
 interface GeneratedDocument {
@@ -792,7 +797,7 @@ async function handleMarkdownClick(event: MouseEvent, msg: Message) {
   event.preventDefault()
   const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
   const title = caseDetail.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-  void openExport(msg.content, type, title)
+  void openExport(msg.content, type, title, msg.template_id ?? undefined)
 }
 
 async function rateMessage(m: Message, feedback: 'up' | 'down') {
@@ -826,7 +831,7 @@ function retryLast() {
 
 function handleExport(m: Message, type: 'word' | 'pdf') {
   const title = caseDetail.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-  void openExport(m.content, type, title)
+  void openExport(m.content, type, title, m.template_id ?? undefined)
 }
 
 function openEdit() {
@@ -868,6 +873,7 @@ function handleEditCancel() {
 async function draftLetter(template: TemplateOption) {
   pickerOpen.value = false
   await nextTick()
+
   const instruction = `[Template: ${template.id}]\nPlease draft a letter following the "${template.name}" template using the facts in this case. Include a clear "Next Steps" section listing what the client should do next.`
   void send(instruction)
 }
@@ -913,6 +919,9 @@ onBeforeUnmount(() => {
     clearInterval(documentPollTimer)
     documentPollTimer = null
   }
+  stopTypewriter()
+  streamController.value?.abort()
+  streamController.value = null
 })
 
 watch(
@@ -1111,6 +1120,22 @@ watch(
               <Button
                 variant="ghost"
                 size="icon"
+                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                :aria-label="`View ${doc.title}`"
+                @click="viewingDocument = doc"
+              >
+                <EyeIcon class="size-3.5" />
+              </Button>
+              <a
+                :href="fileUrl(doc.id, 'attachment')"
+                class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                :aria-label="`Download ${doc.title}`"
+              >
+                <DownloadIcon class="size-3.5" />
+              </a>
+              <Button
+                variant="ghost"
+                size="icon"
                 class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
                 :aria-label="`Delete ${doc.title}`"
                 @click="removeCaseDocument(doc)"
@@ -1208,8 +1233,8 @@ watch(
               >
                 <ListChecksIcon class="size-4" />
                 <span>{{ showTasks ? 'Hide tasks' : 'Tasks' }}</span>
-                <Badge v-if="todoStore.todos.length > 0" variant="secondary" class="px-1.5 text-[10px]">
-                  {{ todoStore.todos.filter((t) => t.status !== 'completed').length }}
+                <Badge v-if="conversationId && todoStore.todos.some((t) => t.conversation_id === conversationId)" variant="secondary" class="px-1.5 text-[10px]">
+                  {{ todoStore.todos.filter((t) => t.conversation_id === conversationId && t.status !== 'completed').length }}
                 </Badge>
               </Button>
               <Button v-if="!caseDetail.archived_at" variant="ghost" size="sm" class="gap-1.5 text-xs text-muted-foreground" @click="archiveCase">
@@ -1398,6 +1423,8 @@ watch(
     </aside>
 
     <TaskPanel v-if="showTasks && conversationId" :conversation-id="conversationId" />
+
+    <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
 
     <CitationPanel
       v-if="hasCitations && showCitations"

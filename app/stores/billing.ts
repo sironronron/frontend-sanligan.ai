@@ -112,8 +112,8 @@ export const useBillingStore = defineStore('billing', () => {
   async function changePlan(planId: string) {
     busy.value = true
     try {
-      const { data } = await api<{ data: Subscription }>('/subscription/plan', {
-        method: 'PATCH',
+      const { data } = await api<{ data: Subscription }>('/subscription/change-plan', {
+        method: 'POST',
         body: { plan_id: planId },
       })
       subscription.value = data

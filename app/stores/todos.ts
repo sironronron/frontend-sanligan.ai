@@ -30,9 +30,14 @@ export const useTodoStore = defineStore('todos', () => {
       }
       const query = params.toString() ? `?${params.toString()}` : ''
       const { data } = await api<{ data: Todo[] }>(`/todos${query}`)
-      todos.value = data
+      if (conversationId) {
+        const others = todos.value.filter((t) => t.conversation_id !== conversationId)
+        todos.value = [...others, ...data]
+      } else {
+        todos.value = data
+      }
     } catch {
-      todos.value = []
+      if (!conversationId) todos.value = []
     } finally {
       loading.value = false
     }

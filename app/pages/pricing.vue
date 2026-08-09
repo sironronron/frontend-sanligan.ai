@@ -123,6 +123,15 @@ onMounted(async () => {
 <template>
   <div class="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
     <template v-if="!selectedPlan">
+      <div v-if="auth.user && hasActiveSubscription" class="mb-6 flex justify-center">
+        <NuxtLink
+          to="/chat"
+          class="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          <ArrowLeftIcon class="size-4" />
+          Back to app
+        </NuxtLink>
+      </div>
       <div class="mb-10 text-center">
         <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Simple pricing for your practice</h1>
         <p class="mx-auto mt-3 max-w-xl text-muted-foreground">
