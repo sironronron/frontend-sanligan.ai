@@ -178,3 +178,16 @@ body {
     opacity: 0;
   }
 }
+
+.saligan-search-mark {
+  background-color: #f9d29b;
+  color: #5e3122;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.dark .saligan-search-mark {
+  background-color: #b98a3e;
+  color: #f2e4d8;
+}
+

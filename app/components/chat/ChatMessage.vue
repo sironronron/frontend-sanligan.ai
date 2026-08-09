@@ -11,6 +11,7 @@ import {
   ThumbsUpIcon,
 } from '@lucide/vue'
 import { renderMarkdown } from '~/utils/markdown'
+import { vHighlight } from '~/directives/highlight'
 import ActivityTimeline from '~/components/ActivityTimeline.vue'
 import CitedText from '~/components/CitedText.vue'
 import type { ChatActivityStep, ChatMessage, ChatSource } from '~/types/chat'
@@ -22,6 +23,8 @@ const props = defineProps<{
   statusLabel: string | null
   activitySteps: ChatActivityStep[]
   awaitingIntake: boolean
+  searchQuery?: string
+  activeSearchId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -111,10 +114,26 @@ const showThinking = computed(
 function canExport(m: ChatMessage): boolean {
   return m.content.trim().includes('/export/')
 }
+
+const searchQuery = computed(() => props.searchQuery?.trim().toLowerCase() ?? '')
+const matchesSearch = computed(
+  () => searchQuery.value !== '' && props.message.content.toLowerCase().includes(searchQuery.value),
+)
+const isActiveSearch = computed(
+  () => matchesSearch.value && props.activeSearchId === props.message.id,
+)
 </script>
 
 <template>
-  <div class="group flex items-start gap-3" :class="message.role === 'user' ? 'flex-row-reverse' : ''">
+  <div
+    class="group flex items-start gap-3 transition-all"
+    :class="[
+      message.role === 'user' ? 'flex-row-reverse' : '',
+      matchesSearch ? 'rounded-xl ring-1 ring-primary/40' : '',
+      isActiveSearch ? 'bg-primary/10 ring-2 ring-primary' : '',
+      searchQuery !== '' && !matchesSearch ? 'opacity-40' : '',
+    ]"
+  >
     <div
       v-if="message.role === 'user'"
       class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground"
@@ -148,13 +167,13 @@ function canExport(m: ChatMessage): boolean {
               <dl class="mt-2.5 space-y-2">
                 <div v-for="pair in intakePairs(message.content)" :key="pair.key">
                   <dt class="text-[10px] uppercase tracking-wide text-muted-foreground/80">{{ pair.label }}</dt>
-                  <dd class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ pair.value || '—' }}</dd>
+                  <dd v-highlight="searchQuery" class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ pair.value || '—' }}</dd>
                 </div>
               </dl>
             </div>
           </template>
           <template v-else>
-            <div class="whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
+            <div v-highlight="searchQuery" class="whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
               {{ message.content }}
             </div>
           </template>
@@ -163,6 +182,7 @@ function canExport(m: ChatMessage): boolean {
         <!-- Assistant -->
         <template v-else>
           <div
+            v-highlight="searchQuery"
             class="break-words text-[0.95rem] leading-7"
             v-html="renderMarkdown(displayContent)"
             @click="emit('markdown-click', $event, message)"

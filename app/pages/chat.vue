@@ -9,6 +9,8 @@ import {
   DownloadIcon,
   ListChecksIcon,
   BookOpenIcon,
+  SearchIcon,
+  PanelLeftIcon,
 } from '@lucide/vue'
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
 import { useTodoStore } from '~/stores/todos'
@@ -21,6 +23,8 @@ import ChatThread from '~/components/chat/ChatThread.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
 import ChatConversationList from '~/components/chat/ChatConversationList.vue'
+import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
+import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
 
 definePageMeta({
   middleware: ['auth', 'organization', 'subscription'],
@@ -89,6 +93,13 @@ const showCitations = ref(true)
 const activeCitation = ref<{ kind: string; index: number } | null>(null)
 const ratingBusy = ref<string | null>(null)
 
+const searchOpen = ref(false)
+const searchQuery = ref('')
+const searchActiveId = ref<string | null>(null)
+const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
+
+const mobileConversations = ref(false)
+
 const activeAssistantMessage = computed<Message | null>(() => {
   for (let i = messages.value.length - 1; i >= 0; i--) {
     const m = messages.value[i]
@@ -119,6 +130,9 @@ const statusLabels: Record<string, string> = {
   searching_web: 'Searching the web',
   composing: 'Composing response',
   collecting_facts: 'Collecting the facts I need',
+  gathering_facts: 'Gathering the facts needed for your document',
+  drafting_document: 'Drafting your document',
+  preparing_next_steps: 'Preparing your next-steps checklist',
 }
 
 interface ActivityStep {
@@ -249,7 +263,7 @@ function handleFrame(frame: string, target: Message) {
       awaitingIntake.value = true
       markStepActive('collecting_facts', 'Collecting the facts I need')
     } else {
-      markStepActive(payload.status, statusLabels[payload.status] ?? payload.status)
+      markStepActive(payload.status, currentStatusLabel.value ?? statusLabels[payload.status] ?? payload.status)
     }
   } else if (event === 'delta' && typeof payload.delta === 'string') {
     target.content += payload.delta
@@ -353,42 +367,8 @@ function abandonIntake() {
   intakeDismissed.value = false
 }
 
-const displayedLengths = ref<Record<string, number>>({})
-let typewriterInterval: ReturnType<typeof setInterval> | null = null
-
-function startTypewriter() {
-  if (typewriterInterval) return
-  typewriterInterval = setInterval(() => {
-    for (const msg of messages.value) {
-      if (msg.role === 'assistant' && msg.content.length > 0) {
-        const current = displayedLengths.value[msg.id] ?? 0
-        if (current < msg.content.length) {
-          displayedLengths.value[msg.id] = Math.min(current + 2, msg.content.length)
-        }
-      }
-    }
-  }, 20)
-}
-
-function stopTypewriter() {
-  if (typewriterInterval) {
-    clearInterval(typewriterInterval)
-    typewriterInterval = null
-  }
-  for (const msg of messages.value) {
-    if (msg.role === 'assistant') {
-      displayedLengths.value[msg.id] = msg.content.length
-    }
-  }
-}
-
 function getDisplayedContent(msg: Message): string {
-  if (msg.role !== 'assistant') return msg.content
-  const isStreaming = streaming.value && msg.id === messages.value[messages.value.length - 1]?.id
-  if (!isStreaming) return msg.content
-  const len = displayedLengths.value[msg.id]
-  if (len === undefined) return msg.content
-  return msg.content.slice(0, len)
+  return msg.content
 }
 
 const statusLabel = computed(() => {
@@ -497,7 +477,6 @@ async function send(questionOverride?: string | Event) {
     })
     messages.value.push(assistant)
     streaming.value = true
-    startTypewriter()
 
     await nextTick()
     scrollToBottom()
@@ -565,7 +544,6 @@ async function send(questionOverride?: string | Event) {
       streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
     }
   } finally {
-    stopTypewriter()
     streamController.value = null
     currentStatus.value = null
     currentStatusLabel.value = null
@@ -587,6 +565,33 @@ function scrollToBottom() {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
 }
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (!searchOpen.value) {
+    searchQuery.value = ''
+    searchActiveId.value = null
+  } else {
+    nextTick(() => searchBarRef.value?.focusInput())
+  }
+}
+
+function searchNavigate(messageId: string) {
+  searchActiveId.value = messageId
+  nextTick(() => {
+    document.getElementById(`msg-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+function onGlobalKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault()
+    toggleSearch()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 function stopStreaming() {
   streamController.value?.abort()
@@ -636,7 +641,6 @@ watch(activeId, async (id) => {
 })
 
 onBeforeUnmount(() => {
-  stopTypewriter()
   streamController.value?.abort()
   streamController.value = null
 })
@@ -645,6 +649,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
     <ChatConversationList
+      class="hidden md:flex"
       :conversations="conversations"
       :active-id="activeId"
       :busy="busy"
@@ -654,21 +659,42 @@ onBeforeUnmount(() => {
     />
 
     <section class="flex min-w-0 flex-1 flex-col">
-      <div class="flex items-center justify-between border-b px-4 py-2.5">
-          <span class="text-xs text-muted-foreground">
-            {{ sending ? 'Creating…' : streaming ? (statusLabel ?? 'Responding…') : (activeConversation ? 'Ready' : 'New conversation') }}
-          </span>
-          <div class="flex items-center gap-1.5">
+      <div class="flex items-center justify-between border-b px-2 py-2.5 sm:px-4">
+          <div class="flex min-w-0 items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="shrink-0 md:hidden"
+              aria-label="Conversations"
+              @click="mobileConversations = true"
+            >
+              <PanelLeftIcon class="size-4" />
+            </Button>
+            <span class="min-w-0 truncate text-xs text-muted-foreground">
+              {{ sending ? 'Creating…' : streaming ? (statusLabel ?? 'Responding…') : (activeConversation ? 'Ready' : 'New conversation') }}
+            </span>
+          </div>
+          <div class="flex shrink-0 items-center gap-1 sm:gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              class="gap-1.5 px-2 text-xs sm:px-3"
+              :class="{ 'text-primary': searchOpen }"
+              @click="toggleSearch"
+            >
+              <SearchIcon class="size-4" />
+              <span class="hidden sm:inline">{{ searchOpen ? 'Close search' : 'Search' }}</span>
+            </Button>
             <Button
               v-if="activeAssistantMessage"
               variant="ghost"
               size="sm"
-              class="gap-1.5 text-xs"
+              class="gap-1.5 px-2 text-xs sm:px-3"
               :class="{ 'text-primary': showCitations }"
               @click="showCitations = !showCitations"
             >
               <BookOpenIcon class="size-4" />
-              <span>{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
+              <span class="hidden sm:inline">{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
               <Badge v-if="activeAssistantMessage.sources.length > 0" variant="secondary" class="px-1.5 text-[10px]">
                 {{ activeAssistantMessage.sources.length }}
               </Badge>
@@ -677,12 +703,12 @@ onBeforeUnmount(() => {
               v-if="activeConversation"
               variant="ghost"
               size="sm"
-              class="gap-1.5 text-xs"
+              class="gap-1.5 px-2 text-xs sm:px-3"
               :class="{ 'text-primary': showTodos }"
               @click="showTodos = !showTodos"
             >
               <ListChecksIcon class="size-4" />
-              <span>{{ showTodos ? 'Hide tasks' : 'Tasks' }}</span>
+              <span class="hidden sm:inline">{{ showTodos ? 'Hide tasks' : 'Tasks' }}</span>
               <Badge v-if="activeId && todoStore.todos.some((t) => t.conversation_id === activeId)" variant="secondary" class="px-1.5 text-[10px]">
                 {{ todoStore.todos.filter((t) => t.conversation_id === activeId).length }}
               </Badge>
@@ -690,13 +716,14 @@ onBeforeUnmount(() => {
           </div>
       </div>
 
-      <div ref="messagesContainer" class="flex-1 overflow-y-auto">
-        <ChatEmptyState
-          v-if="messages.length === 0"
-          title="Research Philippine law with Batayan"
-          description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
-          eyebrow="Batayan AI"
-        >
+      <div class="relative min-h-0 flex-1">
+        <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto">
+          <ChatEmptyState
+            v-if="messages.length === 0"
+            title="Research Philippine law with Batayan"
+            description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
+            eyebrow="Batayan AI"
+          >
           <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'What is the scope of the Comprehensive Agrarian Reform Program?'">
             <SparklesIcon class="size-4 text-primary" />
             <span class="truncate text-xs">Agrarian reform scope</span>
@@ -725,12 +752,27 @@ onBeforeUnmount(() => {
           :busy="busy"
           :stream-error="streamError"
           :display-content="getDisplayedContent"
+          :search-query="searchQuery"
+          :active-search-id="searchActiveId"
           @markdown-click="handleMarkdownClick"
           @rate="rateMessage"
           @export="handleExport"
           @retry="retryLast"
           @abandon-intake="abandonIntake"
           @reopen-intake="reopenIntake"
+        />
+        </div>
+
+        <ChatScrollToBottom :container="messagesContainer" />
+      </div>
+
+      <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
+        <ChatSearchBar
+          ref="searchBarRef"
+          :messages="messages"
+          @query="searchQuery = $event"
+          @navigate="searchNavigate"
+          @close="toggleSearch"
         />
       </div>
 
@@ -746,7 +788,11 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <TaskPanel v-if="showTodos && activeId" :conversation-id="activeId" />
+    <TaskPanel
+      v-if="showTodos && activeId"
+      :conversation-id="activeId"
+      @close="showTodos = false"
+    />
 
     <CitationPanel
       v-if="hasCitations && showCitations"
@@ -871,5 +917,30 @@ onBeforeUnmount(() => {
       @submit="handleIntakeSubmit"
       @cancel="handleIntakeCancel"
     />
+
+    <Teleport to="body">
+      <div v-if="mobileConversations" class="fixed inset-0 z-50 md:hidden">
+        <div class="absolute inset-0 bg-black/60" @click="mobileConversations = false" />
+        <div class="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-background shadow-xl">
+          <div class="flex h-12 shrink-0 items-center justify-between border-b px-3">
+            <span class="text-sm font-semibold">Conversations</span>
+            <Button variant="ghost" size="icon" class="size-8" aria-label="Close conversations" @click="mobileConversations = false">
+              <XIcon class="size-4" />
+            </Button>
+          </div>
+          <div class="min-h-0 flex-1">
+            <ChatConversationList
+              class="h-full w-full border-r-0"
+              :conversations="conversations"
+              :active-id="activeId"
+              :busy="busy"
+              @new="startNewChat"
+              @select="(id: string) => { switchConversation(id); mobileConversations = false }"
+              @delete="deleteConversation"
+            />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MoonIcon, SunIcon } from '@lucide/vue'
+import { MenuIcon, MoonIcon, SunIcon } from '@lucide/vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -43,13 +43,29 @@ onMounted(() => {
 <template>
   <div class="flex min-h-dvh flex-col bg-background text-foreground">
     <header v-if="auth.user" class="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-      <div class="flex h-14 w-full max-w-full items-center gap-6 px-4">
+      <div class="flex h-14 w-full max-w-full items-center gap-2 px-4 sm:gap-6">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            class="flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
+            aria-label="Open navigation menu"
+          >
+            <MenuIcon class="size-5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-52 md:hidden">
+            <DropdownMenuItem v-for="item in navItems" :key="item.to" @select="navigateTo(item.to)">
+              <span :class="isActive(item.to) ? 'font-medium text-foreground' : 'text-muted-foreground'">
+                {{ item.label }}
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <NuxtLink to="/chat" class="flex shrink-0 items-center gap-2 font-heading font-semibold tracking-tight">
           <span class="size-2.5 rounded-full bg-primary" />
           Batayan
         </NuxtLink>
 
-        <nav class="flex items-center gap-1 text-sm">
+        <nav class="hidden items-center gap-1 text-sm md:flex">
           <NuxtLink
             v-for="item in navItems"
             :key="item.to"
@@ -70,7 +86,7 @@ onMounted(() => {
           >
             <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
           </button>
-          <TasksDropdown />
+          <TasksDropdown class="hidden md:block" />
           <DropdownMenu>
             <DropdownMenuTrigger
               class="flex items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted"

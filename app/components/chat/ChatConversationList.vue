@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { MessageSquareIcon, PlusIcon, TrashIcon } from '@lucide/vue'
+import { cn } from '~/lib/utils'
 
 export interface ConversationItem {
   id: string
@@ -8,11 +9,12 @@ export interface ConversationItem {
   updated_at?: string | null
 }
 
-defineProps<{
+const props = withDefaults(defineProps<{
   conversations: ConversationItem[]
   activeId: string | null
   busy?: boolean
-}>()
+  class?: string
+}>(), { class: '' })
 
 defineEmits<{
   new: []
@@ -41,7 +43,7 @@ function timeLabel(conversation: ConversationItem): string {
 </script>
 
 <template>
-  <aside class="flex w-72 shrink-0 flex-col border-r bg-muted/30">
+    <aside :class="cn('flex w-72 shrink-0 flex-col border-r bg-muted/30', props.class)">
     <div class="border-b p-3">
       <Button class="w-full gap-1.5" :disabled="busy" @click="$emit('new')">
         <PlusIcon class="size-4" />
@@ -72,7 +74,7 @@ function timeLabel(conversation: ConversationItem): string {
             </span>
           </button>
           <button
-            class="mr-1 shrink-0 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+            class="mr-1 shrink-0 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
             title="Delete conversation"
             @click="$emit('delete', c.id)"
           >

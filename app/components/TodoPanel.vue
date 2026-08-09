@@ -67,7 +67,7 @@ function priorityBadge(priority: Todo['priority']) {
               </div>
             </div>
             <button
-              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
               @click="todoStore.deleteTodo(todo.id)"
             >
               <TrashIcon class="size-3.5" />

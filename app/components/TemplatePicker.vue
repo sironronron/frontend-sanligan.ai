@@ -83,7 +83,43 @@ function humanizeSubtype(subtype: string | null) {
           </div>
 
           <template v-else>
-            <details class="group mb-4" open>
+            <details v-if="userTemplates.length > 0" class="group mb-4" open>
+              <summary class="flex cursor-pointer select-none items-center justify-between rounded-lg px-1 py-2">
+                <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  My templates
+                </p>
+                <ChevronDownIcon class="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+
+              <div class="space-y-1.5">
+                <button
+                  v-for="template in userTemplates"
+                  :key="template.id"
+                  type="button"
+                  class="flex w-full items-start justify-between gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                  @click="emit('select', template)"
+                >
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium">{{ template.name }}</p>
+                    <p class="mt-0.5 text-[11px] text-muted-foreground">
+                      {{ CATEGORY_LABELS[template.category] }}
+                    </p>
+                  </div>
+                  <Badge variant="secondary" class="shrink-0 text-[10px]">
+                    {{ template.is_docx ? 'DOCX' : 'Yours' }}
+                  </Badge>
+                </button>
+
+                <NuxtLink
+                  to="/templates"
+                  class="mt-1.5 inline-block px-1 text-[11px] font-medium text-primary hover:underline"
+                >
+                  Manage your templates
+                </NuxtLink>
+              </div>
+            </details>
+
+            <details class="group" :open="userTemplates.length === 0">
               <summary class="flex cursor-pointer select-none items-center justify-between rounded-lg px-1 py-2">
                 <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   System templates
@@ -121,51 +157,6 @@ function humanizeSubtype(subtype: string | null) {
                     </Badge>
                   </button>
                 </div>
-              </div>
-            </details>
-
-            <details class="group">
-              <summary class="flex cursor-pointer select-none items-center justify-between rounded-lg px-1 py-2">
-                <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  My templates
-                </p>
-                <ChevronDownIcon class="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
-              </summary>
-
-              <div v-if="userTemplates.length === 0" class="rounded-lg border border-dashed px-3 py-4 text-center">
-                <p class="text-[11px] leading-relaxed text-muted-foreground">
-                  No custom templates yet.
-                </p>
-                <NuxtLink to="/templates" class="mt-1.5 inline-block text-[11px] font-medium text-primary hover:underline">
-                  Upload your own template
-                </NuxtLink>
-              </div>
-
-              <div v-else class="space-y-1.5">
-                <button
-                  v-for="template in userTemplates"
-                  :key="template.id"
-                  type="button"
-                  class="flex w-full items-start justify-between gap-2 rounded-lg border p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
-                  @click="emit('select', template)"
-                >
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium">{{ template.name }}</p>
-                    <p class="mt-0.5 text-[11px] text-muted-foreground">
-                      {{ CATEGORY_LABELS[template.category] }}
-                    </p>
-                  </div>
-                  <Badge variant="secondary" class="shrink-0 text-[10px]">
-                    {{ template.is_docx ? 'DOCX' : 'Yours' }}
-                  </Badge>
-                </button>
-
-                <NuxtLink
-                  to="/templates"
-                  class="mt-1.5 inline-block px-1 text-[11px] font-medium text-primary hover:underline"
-                >
-                  Manage your templates
-                </NuxtLink>
               </div>
             </details>
           </template>

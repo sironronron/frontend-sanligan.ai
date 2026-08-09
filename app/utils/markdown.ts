@@ -117,8 +117,26 @@ function buildTable(rows: string[]): string {
 /**
  * Render chat/assistant markdown into safe HTML. Block-aware so GFM tables
  * and `*` bullet lines are rendered as real tables and list bullets.
+ *
+ * Memoized by input so streaming deltas (which call this on every render) do
+ * not re-parse content that has already been rendered.
  */
+const markdownCache = new Map<string, string>()
+
 export function renderMarkdown(text: string): string {
+  const cached = markdownCache.get(text)
+  if (cached !== undefined) return cached
+
+  const rendered = renderMarkdownInternal(text)
+  markdownCache.set(text, rendered)
+  if (markdownCache.size > 200) {
+    markdownCache.clear()
+  }
+
+  return rendered
+}
+
+function renderMarkdownInternal(text: string): string {
   let html = escapeHtml(text)
   html = removeProtocolMarkers(html)
   html = transformExportLinks(html)

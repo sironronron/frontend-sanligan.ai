@@ -16,6 +16,7 @@ import {
   FileUpIcon,
   BookOpenIcon,
   EyeIcon,
+  SearchIcon,
 } from '@lucide/vue'
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
 import { useCaseStore, type LegalCase, type CaseIntake, type CaseConversation } from '~/stores/cases'
@@ -31,6 +32,8 @@ import IntakeFormSheet, { type IntakeField } from '~/components/IntakeFormSheet.
 import ChatThread from '~/components/chat/ChatThread.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
+import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
+import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
@@ -84,6 +87,7 @@ const editOpen = ref(false)
 const pickerOpen = ref(false)
 const templates = ref<TemplateOption[]>([])
 const showTasks = ref(true)
+const showSummary = ref(true)
 
 const threads = ref<CaseConversation[]>([])
 const activeConversationId = ref<string | null>(null)
@@ -112,6 +116,11 @@ let messageStartIndex = -1
 const showCitations = ref(true)
 const activeCitation = ref<{ kind: string; index: number } | null>(null)
 const ratingBusy = ref<string | null>(null)
+
+const searchOpen = ref(false)
+const searchQuery = ref('')
+const searchActiveId = ref<string | null>(null)
+const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
 
 const activeAssistantMessage = computed<Message | null>(() => {
   for (let i = messages.value.length - 1; i >= 0; i--) {
@@ -320,6 +329,9 @@ const statusLabels: Record<string, string> = {
   searching_web: 'Searching the web',
   composing: 'Composing response',
   collecting_facts: 'Collecting the facts I need',
+  gathering_facts: 'Gathering the facts needed for your document',
+  drafting_document: 'Drafting your document',
+  preparing_next_steps: 'Preparing your next-steps checklist',
 }
 
 interface ActivityStep {
@@ -497,7 +509,7 @@ function handleFrame(frame: string, target: Message) {
       awaitingIntake.value = true
       markStepActive('collecting_facts', 'Collecting the facts I need')
     } else {
-      markStepActive(payload.status, statusLabels[payload.status] ?? payload.status)
+      markStepActive(payload.status, currentStatusLabel.value ?? statusLabels[payload.status] ?? payload.status)
     }
   } else if (event === 'delta' && typeof payload.delta === 'string') {
     target.content += payload.delta
@@ -569,42 +581,8 @@ async function maybeCreateTodosFromText(text: string) {
   }
 }
 
-const displayedLengths = ref<Record<string, number>>({})
-let typewriterInterval: ReturnType<typeof setInterval> | null = null
-
-function startTypewriter() {
-  if (typewriterInterval) return
-  typewriterInterval = setInterval(() => {
-    for (const msg of messages.value) {
-      if (msg.role === 'assistant' && msg.content.length > 0) {
-        const current = displayedLengths.value[msg.id] ?? 0
-        if (current < msg.content.length) {
-          displayedLengths.value[msg.id] = Math.min(current + 2, msg.content.length)
-        }
-      }
-    }
-  }, 20)
-}
-
-function stopTypewriter() {
-  if (typewriterInterval) {
-    clearInterval(typewriterInterval)
-    typewriterInterval = null
-  }
-  for (const msg of messages.value) {
-    if (msg.role === 'assistant') {
-      displayedLengths.value[msg.id] = msg.content.length
-    }
-  }
-}
-
 function getDisplayedContent(msg: Message): string {
-  if (msg.role !== 'assistant') return msg.content
-  const isStreaming = streaming.value && msg.id === messages.value[messages.value.length - 1]?.id
-  if (!isStreaming) return msg.content
-  const len = displayedLengths.value[msg.id]
-  if (len === undefined) return msg.content
-  return msg.content.slice(0, len)
+  return msg.content
 }
 
 async function send(questionOverride?: string | Event) {
@@ -645,7 +623,6 @@ async function send(questionOverride?: string | Event) {
     })
     messages.value.push(assistant)
     streaming.value = true
-    startTypewriter()
 
     await nextTick()
     scrollToBottom()
@@ -711,7 +688,6 @@ async function send(questionOverride?: string | Event) {
       streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
     }
   } finally {
-    stopTypewriter()
     streamController.value = null
     streaming.value = false
     sending.value = false
@@ -738,6 +714,21 @@ function scrollToBottom() {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
+}
+
+function toggleSearch() {
+  searchOpen.value = !searchOpen.value
+  if (!searchOpen.value) {
+    searchQuery.value = ''
+    searchActiveId.value = null
+  }
+}
+
+function searchNavigate(messageId: string) {
+  searchActiveId.value = messageId
+  nextTick(() => {
+    document.getElementById(`msg-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
 }
 
 function stopStreaming() {
@@ -919,7 +910,6 @@ onBeforeUnmount(() => {
     clearInterval(documentPollTimer)
     documentPollTimer = null
   }
-  stopTypewriter()
   streamController.value?.abort()
   streamController.value = null
 })
@@ -1120,7 +1110,7 @@ watch(
               <Button
                 variant="ghost"
                 size="icon"
-                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground max-lg:opacity-100"
                 :aria-label="`View ${doc.title}`"
                 @click="viewingDocument = doc"
               >
@@ -1128,7 +1118,7 @@ watch(
               </Button>
               <a
                 :href="fileUrl(doc.id, 'attachment')"
-                class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground max-lg:opacity-100"
                 :aria-label="`Download ${doc.title}`"
               >
                 <DownloadIcon class="size-3.5" />
@@ -1136,7 +1126,7 @@ watch(
               <Button
                 variant="ghost"
                 size="icon"
-                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive max-lg:opacity-100"
                 :aria-label="`Delete ${doc.title}`"
                 @click="removeCaseDocument(doc)"
               >
@@ -1152,8 +1142,8 @@ watch(
 
     <section
       ref="mainChatEl"
-      class="flex flex-1 flex-col"
-      :style="{ minWidth: `${CHAT_MIN_WIDTH}px` }"
+      class="flex min-w-0 flex-1 flex-col"
+      :class="previewDoc ? 'lg:min-w-[400px]' : ''"
     >
       <template v-if="loading">
         <div class="space-y-3 p-6">
@@ -1200,55 +1190,76 @@ watch(
               </div>
             </div>
 
-            <div class="flex shrink-0 items-center gap-2">
-              <Button v-if="!caseDetail.archived_at" variant="outline" size="sm" class="gap-1.5 text-xs" @click="openEdit">
-                <PencilIcon class="size-3.5" />
-                Edit
+            <div class="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                class="gap-1.5 px-2 text-xs sm:px-3"
+                :class="{ 'text-primary': searchOpen }"
+                @click="toggleSearch"
+              >
+                <SearchIcon class="size-4" />
+                <span class="hidden sm:inline">{{ searchOpen ? 'Close search' : 'Search' }}</span>
               </Button>
-              <Button v-if="!caseDetail.archived_at" size="sm" class="gap-1.5 text-xs" @click="pickerOpen = true">
+              <Button v-if="!caseDetail.archived_at" variant="outline" size="sm" class="gap-1.5 px-2 text-xs sm:px-3" @click="openEdit">
+                <PencilIcon class="size-3.5" />
+                <span class="hidden sm:inline">Edit</span>
+              </Button>
+              <Button v-if="!caseDetail.archived_at" size="sm" class="gap-1.5 px-2 text-xs sm:px-3" @click="pickerOpen = true">
                 <FileTextIcon class="size-3.5" />
-                Draft a letter
+                <span class="hidden sm:inline">Draft a letter</span>
               </Button>
               <Button
                 v-if="activeAssistantMessage"
                 variant="ghost"
                 size="sm"
-                class="gap-1.5 text-xs"
+                class="gap-1.5 px-2 text-xs sm:px-3"
                 :class="{ 'text-primary': showCitations }"
                 @click="showCitations = !showCitations"
               >
                 <BookOpenIcon class="size-4" />
-                <span>{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
+                <span class="hidden sm:inline">{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
                 <Badge v-if="activeAssistantMessage.sources.length > 0" variant="secondary" class="px-1.5 text-[10px]">
                   {{ activeAssistantMessage.sources.length }}
                 </Badge>
               </Button>
               <Button
+                v-if="caseDetail.description"
+                variant="ghost"
+                size="sm"
+                class="gap-1.5 px-2 text-xs sm:px-3"
+                :class="{ 'text-primary': showSummary }"
+                @click="showSummary = !showSummary"
+              >
+                <EyeIcon class="size-4" />
+                <span class="hidden sm:inline">{{ showSummary ? 'Hide summary' : 'Summary' }}</span>
+              </Button>
+              <Button
                 v-if="conversationId"
                 variant="ghost"
                 size="sm"
-                class="gap-1.5 text-xs"
+                class="gap-1.5 px-2 text-xs sm:px-3"
                 :class="{ 'text-primary': showTasks }"
                 @click="showTasks = !showTasks"
               >
                 <ListChecksIcon class="size-4" />
-                <span>{{ showTasks ? 'Hide tasks' : 'Tasks' }}</span>
+                <span class="hidden sm:inline">{{ showTasks ? 'Hide tasks' : 'Tasks' }}</span>
                 <Badge v-if="conversationId && todoStore.todos.some((t) => t.conversation_id === conversationId)" variant="secondary" class="px-1.5 text-[10px]">
                   {{ todoStore.todos.filter((t) => t.conversation_id === conversationId && t.status !== 'completed').length }}
                 </Badge>
               </Button>
-              <Button v-if="!caseDetail.archived_at" variant="ghost" size="sm" class="gap-1.5 text-xs text-muted-foreground" @click="archiveCase">
+              <Button v-if="!caseDetail.archived_at" variant="ghost" size="sm" class="gap-1.5 px-2 text-xs text-muted-foreground sm:px-3" @click="archiveCase">
                 <TrashIcon class="size-3.5" />
-                Archive
+                <span class="hidden sm:inline">Archive</span>
               </Button>
-              <Button v-else variant="ghost" size="sm" class="gap-1.5 text-xs" @click="restoreCase">
+              <Button v-else variant="ghost" size="sm" class="gap-1.5 px-2 text-xs sm:px-3" @click="restoreCase">
                 <PlusIcon class="size-3.5" />
-                Restore
+                <span class="hidden sm:inline">Restore</span>
               </Button>
             </div>
           </div>
 
-          <div v-if="caseDetail.description || caseDetail.related_parties?.length || caseDetail.tags?.length" class="mt-3 border-t pt-3">
+          <div v-if="showSummary && (caseDetail.description || caseDetail.related_parties?.length || caseDetail.tags?.length)" class="mt-3 border-t pt-3">
             <p v-if="caseDetail.description" class="text-xs leading-relaxed text-muted-foreground line-clamp-2">
               {{ caseDetail.description }}
             </p>
@@ -1309,7 +1320,8 @@ watch(
           </div>
         </div>
 
-        <div ref="messagesContainer" class="flex-1 overflow-y-auto">
+        <div class="relative min-h-0 flex-1">
+          <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto">
           <ChatEmptyState
             v-if="messages.length === 0"
             title="Work on this case"
@@ -1340,6 +1352,8 @@ watch(
             :busy="busy"
             :stream-error="streamError"
             :display-content="getDisplayedContent"
+            :search-query="searchQuery"
+            :active-search-id="searchActiveId"
             @markdown-click="handleMarkdownClick"
             @rate="rateMessage"
             @export="handleExport"
@@ -1347,6 +1361,13 @@ watch(
             @abandon-intake="abandonIntake"
             @reopen-intake="reopenIntake"
           />
+          </div>
+
+          <ChatScrollToBottom :container="messagesContainer" />
+        </div>
+
+        <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
+          <ChatSearchBar :messages="messages" @navigate="searchNavigate" @close="toggleSearch" />
         </div>
 
         <div class="border-t p-3">
@@ -1422,7 +1443,11 @@ watch(
       </div>
     </aside>
 
-    <TaskPanel v-if="showTasks && conversationId" :conversation-id="conversationId" />
+    <TaskPanel
+      v-if="showTasks && conversationId"
+      :conversation-id="conversationId"
+      @close="showTasks = false"
+    />
 
     <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
 

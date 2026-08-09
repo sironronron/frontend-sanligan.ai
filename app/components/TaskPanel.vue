@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { CheckIcon, CircleIcon, ClockIcon, GripVerticalIcon, PlusIcon, TrashIcon } from '@lucide/vue'
+import { CheckIcon, CircleIcon, ClockIcon, GripVerticalIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
 import { useTodoStore, type Todo } from '~/stores/todos'
+import { cn } from '~/lib/utils'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   conversationId: string
-}>()
+  class?: string
+}>(), { class: '' })
+
+defineEmits<{ close: [] }>()
 
 const todoStore = useTodoStore()
 
@@ -130,16 +134,28 @@ function formatDueDate(date: string | null) {
 </script>
 
 <template>
-  <aside class="flex max-h-[calc(100dvh-3.5rem)] min-h-0 w-[340px] shrink-0 flex-col overflow-hidden border-l bg-background">
+  <div v-if="true" class="contents">
+    <div class="fixed inset-0 z-30 bg-black/60 lg:hidden" aria-hidden="true" @click="$emit('close')" />
+    <aside
+      :class="cn(
+        'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] w-full min-h-0 flex-col overflow-hidden rounded-t-2xl border bg-background shadow-2xl lg:static lg:z-auto lg:h-auto lg:max-h-[calc(100dvh-3.5rem)] lg:w-[340px] lg:shrink-0 lg:rounded-none lg:border-l lg:shadow-none',
+        props.class,
+      )"
+    >
     <div class="flex items-center justify-between border-b px-4 py-2.5">
       <div class="flex items-center gap-2">
         <h3 class="text-sm font-semibold">Tasks</h3>
         <Badge variant="secondary" class="text-[10px]">{{ pendingTasks.length }} open</Badge>
       </div>
-      <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" @click="adding = !adding">
-        <PlusIcon class="size-3.5" />
-        Add
-      </Button>
+      <div class="flex items-center gap-1">
+        <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" @click="adding = !adding">
+          <PlusIcon class="size-3.5" />
+          Add
+        </Button>
+        <Button variant="ghost" size="icon" class="size-7 lg:hidden" aria-label="Close tasks" @click="$emit('close')">
+          <XIcon class="size-4" />
+        </Button>
+      </div>
     </div>
 
     <ScrollArea class="min-h-0 flex-1">
@@ -232,7 +248,7 @@ function formatDueDate(date: string | null) {
             </div>
 
             <button
-              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
               @click="removeTask(todo)"
             >
               <TrashIcon class="size-3.5" />
@@ -257,7 +273,7 @@ function formatDueDate(date: string | null) {
               {{ todo.title }}
             </button>
             <button
-              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
               @click="removeTask(todo)"
             >
               <TrashIcon class="size-3.5" />
@@ -266,5 +282,6 @@ function formatDueDate(date: string | null) {
         </template>
       </div>
     </ScrollArea>
-  </aside>
+    </aside>
+  </div>
 </template>

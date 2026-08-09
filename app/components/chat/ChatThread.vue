@@ -17,6 +17,8 @@ defineProps<{
   busy: boolean
   streamError: string
   displayContent: (m: ChatMessageType) => string
+  searchQuery?: string
+  activeSearchId?: string | null
 }>()
 
 defineEmits<{
@@ -33,6 +35,7 @@ defineEmits<{
   <div class="mx-auto max-w-3xl space-y-7 px-4 py-6">
     <ChatMessage
       v-for="(m, index) in messages"
+      :id="`msg-${m.id}`"
       :key="m.id"
       :message="m"
       :display-content="displayContent(m)"
@@ -40,6 +43,8 @@ defineEmits<{
       :status-label="statusLabel"
       :activity-steps="activitySteps"
       :awaiting-intake="awaitingIntake"
+      :search-query="searchQuery"
+      :active-search-id="activeSearchId"
       @markdown-click="(event, message) => $emit('markdown-click', event, message)"
       @rate="(message, feedback) => $emit('rate', message, feedback)"
       @export="(message, type) => $emit('export', message, type)"
