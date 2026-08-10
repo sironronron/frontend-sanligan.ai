@@ -113,6 +113,9 @@ onMounted(() => {
               <DropdownMenuItem @click="navigateTo('/settings/billing')">
                 Billing
               </DropdownMenuItem>
+              <DropdownMenuItem @click="navigateTo('/settings/personalization')">
+                Personalization
+              </DropdownMenuItem>
               <DropdownMenuItem @click="handleLogout">
                 Log out
               </DropdownMenuItem>

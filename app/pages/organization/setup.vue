@@ -22,7 +22,8 @@ async function handleSubmit() {
     await auth.createOrganization(name.value)
     const billing = useBillingStore()
     const sub = await billing.fetchSubscription()
-    await navigateTo(auth.user?.is_admin || sub?.status === 'active' ? '/chat' : '/pricing')
+    const next = auth.user?.is_admin || sub?.status === 'active' ? '/chat' : '/pricing'
+    await navigateTo(auth.kycCompleted ? next : `/onboarding?next=${encodeURIComponent(next)}`)
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Could not create your organization. Please try again.'
   }

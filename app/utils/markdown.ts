@@ -37,36 +37,44 @@ function citationKindOf(word: string): CitationKind {
 }
 
 /**
- * Turn inline `[Source N]` / `[User Doc N]` / `[Web N]` markers into clickable
- * badges. The badges carry `data-cite-kind` / `data-cite-index` so the parent
- * page can highlight and scroll the matching card in the citation sidebar.
- * The button is inline-styled because v-html output is not covered by scoped
- * component styles.
+ * Turn inline `[SRC <token>]` / `[DOC <token>]` / `[Source N]` / `[User Doc N]`
+ * / `[Web N]` markers into clickable badges. Token badges carry
+ * `data-cite-kind` / `data-cite-token`, legacy position badges
+ * `data-cite-kind` / `data-cite-index`, so the parent page can highlight and
+ * scroll the matching card in the citation sidebar. The button is
+ * inline-styled because v-html output is not covered by scoped component
+ * styles.
  */
 function transformCitations(text: string): string {
+  const style = [
+    'display:inline-flex',
+    'align-items:center',
+    'justify-content:center',
+    'min-width:1.15em',
+    'height:1.15em',
+    'padding:0 .3em',
+    'font-size:.68em',
+    'font-weight:700',
+    'line-height:1',
+    'border-radius:9999px',
+    'vertical-align:super',
+    'margin:0 .12em',
+    'cursor:pointer',
+    'color:var(--primary)',
+    'background:color-mix(in oklab,var(--primary) 12%,transparent)',
+    'border:1px solid color-mix(in oklab,var(--primary) 35%,transparent)',
+  ].join(';')
+
   return text.replace(
-    /\[(Source|User\s+Doc|Web)\s+(\d+)\]/g,
-    (_match, word: string, index: string) => {
-      const kind = citationKindOf(word)
-      const label = `${word} ${index}`
-      const style = [
-        'display:inline-flex',
-        'align-items:center',
-        'justify-content:center',
-        'min-width:1.15em',
-        'height:1.15em',
-        'padding:0 .3em',
-        'font-size:.68em',
-        'font-weight:700',
-        'line-height:1',
-        'border-radius:9999px',
-        'vertical-align:super',
-        'margin:0 .12em',
-        'cursor:pointer',
-        'color:var(--primary)',
-        'background:color-mix(in oklab,var(--primary) 12%,transparent)',
-        'border:1px solid color-mix(in oklab,var(--primary) 35%,transparent)',
-      ].join(';')
+    /\[(SRC|DOC)\s+([A-Z0-9]+)\]|\[(Source|User\s+Doc|Web)\s+(\d+)\]/gi,
+    (_match, tokenKind: string, token: string, legacyKind: string, index: string) => {
+      if (tokenKind !== undefined) {
+        const kind = tokenKind === 'SRC' ? 'legal' : 'document'
+        return `<button type="button" data-cite-kind="${kind}" data-cite-token="${token}" title="[${tokenKind} ${token}]" style="${style}">${token}</button>`
+      }
+
+      const kind = citationKindOf(legacyKind)
+      const label = `${legacyKind} ${index}`
       return `<button type="button" data-cite-kind="${kind}" data-cite-index="${index}" title="${label}" style="${style}">${index}</button>`
     },
   )

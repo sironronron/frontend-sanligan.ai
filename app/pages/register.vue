@@ -17,7 +17,7 @@ async function handleSubmit() {
 
   try {
     await auth.register(name.value, email.value, password.value)
-    await navigateTo(auth.homePath())
+    await navigateTo(auth.kycCompleted ? auth.homePath() : '/onboarding')
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Registration failed. Please try again.'
   }

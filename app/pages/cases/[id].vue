@@ -114,7 +114,7 @@ const lastQuestion = ref('')
 let messageStartIndex = -1
 
 const showCitations = ref(true)
-const activeCitation = ref<{ kind: string; index: number } | null>(null)
+const activeCitation = ref<{ kind: string; index?: number; token?: string } | null>(null)
 const ratingBusy = ref<string | null>(null)
 
 const searchOpen = ref(false)
@@ -516,6 +516,19 @@ function handleFrame(frame: string, target: Message) {
     currentStatus.value = null
     awaitingIntake.value = false
     completeStep('composing')
+  } else if (event === 'citation' && typeof payload.url === 'string') {
+    const existing = target.sources.find((s) => s.type === 'web' && s.url === payload.url)
+    if (!existing) {
+      target.sources.push({
+        type: 'web',
+        index: Number.isFinite(Number(payload.index)) ? Number(payload.index) : target.sources.filter((s) => s.type === 'web').length + 1,
+        label: typeof payload.title === 'string' ? payload.title : null,
+        title: typeof payload.title === 'string' ? payload.title : null,
+        url: payload.url,
+        domain: typeof payload.domain === 'string' ? payload.domain : null,
+        excerpt: typeof payload.excerpt === 'string' ? payload.excerpt : undefined,
+      })
+    }
   } else if (event === 'tool_call') {
     handleToolCall(payload, target)
   } else if (event === 'tool_result' && payload.name === 'create_todo') {
@@ -775,10 +788,11 @@ async function handleMarkdownClick(event: MouseEvent, msg: Message) {
   const badge = target.closest('button[data-cite-kind]')
   if (badge) {
     const kind = badge.getAttribute('data-cite-kind')
+    const token = badge.getAttribute('data-cite-token')
     const index = Number(badge.getAttribute('data-cite-index'))
-    if (kind && Number.isFinite(index)) {
+    if (kind && (token !== null || Number.isFinite(index))) {
       showCitations.value = true
-      activeCitation.value = { kind, index }
+      activeCitation.value = token ? { kind, token } : { kind, index }
     }
     return
   }
@@ -788,7 +802,7 @@ async function handleMarkdownClick(event: MouseEvent, msg: Message) {
   event.preventDefault()
   const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
   const title = caseDetail.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-  void openExport(msg.content, type, title, msg.template_id ?? undefined)
+  void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
 }
 
 async function rateMessage(m: Message, feedback: 'up' | 'down') {
@@ -822,7 +836,7 @@ function retryLast() {
 
 function handleExport(m: Message, type: 'word' | 'pdf') {
   const title = caseDetail.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-  void openExport(m.content, type, title, m.template_id ?? undefined)
+  void openExport(m.content, type, title, m.template_id ? m.id : undefined)
 }
 
 function openEdit() {
@@ -1367,7 +1381,7 @@ watch(
         </div>
 
         <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
-          <ChatSearchBar :messages="messages" @navigate="searchNavigate" @close="toggleSearch" />
+          <ChatSearchBar :messages="messages" @query="searchQuery = $event" @navigate="searchNavigate" @close="toggleSearch" />
         </div>
 
         <div class="border-t p-3">

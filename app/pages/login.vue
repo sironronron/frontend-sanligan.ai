@@ -17,7 +17,7 @@ async function handleSubmit() {
 
   try {
     await auth.login(email.value, password.value)
-    await navigateTo(auth.homePath())
+    await navigateTo(auth.kycCompleted ? auth.homePath() : '/onboarding')
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Sign in failed. Please try again.'
   }

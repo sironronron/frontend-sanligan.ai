@@ -13,6 +13,7 @@ import CitedText from '~/components/CitedText.vue'
 export interface CitationSource {
   type: 'legal' | 'document' | 'web'
   index?: number
+  token?: string
   id?: string
   chunk_index?: number
   document_id?: string
@@ -29,7 +30,7 @@ export interface CitationSource {
 
 const props = defineProps<{
   message: { id: string; content: string; sources: CitationSource[] } | null
-  activeCitation: { kind: string; index: number } | null
+  activeCitation: { kind: string; index?: number; token?: string } | null
 }>()
 
 const emit = defineEmits<{ close: [] }>()
@@ -63,7 +64,7 @@ function faviconUrl(url?: string | null): string | undefined {
 }
 
 function cardKey(source: CitationSource): string {
-  return `${source.type}-${source.index ?? 0}`
+  return `${source.type}-${source.token ?? source.index ?? 0}`
 }
 
 function setCardRef(key: string, el: unknown) {
@@ -99,7 +100,9 @@ watch(
   () => props.activeCitation,
   (citation) => {
     if (!citation) return
-    const key = `${citation.kind}-${citation.index}`
+    const key = citation.token
+      ? `${citation.kind}-${citation.token}`
+      : `${citation.kind}-${citation.index}`
     nextTick(() => {
       const card = cardEls.value[key]
       if (card && panelEl.value) {
@@ -154,7 +157,8 @@ watch(
                 <Badge variant="secondary" class="h-4 px-1.5 text-[9px] uppercase tracking-wide">
                   {{ source.type }}
                 </Badge>
-                <span v-if="source.index" class="text-[10px] font-semibold text-muted-foreground/70">#{{ source.index }}</span>
+                <span v-if="source.token" class="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground/80">{{ source.token }}</span>
+                <span v-else-if="source.index" class="text-[10px] font-semibold text-muted-foreground/70">#{{ source.index }}</span>
               </div>
               <p class="mt-1 break-words text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
               <p v-if="source.title && source.label && source.title !== source.label" class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">
