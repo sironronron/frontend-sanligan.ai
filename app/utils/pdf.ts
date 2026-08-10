@@ -56,6 +56,8 @@ function stripExportLinks(text: string): string {
     .replace(/\s*\[[^\]]*(?:download|export)[^\]]*\]\((?:https?:\/\/|\/)[^)]*\)/gi, '')
     .replace(/^[ \t]*(?:\*\*)?\s*(?:export|download)\s+links?\s*(?:\*\*)?\s*:?\s*$/gim, '')
     .replace(/\[\s*\[[^\]]*\]\s*(?:\|\s*\[[^\]]+\]\s*)*[.:;]?|\[[^\]]*(?:download|word document|exported|pdf|insert export)[^\]]*\]\s*(?:\|\s*\[[^\]]+\]\s*)*|\s*(?:as|for|to)\s+word\s+and\s+pdf\s+export\s*:?\s*\[[^\]]+\]\s*[.:;]?[\r\n]*/gi, '')
+    // Strip ATTACHMENTS section: horizontal rule + heading + body until next heading or end
+    .replace(/\s*-{3,}\s*\*{0,2}\s*ATTACHMENTS?\s*\*{0,2}\s*:?\s*[^\n]*(?:\n(?!\s*(?:#{1,6}\s|\*{2}\s*\[NOTE))[\s\S]*)?/gi, '')
     .trim()
 }
 
@@ -148,8 +150,9 @@ export function markdownToPdfDefinition(content: string, title: string): TDocume
   const documentText = stripExportLinks(extractDocumentText(content))
   const body: Content[] = []
   let paragraphBuffer: string[] = []
+  let numberedBuffer: Content[] = []
 
-  const flush = () => {
+  const flushParagraph = () => {
     if (paragraphBuffer.length === 0) return
     const text = paragraphBuffer.join('\n')
     paragraphBuffer = []
@@ -158,37 +161,48 @@ export function markdownToPdfDefinition(content: string, title: string): TDocume
     }
   }
 
+  const flushNumbered = () => {
+    if (numberedBuffer.length === 0) return
+    body.push({ ol: numberedBuffer })
+    numberedBuffer = []
+  }
+
   for (const rawLine of documentText.split(/\r?\n/)) {
     const line = rawLine.trimEnd()
 
     if (line.trim() === '') {
-      flush()
+      flushParagraph()
+      flushNumbered()
       continue
     }
 
     const heading1 = line.match(/^# (.+)$/)
     if (heading1) {
-      flush()
+      flushParagraph()
+      flushNumbered()
       body.push({ text: toContent(parseRuns(heading1[1])), style: 'h1' })
       continue
     }
 
     const heading2 = line.match(/^## (.+)$/)
     if (heading2) {
-      flush()
+      flushParagraph()
+      flushNumbered()
       body.push({ text: toContent(parseRuns(heading2[1])), style: 'h2' })
       continue
     }
 
     const heading3 = line.match(/^### (.+)$/)
     if (heading3) {
-      flush()
+      flushParagraph()
+      flushNumbered()
       body.push({ text: toContent(parseRuns(heading3[1])), style: 'h3' })
       continue
     }
 
     if (/^x-{4,}x$/.test(line.trim())) {
-      flush()
+      flushParagraph()
+      flushNumbered()
       body.push({
         canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 0.5, lineColor: '#999999' }],
         margin: [0, 6, 0, 6],
@@ -198,22 +212,25 @@ export function markdownToPdfDefinition(content: string, title: string): TDocume
 
     const bullet = line.match(/^[-*]\s+(.+)$/)
     if (bullet) {
-      flush()
+      flushParagraph()
+      flushNumbered()
       body.push({ ul: [{ text: toContent(parseRuns(bullet[1])), style: 'listItem' }] })
       continue
     }
 
     const numbered = line.match(/^(\d+)[.)]\s+(.+)$/)
     if (numbered) {
-      flush()
-      body.push({ ol: [{ text: toContent(parseRuns(numbered[2])), style: 'listItem' }] })
+      flushParagraph()
+      numberedBuffer.push({ text: toContent(parseRuns(numbered[2])), style: 'listItem' })
       continue
     }
 
+    flushNumbered()
     paragraphBuffer.push(line)
   }
 
-  flush()
+  flushParagraph()
+  flushNumbered()
 
   return {
     info: { title, author: 'Batayan' },
