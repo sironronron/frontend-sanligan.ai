@@ -95,12 +95,11 @@
   --chart-5: #B4482E;
 }
 
-* {
-  border-color: var(--border);
-}
-
+/*
+ * Default border/background live in @layer base below. Declaring them here,
+ * unlayered, would outrank every border-* and bg-* utility in the app.
+ */
 body {
-  background-color: var(--background);
   font-feature-settings: 'rlig' 1, 'calt' 1;
 }
 
@@ -129,7 +128,7 @@ body {
   --chart-3: #C9A98F;
   --chart-4: #33473C;
   --chart-5: #E0705A;
-  --sidebar: #14231C;
+  --sidebar: #18261F;
   --sidebar-foreground: #F2E4D8;
   --sidebar-primary: #4E9B77;
   --sidebar-primary-foreground: #14231C;

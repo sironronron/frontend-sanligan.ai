@@ -59,12 +59,12 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string, remember: boolean = false) {
     busy.value = true
     try {
       const { data } = await api<{ data: User }>('/login', {
         method: 'POST',
-        body: { email, password },
+        body: { email, password, remember },
       })
       user.value = data
     } finally {
@@ -72,12 +72,16 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(name: string, email: string, password: string) {
+  /**
+   * The confirmation is sent as typed rather than mirrored from `password`, so
+   * the API's `confirmed` rule actually checks what the user entered twice.
+   */
+  async function register(name: string, email: string, password: string, passwordConfirmation: string) {
     busy.value = true
     try {
       const { data } = await api<{ data: User }>('/register', {
         method: 'POST',
-        body: { name, email, password, password_confirmation: password },
+        body: { name, email, password, password_confirmation: passwordConfirmation },
       })
       user.value = data
     } finally {

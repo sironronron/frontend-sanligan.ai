@@ -138,11 +138,11 @@ function formatDueDate(date: string | null) {
     <div class="fixed inset-0 z-30 bg-black/60 lg:hidden" aria-hidden="true" @click="$emit('close')" />
     <aside
       :class="cn(
-        'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] w-full min-h-0 flex-col overflow-hidden rounded-t-2xl border bg-background shadow-2xl lg:static lg:z-auto lg:h-auto lg:max-h-[calc(100dvh-3.5rem)] lg:w-[340px] lg:shrink-0 lg:rounded-none lg:border-l lg:shadow-none',
+        'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] w-full min-h-0 flex-col overflow-hidden rounded-t-2xl border border-sidebar-border bg-sidebar shadow-2xl lg:static lg:z-auto lg:h-auto lg:max-h-[calc(100dvh-3.5rem)] lg:w-[340px] lg:shrink-0 lg:rounded-none lg:border-l lg:shadow-none',
         props.class,
       )"
     >
-    <div class="flex items-center justify-between border-b px-4 py-2.5">
+    <div class="flex items-center justify-between border-b border-sidebar-border px-4 py-2.5">
       <div class="flex items-center gap-2">
         <h3 class="text-sm font-semibold">Tasks</h3>
         <Badge variant="secondary" class="text-[10px]">{{ pendingTasks.length }} open</Badge>
@@ -190,7 +190,7 @@ function formatDueDate(date: string | null) {
 
         <template v-for="todo in pendingTasks" :key="todo.id">
           <div
-            class="group flex items-start gap-2 rounded-lg border p-2.5 transition-colors hover:bg-muted/50"
+            class="group flex items-start gap-2 rounded-lg border bg-card p-2.5 transition-colors hover:border-primary/30 hover:bg-muted"
             :class="{ 'opacity-50': dragId === todo.id, 'border-primary': dragOverId === todo.id }"
             draggable="true"
             @dragstart="onDragStart(todo)"
@@ -263,7 +263,7 @@ function formatDueDate(date: string | null) {
           <div
             v-for="todo in completedTasks"
             :key="todo.id"
-            class="group flex items-start gap-2 rounded-lg border p-2.5 opacity-60 transition-opacity hover:bg-muted/50"
+            class="group flex items-start gap-2 rounded-lg border bg-card p-2.5 opacity-60 transition-opacity hover:bg-muted"
           >
             <GripVerticalIcon class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/40" />
             <button class="mt-0.5 shrink-0 cursor-pointer text-forest dark:text-peach" @click="toggleDone(todo)">
