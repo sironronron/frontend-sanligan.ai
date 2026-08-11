@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleAlertIcon, Loader2Icon } from '@lucide/vue'
+import { CircleAlertIcon } from '@lucide/vue'
 
 definePageMeta({
   middleware: 'guest',
@@ -105,8 +105,7 @@ async function handleSubmit() {
         Keep me signed in
       </label>
 
-      <Button type="submit" class="h-10 w-full gap-2" :disabled="auth.busy">
-        <Loader2Icon v-if="auth.busy" class="size-4 animate-spin" />
+      <Button type="submit" class="h-10 w-full" :loading="auth.busy">
         {{ auth.busy ? 'Signing in…' : 'Sign in' }}
       </Button>
     </form>

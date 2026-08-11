@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, Loader2Icon, UserIcon, FileTextIcon, SparklesIcon } from '@lucide/vue'
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, UserIcon, FileTextIcon, SparklesIcon } from '@lucide/vue'
 import { KYC_ROLE_OTHER, KYC_USE_CASE_OTHER, kycRoleOptions, kycUseCaseOptions, kycDocumentTypeOptions, kycExperienceLevelOptions } from '~/utils/kyc'
 
 definePageMeta({
@@ -257,9 +257,8 @@ async function handleSubmit() {
               <ArrowLeftIcon class="mr-2 size-4" />
               Back
             </Button>
-            <Button type="button" size="lg" :disabled="!canContinue() || auth.busy" @click="handleSubmit">
-              <Loader2Icon v-if="auth.busy" class="mr-2 size-4 animate-spin" />
-              <template v-else>Get Started</template>
+            <Button type="button" size="lg" :disabled="!canContinue()" :loading="auth.busy" @click="handleSubmit">
+              {{ auth.busy ? 'Setting up…' : 'Get Started' }}
             </Button>
           </div>
         </template>

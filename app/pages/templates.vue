@@ -2,7 +2,6 @@
 import { toast } from '~/components/ui/sonner'
 import {
   FileTextIcon,
-  Loader2Icon,
   PlusIcon,
   ScaleIcon,
   TrashIcon,
@@ -208,19 +207,18 @@ onMounted(loadTemplates)
 
 <template>
   <div class="mx-auto w-full max-w-4xl px-4 py-8">
-    <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-semibold">Templates</h1>
-        <p class="mt-0.5 text-sm text-muted-foreground">
-          Upload your own letter templates, then pick them from "Draft a letter" to guide a draft.
-        </p>
-      </div>
-      <Button @click="showForm = !showForm">
-        <PlusIcon v-if="!showForm" class="size-4" />
-        <XIcon v-else class="size-4" />
-        {{ showForm ? 'Cancel' : 'Upload template' }}
-      </Button>
-    </div>
+    <PageHeader
+      title="Templates"
+      description="Upload your own letter templates, then pick them from &quot;Draft a letter&quot; to guide a draft."
+    >
+      <template #actions>
+        <Button :aria-expanded="showForm" @click="showForm = !showForm">
+          <PlusIcon v-if="!showForm" class="size-4" />
+          <XIcon v-else class="size-4" />
+          {{ showForm ? 'Cancel' : 'Upload template' }}
+        </Button>
+      </template>
+    </PageHeader>
 
     <Card v-if="showForm" class="mb-6">
       <CardHeader>
@@ -286,8 +284,7 @@ onMounted(loadTemplates)
 
           <div class="flex justify-end gap-2">
             <Button type="button" variant="outline" @click="showForm = false">Cancel</Button>
-            <Button type="submit" :disabled="creating">
-              <Loader2Icon v-if="creating" class="size-4 animate-spin" />
+            <Button type="submit" :loading="creating">
               {{ creating ? 'Saving…' : 'Save template' }}
             </Button>
           </div>

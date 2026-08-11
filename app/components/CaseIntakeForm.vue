@@ -254,7 +254,12 @@ function handleSubmit() {
                 class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
               >
                 {{ tag }}
-                <button type="button" class="text-muted-foreground hover:text-destructive" @click="removeTag(tag)">
+                <button
+                  type="button"
+                  :aria-label="`Remove tag: ${tag}`"
+                  class="rounded text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  @click="removeTag(tag)"
+                >
                   <XIcon class="size-3" />
                 </button>
               </span>

@@ -103,12 +103,10 @@ async function handleClear() {
 
 <template>
   <div class="mx-auto w-full max-w-2xl flex-1 px-4 py-10">
-    <div class="mb-8">
-      <h1 class="text-2xl font-bold tracking-tight">Personalization</h1>
-      <p class="mt-1 text-sm text-muted-foreground">
-        Tell Batayan who you are and what you'll use it for so it can match its tone and drafting style. These answers are self-reported — they only calibrate responses and never grant access.
-      </p>
-    </div>
+    <PageHeader
+      title="Personalization"
+      description="Tell Batayan who you are and what you'll use it for so it can match its tone and drafting style. These answers are self-reported — they only calibrate responses and never grant access."
+    />
 
     <Card class="mb-6">
       <CardHeader>
@@ -251,8 +249,7 @@ async function handleClear() {
             {{ confirmingClear ? 'Confirm clear' : 'Clear profile' }}
           </Button>
           <span v-else />
-          <Button :disabled="!dirty || auth.busy || !role || !useCase" @click="handleSave">
-            <Loader2Icon v-if="auth.busy" class="size-4 animate-spin" />
+          <Button :disabled="!dirty || !role || !useCase" :loading="auth.busy" @click="handleSave">
             {{ auth.busy ? 'Saving…' : 'Save changes' }}
           </Button>
         </div>

@@ -90,7 +90,26 @@ const currentStatusLabel = ref<string | null>(null)
 const lastQuestion = ref('')
 let messageStartIndex = -1
 
-const showCitations = ref(true)
+/**
+ * The right rail holds one panel at a time. Citations, tasks, and the document
+ * preview each used to be an independent flag, so all three could sit open at
+ * once and squeeze the conversation into a narrow strip on a laptop.
+ */
+type RightPanel = 'citations' | 'tasks'
+
+const rightPanel = ref<RightPanel | null>('citations')
+
+const showCitations = computed(() => rightPanel.value === 'citations')
+const showTodos = computed(() => rightPanel.value === 'tasks')
+
+function togglePanel(panel: RightPanel) {
+  rightPanel.value = rightPanel.value === panel ? null : panel
+}
+
+function openPanel(panel: RightPanel) {
+  rightPanel.value = panel
+}
+
 const activeCitation = ref<{ kind: string; index?: number; token?: string } | null>(null)
 const ratingBusy = ref<string | null>(null)
 
@@ -117,10 +136,15 @@ const messagesContainer = ref<HTMLElement | null>(null)
 
 const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
 
+// The preview is the widest panel and is resizable, so it takes the rail rather
+// than opening beside it.
+watch(previewDoc, (doc) => {
+  if (doc) rightPanel.value = null
+})
+
 const todoStore = useTodoStore()
 const billing = useBillingStore()
 const auth = useAuthStore()
-const showTodos = ref(false)
 
 const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
 const intakeFields = ref<IntakeField[] | null>(null)
@@ -323,7 +347,7 @@ function handleToolCall(payload: Record<string, any>, target: Message) {
 async function refreshTodos() {
   if (activeId.value) {
     await todoStore.fetchTodos(activeId.value)
-    showTodos.value = true
+    openPanel('tasks')
   }
 }
 
@@ -364,7 +388,7 @@ async function maybeCreateTodosFromText(text: string, conversationId: string | n
   try {
     await todoStore.addTodos(items, conversationId)
     await todoStore.fetchTodos(conversationId)
-    showTodos.value = true
+    openPanel('tasks')
   } catch {
     // Non-critical: todos are a convenience, never block the chat on failure.
   }
@@ -417,7 +441,7 @@ function handleMarkdownClick(event: MouseEvent, msg: Message) {
     const token = badge.getAttribute('data-cite-token')
     const index = Number(badge.getAttribute('data-cite-index'))
     if (kind && (token !== null || Number.isFinite(index))) {
-      showCitations.value = true
+      openPanel('citations')
       activeCitation.value = token ? { kind, token } : { kind, index }
     }
     return
@@ -669,9 +693,9 @@ watch(messages, async () => {
 watch(activeId, async (id) => {
   if (id) {
     await todoStore.fetchTodos(id)
-    showTodos.value = todoStore.todos.filter((t) => t.conversation_id === id).length > 0
-  } else {
-    showTodos.value = false
+    if (todoStore.todos.some((t) => t.conversation_id === id)) openPanel('tasks')
+  } else if (rightPanel.value === 'tasks') {
+    rightPanel.value = null
   }
 })
 
@@ -705,16 +729,22 @@ onBeforeUnmount(() => {
             >
               <PanelLeftIcon class="size-4" />
             </Button>
-            <span class="min-w-0 truncate text-xs text-muted-foreground">
-              {{ sending ? 'Creating…' : streaming ? (statusLabel ?? 'Responding…') : (activeConversation ? 'Ready' : 'New conversation') }}
-            </span>
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium leading-tight">
+                {{ activeConversation?.title || 'New conversation' }}
+              </p>
+              <p v-if="busy" class="mt-0.5 truncate text-xs text-muted-foreground">
+                {{ sending ? 'Creating…' : (statusLabel ?? 'Responding…') }}
+              </p>
+            </div>
           </div>
           <div class="flex shrink-0 items-center gap-1 sm:gap-1.5">
             <Button
               variant="ghost"
               size="sm"
               class="gap-1.5 px-2 text-xs sm:px-3"
-              :class="{ 'text-primary': searchOpen }"
+              :class="{ 'bg-muted text-primary': searchOpen }"
+              :aria-pressed="searchOpen"
               @click="toggleSearch"
             >
               <SearchIcon class="size-4" />
@@ -725,8 +755,9 @@ onBeforeUnmount(() => {
               variant="ghost"
               size="sm"
               class="gap-1.5 px-2 text-xs sm:px-3"
-              :class="{ 'text-primary': showCitations }"
-              @click="showCitations = !showCitations"
+              :class="{ 'bg-muted text-primary': showCitations }"
+              :aria-pressed="showCitations"
+              @click="togglePanel('citations')"
             >
               <BookOpenIcon class="size-4" />
               <span class="hidden sm:inline">{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
@@ -739,8 +770,9 @@ onBeforeUnmount(() => {
               variant="ghost"
               size="sm"
               class="gap-1.5 px-2 text-xs sm:px-3"
-              :class="{ 'text-primary': showTodos }"
-              @click="showTodos = !showTodos"
+              :class="{ 'bg-muted text-primary': showTodos }"
+              :aria-pressed="showTodos"
+              @click="togglePanel('tasks')"
             >
               <ListChecksIcon class="size-4" />
               <span class="hidden sm:inline">{{ showTodos ? 'Hide tasks' : 'Tasks' }}</span>
@@ -828,14 +860,14 @@ onBeforeUnmount(() => {
     <TaskPanel
       v-if="showTodos && activeId"
       :conversation-id="activeId"
-      @close="showTodos = false"
+      @close="rightPanel = null"
     />
 
     <CitationPanel
       v-if="hasCitations && showCitations"
       :message="activeAssistantMessage"
       :active-citation="activeCitation"
-      @close="showCitations = false"
+      @close="rightPanel = null"
     />
 
     <!-- Floating Document Preview Panel (Large Screens) -->

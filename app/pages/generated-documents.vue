@@ -55,17 +55,21 @@ onMounted(loadDocuments)
 
 <template>
   <div class="mx-auto w-full max-w-4xl px-4 py-8">
-    <div class="mb-6">
-      <h1 class="text-xl font-semibold">Generated documents</h1>
-      <p class="mt-0.5 text-sm text-muted-foreground">
-        Revisit the letters, pleadings, and forms the assistant drafted for you, and download them again.
-      </p>
-    </div>
+    <PageHeader
+      title="Generated documents"
+      description="Revisit the letters, pleadings, and forms the assistant drafted for you, and download them again."
+    />
 
-    <div v-if="documents.length === 0" class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-      <span v-if="loading">Loading your documents…</span>
-      <span v-else>No generated documents yet. Ask the assistant to draft a letter or pleading, then export it from the chat.</span>
-    </div>
+    <ListSkeleton v-if="loading" :rows="3" />
+
+    <EmptyState
+      v-else-if="documents.length === 0"
+      :icon="FileTextIcon"
+      title="No generated documents yet"
+      description="Ask the assistant to draft a letter or pleading, then export it from the chat."
+    >
+      <Button @click="navigateTo('/chat')">Start a draft</Button>
+    </EmptyState>
 
     <div v-else class="space-y-2">
       <h2 class="text-sm font-medium text-muted-foreground">

@@ -254,14 +254,10 @@ async function removeDocument(doc: Document) {
 <template>
   <div>
     <div class="mx-auto w-full max-w-4xl px-4 py-8">
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-xl font-semibold">My documents</h1>
-        <p class="mt-0.5 text-sm text-muted-foreground">
-          Upload legal documents to ground your chat answers in your own files.
-        </p>
-      </div>
-    </div>
+    <PageHeader
+      title="My documents"
+      description="Upload legal documents to ground your chat answers in your own files."
+    />
 
     <div
       class="rounded-xl border border-dashed bg-muted/30 p-6 transition-colors"
@@ -285,8 +281,7 @@ async function removeDocument(doc: Document) {
             .
           </p>
         </div>
-        <Button @click="pickFile" :disabled="uploading">
-          <Loader2Icon v-if="uploading" class="size-4 animate-spin" />
+        <Button :loading="uploading" @click="pickFile">
           {{ uploading ? 'Uploading…' : 'Choose files' }}
         </Button>
         <input
@@ -318,8 +313,7 @@ async function removeDocument(doc: Document) {
           </Button>
         </div>
         <div class="flex items-center justify-end">
-          <Button @click="upload" :disabled="uploading">
-            <Loader2Icon v-if="uploading" class="size-4 animate-spin" />
+          <Button :loading="uploading" @click="upload">
             {{ uploading ? 'Uploading…' : `Upload ${selectedFiles.length} file${selectedFiles.length === 1 ? '' : 's'}` }}
           </Button>
         </div>
@@ -331,14 +325,18 @@ async function removeDocument(doc: Document) {
     </div>
 
     <div class="mt-8 space-y-2">
-      <h2 class="text-sm font-medium text-muted-foreground">
+      <h2 v-if="!loading && documents.length > 0" class="text-sm font-medium text-muted-foreground">
         {{ documents.length }} document{{ documents.length === 1 ? '' : 's' }}
       </h2>
 
-      <div v-if="documents.length === 0" class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-        <span v-if="loading">Loading your documents…</span>
-        <span v-else>No documents yet. Upload your first file to get started.</span>
-      </div>
+      <ListSkeleton v-if="loading" :rows="3" />
+
+      <EmptyState
+        v-else-if="documents.length === 0"
+        :icon="FileIcon"
+        title="No documents yet"
+        description="Upload your first file above to ground the assistant's answers in your own material."
+      />
 
       <div v-for="doc in documents" :key="doc.id" class="rounded-xl border bg-card">
         <div class="flex items-center gap-3 p-4">

@@ -147,30 +147,27 @@ onMounted(async () => {
 <template>
   <div>
     <div v-if="!isDetail" class="mx-auto w-full max-w-6xl px-4 py-6">
-      <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-      <div>
-        <h1 class="text-xl font-semibold">Cases</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Track your legal matters, deadlines, and correspondence in one place.
-        </p>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          class="gap-1.5"
-          :class="{ 'text-primary': archived }"
-          @click="archived = !archived"
-        >
-          <FolderOpenIcon class="size-4" />
-          {{ archived ? 'Archived' : 'Active' }}
-        </Button>
-        <Button class="gap-1.5" @click="showIntake = true">
-          <PlusIcon class="size-4" />
-          New Case
-        </Button>
-      </div>
-    </div>
+      <PageHeader
+        title="Cases"
+        description="Track your legal matters, deadlines, and correspondence in one place."
+      >
+        <template #actions>
+          <Button
+            variant="outline"
+            class="gap-1.5"
+            :class="{ 'text-primary': archived }"
+            :aria-pressed="archived"
+            @click="archived = !archived"
+          >
+            <FolderOpenIcon class="size-4" />
+            {{ archived ? 'Archived' : 'Active' }}
+          </Button>
+          <Button class="gap-1.5" @click="showIntake = true">
+            <PlusIcon class="size-4" />
+            New Case
+          </Button>
+        </template>
+      </PageHeader>
 
     <div class="mb-5 flex flex-wrap items-center gap-2">
       <div class="relative min-w-52 flex-1">

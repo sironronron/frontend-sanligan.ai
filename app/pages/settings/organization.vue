@@ -151,10 +151,10 @@ onMounted(async () => {
 
 <template>
   <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
-    <div class="mb-8">
-      <h1 class="text-2xl font-bold tracking-tight">Organization</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Manage your workspace, members, and invitations.</p>
-    </div>
+    <PageHeader
+      title="Organization"
+      description="Manage your workspace, members, and invitations."
+    />
 
     <div v-if="loading" class="space-y-6">
       <div class="h-36 rounded-xl border bg-muted/20" />

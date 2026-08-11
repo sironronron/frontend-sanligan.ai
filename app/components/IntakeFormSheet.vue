@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ClipboardListIcon, Loader2Icon, XIcon } from '@lucide/vue'
+import { ClipboardListIcon, XIcon } from '@lucide/vue'
 
 export interface IntakeField {
   key: string
@@ -269,8 +269,7 @@ function handleSubmit() {
             <Button type="button" variant="outline" class="flex-1" @click="emit('cancel')">
               Cancel
             </Button>
-            <Button type="submit" class="flex-1" :disabled="props.busy">
-              <Loader2Icon v-if="props.busy" class="size-4 animate-spin" />
+            <Button type="submit" class="flex-1" :loading="props.busy">
               {{ props.busy ? 'Working…' : props.submitLabel }}
             </Button>
           </div>

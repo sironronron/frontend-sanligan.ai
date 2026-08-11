@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CircleAlertIcon, CircleCheckIcon } from '@lucide/vue'
+
 definePageMeta({
   middleware: 'guest',
   layout: 'default',
@@ -13,76 +15,124 @@ const password = ref('')
 const passwordConfirmation = ref('')
 const done = ref(false)
 const error = ref('')
+const fieldErrors = ref<Record<string, string>>({})
+
+const MIN_PASSWORD_LENGTH = 8
+
+function validate(): boolean {
+  const errors: Record<string, string> = {}
+
+  if (email.value.trim() === '') errors.email = 'Enter your email address.'
+  if (password.value.length < MIN_PASSWORD_LENGTH) errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`
+  if (passwordConfirmation.value !== password.value) errors.password_confirmation = 'Passwords do not match.'
+
+  fieldErrors.value = errors
+
+  return Object.keys(errors).length === 0
+}
 
 async function handleSubmit() {
   error.value = ''
 
+  if (!validate()) return
+
   try {
-    await auth.resetPassword(token.value, email.value, password.value)
+    await auth.resetPassword(token.value, email.value, password.value, passwordConfirmation.value)
     done.value = true
-  } catch (err: any) {
-    error.value = err?.data?.message ?? 'The reset link is invalid or has expired.'
+  } catch (err) {
+    const parsed = parseApiError(err, 'The reset link is invalid or has expired.')
+    error.value = parsed.message
+    fieldErrors.value = parsed.fields
   }
 }
 </script>
 
 <template>
-  <div class="flex flex-1 items-center justify-center px-4 py-12">
-    <Card class="w-full max-w-sm">
-      <CardHeader class="text-center">
-        <div class="mx-auto mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/10">
-          <span class="size-2.5 rounded-full bg-primary" />
-        </div>
-        <CardTitle class="text-xl">Choose a new password</CardTitle>
-        <CardDescription>Your new password must be at least 8 characters.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form v-if="!done" class="space-y-4" @submit.prevent="handleSubmit">
-          <div class="space-y-2">
-            <Label for="email">Email</Label>
-            <Input id="email" v-model="email" type="email" autocomplete="email" required />
-          </div>
-          <div class="space-y-2">
-            <Label for="password">New password</Label>
-            <Input
-              id="password"
-              v-model="password"
-              type="password"
-              autocomplete="new-password"
-              placeholder="At least 8 characters"
-              required
-            />
-          </div>
-          <div class="space-y-2">
-            <Label for="password_confirmation">Confirm password</Label>
-            <Input
-              id="password_confirmation"
-              v-model="passwordConfirmation"
-              type="password"
-              autocomplete="new-password"
-              placeholder="Repeat your password"
-              required
-            />
-          </div>
-
-          <p v-if="error" class="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {{ error }}
+  <AuthShell
+    title="Choose a new password"
+    subtitle="Pick something you haven't used before — at least 8 characters."
+  >
+    <div v-if="done" class="space-y-6">
+      <div class="flex items-start gap-3 rounded-lg border border-primary/25 bg-primary/5 px-4 py-3.5">
+        <CircleCheckIcon class="mt-px size-4 shrink-0 text-primary" />
+        <div class="min-w-0 text-sm">
+          <p class="font-medium">Password updated</p>
+          <p class="mt-1 leading-relaxed text-muted-foreground">
+            You can now sign in with your new password.
           </p>
-
-          <Button type="submit" class="w-full" :disabled="auth.busy">
-            {{ auth.busy ? 'Resetting…' : 'Reset password' }}
-          </Button>
-        </form>
-
-        <div v-else class="space-y-4">
-          <p class="rounded-md bg-primary/10 px-3 py-2 text-sm">
-            Password has been reset. You can now sign in.
-          </p>
-          <Button class="w-full" @click="navigateTo('/login')">
-            Sign in
-          </Button>
         </div>
-      </CardContent>
-    </Card>
-  </div>
+      </div>
+
+      <Button class="h-10 w-full" @click="navigateTo('/login')">
+        Sign in
+      </Button>
+    </div>
+
+    <form v-else class="space-y-5" novalidate @submit.prevent="handleSubmit">
+      <div
+        v-if="error"
+        role="alert"
+        class="flex items-start gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
+      >
+        <CircleAlertIcon class="mt-px size-4 shrink-0" />
+        <span>{{ error }}</span>
+      </div>
+
+      <div class="space-y-2">
+        <Label for="email">Email</Label>
+        <Input
+          id="email"
+          v-model="email"
+          type="email"
+          autocomplete="email"
+          required
+          class="h-10"
+          :aria-invalid="fieldErrors.email ? true : undefined"
+          :aria-describedby="fieldErrors.email ? 'email-error' : undefined"
+        />
+        <p v-if="fieldErrors.email" id="email-error" class="text-xs text-destructive">
+          {{ fieldErrors.email }}
+        </p>
+      </div>
+
+      <div class="space-y-2">
+        <Label for="password">New password</Label>
+        <PasswordField
+          id="password"
+          v-model="password"
+          autocomplete="new-password"
+          placeholder="At least 8 characters"
+          :error="fieldErrors.password ?? ''"
+        />
+        <p v-if="fieldErrors.password" id="password-error" class="text-xs text-destructive">
+          {{ fieldErrors.password }}
+        </p>
+      </div>
+
+      <div class="space-y-2">
+        <Label for="password_confirmation">Confirm password</Label>
+        <PasswordField
+          id="password_confirmation"
+          v-model="passwordConfirmation"
+          autocomplete="new-password"
+          placeholder="Repeat your password"
+          :error="fieldErrors.password_confirmation ?? ''"
+        />
+        <p v-if="fieldErrors.password_confirmation" id="password_confirmation-error" class="text-xs text-destructive">
+          {{ fieldErrors.password_confirmation }}
+        </p>
+      </div>
+
+      <Button type="submit" class="h-10 w-full" :loading="auth.busy">
+        {{ auth.busy ? 'Resetting…' : 'Reset password' }}
+      </Button>
+    </form>
+
+    <template #footer>
+      Back to
+      <NuxtLink to="/login" class="font-medium text-primary hover:underline">
+        sign in
+      </NuxtLink>
+    </template>
+  </AuthShell>
 </template>

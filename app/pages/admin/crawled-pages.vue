@@ -89,20 +89,7 @@ onMounted(loadPages)
 
 <template>
   <div class="mx-auto w-full max-w-6xl px-4 py-8">
-    <div class="mb-6">
-      <h1 class="text-xl font-semibold">Admin</h1>
-      <nav class="mt-2 flex items-center gap-1 text-sm">
-        <NuxtLink to="/admin/legal-sources" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
-          Legal sources
-        </NuxtLink>
-        <NuxtLink to="/admin/crawled-pages" class="rounded-md bg-muted px-3 py-1.5 font-medium">
-          Crawled pages
-        </NuxtLink>
-        <NuxtLink to="/admin/system-prompts" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
-          System prompts
-        </NuxtLink>
-      </nav>
-    </div>
+    <AdminNav />
 
     <div class="mb-4 flex items-center justify-between">
       <p class="text-sm text-muted-foreground">
@@ -165,10 +152,15 @@ onMounted(loadPages)
         </TableBody>
       </Table>
 
-      <div v-if="loading" class="p-8 text-center text-sm text-muted-foreground">Loading…</div>
-      <div v-else-if="pages.length === 0" class="p-8 text-center text-sm text-muted-foreground">
-        No crawled pages match.
+      <div v-if="loading" class="space-y-2 p-4" role="status" aria-label="Loading">
+        <Skeleton v-for="row in 5" :key="row" class="h-8 w-full" />
       </div>
+      <EmptyState
+        v-else-if="pages.length === 0"
+        title="No crawled pages match"
+        description="Adjust the filters, or run a crawl from the legal sources tab."
+        class="m-4 border-0"
+      />
 
       <div v-if="meta && meta.last_page > 1" class="flex items-center justify-between border-t px-4 py-3">
         <p class="text-xs text-muted-foreground">

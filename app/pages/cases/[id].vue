@@ -90,7 +90,23 @@ const notFound = ref(false)
 const editOpen = ref(false)
 const pickerOpen = ref(false)
 const templates = ref<TemplateOption[]>([])
-const showTasks = ref(true)
+/**
+ * One right-rail panel at a time. Tasks and citations both defaulted to open
+ * and the resizable document preview opened alongside them, so on a laptop the
+ * thread was squeezed between three columns.
+ */
+type RightPanel = 'citations' | 'tasks'
+
+const rightPanel = ref<RightPanel | null>('tasks')
+
+const showTasks = computed(() => rightPanel.value === 'tasks')
+
+function togglePanel(panel: RightPanel) {
+  rightPanel.value = rightPanel.value === panel ? null : panel
+}
+
+// The case summary expands inline above the thread, not in the rail, so it
+// stays independent of the panel choice.
 const showSummary = ref(true)
 
 const threads = ref<CaseConversation[]>([])
@@ -117,7 +133,7 @@ const messagesContainer = ref<HTMLElement | null>(null)
 const lastQuestion = ref('')
 let messageStartIndex = -1
 
-const showCitations = ref(true)
+const showCitations = computed(() => rightPanel.value === 'citations')
 const activeCitation = ref<{ kind: string; index?: number; token?: string } | null>(null)
 const ratingBusy = ref<string | null>(null)
 
@@ -313,6 +329,10 @@ async function removeCaseDocument(doc: CaseDocument) {
 }
 
 const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
+
+watch(previewDoc, (doc) => {
+  if (doc) rightPanel.value = null
+})
 
 const mainChatEl = ref<HTMLElement | null>(null)
 
@@ -810,7 +830,7 @@ async function handleMarkdownClick(event: MouseEvent, msg: Message) {
     const token = badge.getAttribute('data-cite-token')
     const index = Number(badge.getAttribute('data-cite-index'))
     if (kind && (token !== null || Number.isFinite(index))) {
-      showCitations.value = true
+      rightPanel.value = 'citations'
       activeCitation.value = token ? { kind, token } : { kind, index }
     }
     return
@@ -1248,8 +1268,9 @@ watch(
                 variant="ghost"
                 size="sm"
                 class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'text-primary': showCitations }"
-                @click="showCitations = !showCitations"
+                :class="{ 'bg-muted text-primary': showCitations }"
+                :aria-pressed="showCitations"
+                @click="togglePanel('citations')"
               >
                 <BookOpenIcon class="size-4" />
                 <span class="hidden sm:inline">{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
@@ -1262,7 +1283,8 @@ watch(
                 variant="ghost"
                 size="sm"
                 class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'text-primary': showSummary }"
+                :class="{ 'bg-muted text-primary': showSummary }"
+                :aria-pressed="showSummary"
                 @click="showSummary = !showSummary"
               >
                 <EyeIcon class="size-4" />
@@ -1273,8 +1295,9 @@ watch(
                 variant="ghost"
                 size="sm"
                 class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'text-primary': showTasks }"
-                @click="showTasks = !showTasks"
+                :class="{ 'bg-muted text-primary': showTasks }"
+                :aria-pressed="showTasks"
+                @click="togglePanel('tasks')"
               >
                 <ListChecksIcon class="size-4" />
                 <span class="hidden sm:inline">{{ showTasks ? 'Hide tasks' : 'Tasks' }}</span>
@@ -1482,7 +1505,7 @@ watch(
     <TaskPanel
       v-if="showTasks && conversationId"
       :conversation-id="conversationId"
-      @close="showTasks = false"
+      @close="rightPanel = null"
     />
 
     <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
@@ -1491,7 +1514,7 @@ watch(
       v-if="hasCitations && showCitations"
       :message="activeAssistantMessage"
       :active-citation="activeCitation"
-      @close="showCitations = false"
+      @close="rightPanel = null"
     />
 
     <CaseIntakeForm

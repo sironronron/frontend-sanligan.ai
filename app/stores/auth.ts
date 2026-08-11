@@ -168,17 +168,28 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function sendPasswordResetLink(email: string) {
-    return api<{ message: string }>('/forgot-password', {
-      method: 'POST',
-      body: { email },
-    })
+    busy.value = true
+    try {
+      return await api<{ message: string }>('/forgot-password', {
+        method: 'POST',
+        body: { email },
+      })
+    } finally {
+      busy.value = false
+    }
   }
 
-  async function resetPassword(token: string, email: string, password: string) {
-    return api<{ message: string }>('/reset-password', {
-      method: 'POST',
-      body: { token, email, password, password_confirmation: password },
-    })
+  /** Sends the confirmation as typed, so the API's `confirmed` rule can fail. */
+  async function resetPassword(token: string, email: string, password: string, passwordConfirmation: string) {
+    busy.value = true
+    try {
+      return await api<{ message: string }>('/reset-password', {
+        method: 'POST',
+        body: { token, email, password, password_confirmation: passwordConfirmation },
+      })
+    } finally {
+      busy.value = false
+    }
   }
 
   return {

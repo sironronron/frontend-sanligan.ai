@@ -200,8 +200,10 @@ function formatDueDate(date: string | null) {
           >
             <GripVerticalIcon class="mt-0.5 size-3.5 shrink-0 cursor-grab text-muted-foreground/40" />
             <button
+              type="button"
+              :aria-label="todo.status === 'completed' ? `Mark “${todo.title}” as not done` : `Mark “${todo.title}” as done`"
               :class="statusColor(todo.status)"
-              class="mt-0.5 shrink-0 cursor-pointer"
+              class="mt-0.5 shrink-0 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               @click="toggleDone(todo)"
             >
               <component :is="statusIcon(todo.status)" class="size-4" />
@@ -248,7 +250,9 @@ function formatDueDate(date: string | null) {
             </div>
 
             <button
-              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
+              type="button"
+              :aria-label="`Delete task: ${todo.title}`"
+              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100 max-lg:opacity-100"
               @click="removeTask(todo)"
             >
               <TrashIcon class="size-3.5" />
@@ -266,14 +270,21 @@ function formatDueDate(date: string | null) {
             class="group flex items-start gap-2 rounded-lg border bg-card p-2.5 opacity-60 transition-opacity hover:bg-muted"
           >
             <GripVerticalIcon class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/40" />
-            <button class="mt-0.5 shrink-0 cursor-pointer text-forest dark:text-peach" @click="toggleDone(todo)">
+            <button
+              type="button"
+              :aria-label="`Mark “${todo.title}” as not done`"
+              class="mt-0.5 shrink-0 cursor-pointer rounded text-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-peach"
+              @click="toggleDone(todo)"
+            >
               <CheckIcon class="size-4" />
             </button>
             <button class="min-w-0 flex-1 text-left text-sm leading-tight line-through" @dblclick="startEdit(todo)">
               {{ todo.title }}
             </button>
             <button
-              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
+              type="button"
+              :aria-label="`Delete task: ${todo.title}`"
+              class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100 max-lg:opacity-100"
               @click="removeTask(todo)"
             >
               <TrashIcon class="size-3.5" />

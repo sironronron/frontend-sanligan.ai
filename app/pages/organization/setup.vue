@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Building2Icon, Loader2Icon } from '@lucide/vue'
+import { Building2Icon } from '@lucide/vue'
 
 definePageMeta({
   middleware: 'auth',
@@ -64,8 +64,7 @@ async function handleLogout() {
             {{ error }}
           </p>
 
-          <Button type="submit" class="w-full" :disabled="auth.busy">
-            <Loader2Icon v-if="auth.busy" class="size-4 animate-spin" />
+          <Button type="submit" class="w-full" :loading="auth.busy">
             {{ auth.busy ? 'Creating organization…' : 'Create organization' }}
           </Button>
         </form>

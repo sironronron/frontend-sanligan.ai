@@ -89,7 +89,7 @@ onMounted(() => {
           <TasksDropdown class="hidden md:block" />
           <DropdownMenu>
             <DropdownMenuTrigger
-              class="flex items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted"
+              class="flex items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Avatar class="size-7">
                 <AvatarFallback class="bg-primary text-primary-foreground text-xs">

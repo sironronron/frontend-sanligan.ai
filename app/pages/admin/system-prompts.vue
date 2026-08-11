@@ -93,20 +93,7 @@ onMounted(loadPrompts)
 
 <template>
   <div class="mx-auto w-full max-w-4xl px-4 py-8">
-    <div class="mb-6">
-      <h1 class="text-xl font-semibold">Admin</h1>
-      <nav class="mt-2 flex items-center gap-1 text-sm">
-        <NuxtLink to="/admin/legal-sources" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
-          Legal sources
-        </NuxtLink>
-        <NuxtLink to="/admin/crawled-pages" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
-          Crawled pages
-        </NuxtLink>
-        <NuxtLink to="/admin/system-prompts" class="rounded-md bg-muted px-3 py-1.5 font-medium">
-          System prompts
-        </NuxtLink>
-      </nav>
-    </div>
+    <AdminNav />
 
     <div class="mb-6 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
       <span class="font-medium">Active prompt:</span>
@@ -149,7 +136,7 @@ onMounted(loadPrompts)
 
           <div class="flex justify-end gap-2">
             <Button type="button" variant="outline" @click="showForm = false">Cancel</Button>
-            <Button type="submit" :disabled="creating">
+            <Button type="submit" :loading="creating">
               {{ creating ? 'Creating…' : 'Create version' }}
             </Button>
           </div>
@@ -162,9 +149,11 @@ onMounted(loadPrompts)
         <Skeleton v-for="i in 2" :key="i" class="h-32 w-full" />
       </div>
 
-      <div v-else-if="prompts.length === 0" class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-        No system prompts yet.
-      </div>
+      <EmptyState
+        v-else-if="prompts.length === 0"
+        title="No system prompts yet"
+        description="Create a version to define how the assistant behaves. Chat stays disabled until one is active."
+      />
 
       <section v-for="group in grouped" :key="group.name">
         <h2 class="mb-2 text-sm font-medium text-muted-foreground">{{ group.name }}</h2>

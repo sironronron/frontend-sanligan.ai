@@ -126,18 +126,19 @@ function limitLabel(limit: number | null) {
 
 <template>
   <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
-    <div class="mb-8 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">Billing</h1>
-        <p class="mt-1 text-sm text-muted-foreground">Manage your subscription, payments, and usage.</p>
-      </div>
-      <NuxtLink to="/pricing">
-        <Button variant="outline">
-          <SparklesIcon class="size-4" />
-          Change plan
-        </Button>
-      </NuxtLink>
-    </div>
+    <PageHeader
+      title="Billing"
+      description="Manage your subscription, payments, and usage."
+    >
+      <template #actions>
+        <NuxtLink to="/pricing">
+          <Button variant="outline">
+            <SparklesIcon class="size-4" />
+            Change plan
+          </Button>
+        </NuxtLink>
+      </template>
+    </PageHeader>
 
     <div v-if="confirmingPayment" class="mb-6">
       <Card>

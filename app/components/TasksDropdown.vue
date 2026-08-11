@@ -108,7 +108,12 @@ onMounted(() => {
               :key="todo.id"
               class="flex items-start gap-2 rounded-md px-3 py-1.5 opacity-60"
             >
-              <button class="mt-0.5 shrink-0 text-forest dark:text-peach" @click="todoStore.toggleStatus(todo.id)">
+              <button
+                type="button"
+                :aria-label="`Mark “${todo.title}” as not done`"
+                class="mt-0.5 shrink-0 rounded text-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-peach"
+                @click="todoStore.toggleStatus(todo.id)"
+              >
                 <CheckIcon class="size-4" />
               </button>
               <p class="min-w-0 flex-1 truncate text-sm leading-tight line-through">{{ todo.title }}</p>

@@ -110,20 +110,7 @@ onMounted(loadSources)
 
 <template>
   <div class="mx-auto w-full max-w-5xl px-4 py-8">
-    <div class="mb-6">
-      <h1 class="text-xl font-semibold">Admin</h1>
-      <nav class="mt-2 flex items-center gap-1 text-sm">
-        <NuxtLink to="/admin/legal-sources" class="rounded-md bg-muted px-3 py-1.5 font-medium">
-          Legal sources
-        </NuxtLink>
-        <NuxtLink to="/admin/crawled-pages" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
-          Crawled pages
-        </NuxtLink>
-        <NuxtLink to="/admin/system-prompts" class="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-muted">
-          System prompts
-        </NuxtLink>
-      </nav>
-    </div>
+    <AdminNav />
 
     <div class="mb-4 flex items-center justify-between">
       <p class="text-sm text-muted-foreground">
@@ -174,7 +161,7 @@ onMounted(loadSources)
 
           <div class="flex justify-end gap-2">
             <Button type="button" variant="outline" @click="showForm = false">Cancel</Button>
-            <Button type="submit" :disabled="creating">
+            <Button type="submit" :loading="creating">
               {{ creating ? 'Adding…' : 'Add source' }}
             </Button>
           </div>
@@ -187,9 +174,11 @@ onMounted(loadSources)
         <Skeleton v-for="i in 3" :key="i" class="h-20 w-full" />
       </div>
 
-      <div v-else-if="sources.length === 0" class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-        No legal sources configured.
-      </div>
+      <EmptyState
+        v-else-if="sources.length === 0"
+        title="No legal sources configured"
+        description="Add an allowlisted domain and the crawler will index its legal texts for retrieval."
+      />
 
       <Card v-for="source in sources" :key="source.id">
         <CardContent class="p-4">
