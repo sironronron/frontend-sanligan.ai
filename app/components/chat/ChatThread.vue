@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Loader2Icon } from '@lucide/vue'
 import ChatMessage from '~/components/chat/ChatMessage.vue'
+import ChatSuggestions from '~/components/chat/ChatSuggestions.vue'
 import ActivityTimeline from '~/components/ActivityTimeline.vue'
+import { useChatSuggestions } from '~/composables/useChatSuggestions'
 import type { ChatActivityStep, ChatMessage as ChatMessageType } from '~/types/chat'
 
-defineProps<{
+const props = defineProps<{
   messages: ChatMessageType[]
   streaming: boolean
   statusLabel: string | null
@@ -19,16 +21,24 @@ defineProps<{
   displayContent: (m: ChatMessageType) => string
   searchQuery?: string
   activeSearchId?: string | null
+  experienceLevel?: string | null
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'markdown-click': [event: MouseEvent, message: ChatMessageType]
   rate: [message: ChatMessageType, feedback: 'up' | 'down']
   export: [message: ChatMessageType, type: 'word' | 'pdf']
   retry: []
   'abandon-intake': []
   'reopen-intake': []
+  'select-suggestion': [prompt: string]
 }>()
+
+const messagesRef = computed(() => props.messages)
+const streamingRef = computed(() => props.streaming)
+const experienceLevelRef = computed(() => props.experienceLevel ?? null)
+
+const { suggestions } = useChatSuggestions(messagesRef, experienceLevelRef, streamingRef)
 </script>
 
 <template>
@@ -48,6 +58,12 @@ defineEmits<{
       @markdown-click="(event, message) => $emit('markdown-click', event, message)"
       @rate="(message, feedback) => $emit('rate', message, feedback)"
       @export="(message, type) => $emit('export', message, type)"
+    />
+
+    <ChatSuggestions
+      v-if="suggestions.length > 0"
+      :suggestions="suggestions"
+      @select="(prompt) => $emit('select-suggestion', prompt)"
     />
 
     <div v-if="awaitingIntake" class="flex items-start gap-3">

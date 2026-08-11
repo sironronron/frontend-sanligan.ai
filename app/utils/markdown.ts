@@ -5,6 +5,17 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
+/**
+ * Fix broken peso sign encoding. The model sometimes outputs "?" instead of
+ * the peso sign (₱) due to tokenizer limitations. This replaces common
+ * broken patterns with the correct character.
+ */
+function fixBrokenPesoSign(text: string): string {
+  return text
+    .replace(/\?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g, '₱$1')
+    .replace(/PHP\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g, '₱$1')
+}
+
 function removeProtocolMarkers(text: string): string {
   return text
     .replace(/^\s*\[\[DOCUMENT_START\]\]\s*$/gm, '')
@@ -12,6 +23,27 @@ function removeProtocolMarkers(text: string): string {
     .replace(/^\s*\[\[TODO_START\]\]\s*$/gm, '')
     .replace(/^\s*\[\[TODO_END\]\]\s*$/gm, '')
     .replace(/^\s*Next Steps Checklist Created Below Using create_todo Tool:\s*$/gim, '')
+}
+
+/**
+ * Strip code-fence wrappers the model sometimes wraps entire responses in
+ * (e.g. ```python ... ```) as well as internal reasoning the model leaks
+ * into the visible output.
+ */
+function stripCodeFencesAndInternalReasoning(text: string): string {
+  let cleaned = text
+
+  // Strip ```python ... ``` or ``` ... ``` wrappers around the entire response
+  cleaned = cleaned.replace(/^```(?:python|json|text|plaintext)?\s*\n/i, '')
+  cleaned = cleaned.replace(/\n```\s*$/i, '')
+
+  // Strip background/internal reasoning lines the model sometimes leaks
+  cleaned = cleaned.replace(/^No tool calls required.*$/gim, '')
+  cleaned = cleaned.replace(/^Note:\s*Since.*$/gim, '')
+  cleaned = cleaned.replace(/^I have utilized.*$/gim, '')
+  cleaned = cleaned.replace(/^Note:.*$/gim, '')
+
+  return cleaned.trim()
 }
 
 function transformExportLinks(text: string): string {
@@ -146,6 +178,8 @@ export function renderMarkdown(text: string): string {
 
 function renderMarkdownInternal(text: string): string {
   let html = escapeHtml(text)
+  html = fixBrokenPesoSign(html)
+  html = stripCodeFencesAndInternalReasoning(html)
   html = removeProtocolMarkers(html)
   html = transformExportLinks(html)
   html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>')
@@ -190,7 +224,7 @@ function renderMarkdownInternal(text: string): string {
       continue
     }
 
-    if (/^x-{4,}x$/.test(line.trim())) {
+    if (/^[-*]{1,3}$/.test(line.trim())) {
       flushParagraph()
       out.push('<hr class="my-4 border-border" />')
       continue

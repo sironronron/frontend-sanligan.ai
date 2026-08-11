@@ -235,7 +235,7 @@ function limitLabel(limit: number | null) {
               v-else-if="meter.overage && meter.overage > 0"
               class="mt-1 text-xs text-espresso dark:text-peach"
             >
-              {{ meter.overage.toLocaleString() }} over the cap · ₱{{ formatPesos(meter.overage_due_pesos) }} due this cycle.
+              {{ meter.overage.toLocaleString() }} over the cap · &#8369;{{ formatPesos(meter.overage_due_pesos) }} due this cycle.
             </p>
           </div>
         </CardContent>

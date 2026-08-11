@@ -17,7 +17,14 @@ async function handleSubmit() {
 
   try {
     await auth.register(name.value, email.value, password.value)
-    await navigateTo(auth.kycCompleted ? auth.homePath() : '/onboarding')
+    // Redirect to terms acceptance if not accepted
+    if (!auth.hasAcceptedTerms) {
+      await navigateTo('/terms/accept')
+    } else if (!auth.kycCompleted) {
+      await navigateTo('/onboarding')
+    } else {
+      await navigateTo(auth.homePath())
+    }
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Registration failed. Please try again.'
   }
@@ -86,6 +93,10 @@ async function handleSubmit() {
       <CardFooter class="justify-center text-sm text-muted-foreground">
         Already have an account?
         <NuxtLink to="/login" class="ml-1 text-primary hover:underline">Sign in</NuxtLink>
+      </CardFooter>
+      <CardFooter class="justify-center text-xs text-muted-foreground pt-0">
+        By creating an account, you agree to our
+        <NuxtLink to="/legal/terms" target="_blank" class="ml-1 text-primary hover:underline">Terms of Service and Privacy Policy</NuxtLink>
       </CardFooter>
     </Card>
   </div>

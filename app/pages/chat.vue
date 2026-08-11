@@ -15,6 +15,7 @@ import {
 import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
 import { useTodoStore } from '~/stores/todos'
 import { useBillingStore, upgradeMessage } from '~/stores/billing'
+import { useAuthStore } from '~/stores/auth'
 import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
 import CitationPanel from '~/components/CitationPanel.vue'
@@ -118,7 +119,10 @@ const { previewDoc, previewWidth, startResize, openExport, closePreview } = useD
 
 const todoStore = useTodoStore()
 const billing = useBillingStore()
+const auth = useAuthStore()
 const showTodos = ref(false)
+
+const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
 const intakeFields = ref<IntakeField[] | null>(null)
 const intakeDefaults = ref<Record<string, string> | null>(null)
 const awaitingIntake = ref(false)
@@ -128,10 +132,11 @@ const todoToolCalled = ref(false)
 const statusLabels: Record<string, string> = {
   checking_sources: 'Checking legal sources',
   searching_web: 'Searching the web',
-  composing: 'Composing response',
+  composing: 'Composing your answer',
   collecting_facts: 'Collecting the facts I need',
   gathering_facts: 'Gathering the facts needed for your document',
   drafting_document: 'Drafting your document',
+  filling_template: 'Filling in your template',
   preparing_next_steps: 'Preparing your next-steps checklist',
 }
 
@@ -194,6 +199,8 @@ async function loadConversation(id: string) {
     awaitingIntake.value = false
     intakeDismissed.value = false
     await router.replace({ query: { c: id } })
+    await nextTick()
+    scrollToBottom()
   } catch {
     toast.error('Could not load the conversation')
   }
@@ -267,7 +274,6 @@ function handleFrame(frame: string, target: Message) {
     }
   } else if (event === 'delta' && typeof payload.delta === 'string') {
     target.content += payload.delta
-    currentStatus.value = null
     awaitingIntake.value = false
     completeStep('composing')
   } else if (event === 'citation' && typeof payload.url === 'string') {
@@ -326,15 +332,29 @@ function extractTodoItems(text: string): Array<{ title: string; status?: string 
   const cleaned = text
     .replace(/^\s*\[\[TODO_START\]\]\s*$/gm, '')
     .replace(/^\s*\[\[TODO_END\]\]\s*$/gm, '')
-  const regex = /^\s*[-*]\s+\[( |x|X)\]\s+(.+)$/gm
+
+  // Match various checkbox formats: "- [ ]", "- [x]", "[ ]", "[x]", "**[ ]**", "**_**"
+  const regex = /^\s*[-*]*\s*(?:\*{0,2}\[_?\]\*{0,2}|\[( |x|X)\])\s+(.+)$/gm
   let match: RegExpExecArray | null
   while ((match = regex.exec(cleaned)) !== null) {
-    items.push({
-      title: (match[2] ?? '').trim(),
-      status: match[1] === ' ' ? 'pending' : 'completed',
-    })
+    const rawTitle = (match[2] ?? '').trim()
+    const title = sanitizeTodoTitle(rawTitle)
+    if (title) {
+      items.push({
+        title,
+        status: match[1] && match[1] !== ' ' ? 'completed' : 'pending',
+      })
+    }
   }
   return items
+}
+
+function sanitizeTodoTitle(title: string): string {
+  // Strip bold/italic markdown wrapping
+  let cleaned = title.replace(/^\*{1,2}(.+?)\*{1,2}$/, '$1')
+  // Strip any remaining markdown artifacts
+  cleaned = cleaned.replace(/[_*`]/g, '')
+  return cleaned.trim()
 }
 
 async function maybeCreateTodosFromText(text: string, conversationId: string | null) {
@@ -641,6 +661,7 @@ onMounted(async () => {
 })
 
 watch(messages, async () => {
+  if (messages.value.length === 0) return
   await nextTick()
   scrollToBottom()
 }, { deep: true })
@@ -768,12 +789,14 @@ onBeforeUnmount(() => {
           :display-content="getDisplayedContent"
           :search-query="searchQuery"
           :active-search-id="searchActiveId"
+          :experience-level="experienceLevel"
           @markdown-click="handleMarkdownClick"
           @rate="rateMessage"
           @export="handleExport"
           @retry="retryLast"
           @abandon-intake="abandonIntake"
           @reopen-intake="reopenIntake"
+          @select-suggestion="(prompt) => input = prompt"
         />
         </div>
 

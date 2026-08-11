@@ -42,6 +42,7 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: 'Batayan',
+      charset: 'utf-8',
       htmlAttrs: { lang: 'en' },
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },

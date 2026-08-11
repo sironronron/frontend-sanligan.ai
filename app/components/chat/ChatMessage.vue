@@ -3,7 +3,9 @@ import {
   CheckIcon,
   ClipboardCheckIcon,
   CopyIcon,
+  DownloadIcon,
   ExternalLinkIcon,
+  FileIcon,
   FileTextIcon,
   GlobeIcon,
   Loader2Icon,
@@ -111,6 +113,15 @@ const showThinking = computed(
     && !props.awaitingIntake,
 )
 
+const showStreamingStatus = computed(
+  () =>
+    props.message.role === 'assistant'
+    && props.isStreaming
+    && props.message.content
+    && props.statusLabel
+    && !props.awaitingIntake,
+)
+
 function canExport(m: ChatMessage): boolean {
   return m.content.trim().includes('/export/')
 }
@@ -145,12 +156,15 @@ const isActiveSearch = computed(
       <!-- Streaming "thinking" card before any content arrives -->
       <div
         v-if="showThinking"
-        class="w-full max-w-[85%] rounded-2xl border bg-card/60 px-4 py-3 text-sm"
+        class="thinking-card w-full max-w-[85%] rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-card to-card px-4 py-3.5 text-sm shadow-sm"
       >
-        <span class="inline-flex items-center gap-2 text-muted-foreground">
-          <Loader2Icon class="size-3.5 animate-spin text-primary" />
-          {{ statusLabel ?? 'Thinking…' }}
-        </span>
+        <div class="flex items-center gap-2.5">
+          <span class="relative flex size-5 items-center justify-center">
+            <span class="absolute size-full animate-ping rounded-full bg-primary/20" />
+            <Loader2Icon class="size-3.5 animate-spin text-primary" />
+          </span>
+          <span class="font-medium text-foreground/90">{{ statusLabel ?? 'Thinking…' }}</span>
+        </div>
         <ActivityTimeline v-if="activitySteps.length > 0" :steps="activitySteps" class="mt-3" />
       </div>
 
@@ -181,6 +195,16 @@ const isActiveSearch = computed(
 
         <!-- Assistant -->
         <template v-else>
+          <div
+            v-if="showStreamingStatus"
+            class="mb-2.5 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
+          >
+            <span class="relative flex size-3.5 items-center justify-center">
+              <span class="absolute size-full animate-ping rounded-full bg-primary/25" />
+              <Loader2Icon class="size-2.5 animate-spin text-primary" />
+            </span>
+            <span class="font-medium">{{ statusLabel }}</span>
+          </div>
           <div
             v-highlight="searchQuery"
             class="break-words text-[0.95rem] leading-7"
@@ -220,14 +244,23 @@ const isActiveSearch = computed(
           </div>
 
           <!-- Export actions -->
-          <div v-if="persisted && canExport(message)" class="mt-1.5 flex items-center gap-1.5">
-            <span class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Export</span>
-            <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="emit('export', message, 'word')">
+          <div v-if="persisted && canExport(message)" class="mt-2 flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-8 gap-1.5 px-3 text-xs font-medium shadow-sm transition-all hover:bg-primary/5 hover:text-primary hover:border-primary/30"
+              @click="emit('export', message, 'word')"
+            >
               <FileTextIcon class="size-3.5" />
               Word
             </Button>
-            <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="emit('export', message, 'pdf')">
-              <FileTextIcon class="size-3.5" />
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-8 gap-1.5 px-3 text-xs font-medium shadow-sm transition-all hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30"
+              @click="emit('export', message, 'pdf')"
+            >
+              <DownloadIcon class="size-3.5" />
               PDF
             </Button>
           </div>

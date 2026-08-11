@@ -4,7 +4,7 @@ import { KYC_ROLE_OTHER, KYC_USE_CASE_OTHER, kycRoleOptions, kycUseCaseOptions, 
 
 definePageMeta({
   middleware: 'auth',
-  layout: 'minimal',
+  layout: 'bare',
 })
 
 const auth = useAuthStore()
@@ -81,7 +81,8 @@ async function handleSubmit() {
       kyc_document_types: documentTypes.value,
       kyc_experience_level: experienceLevel.value!,
     })
-    await navigateTo(destination())
+    const dest = destination()
+    await navigateTo(`/preparing?next=${encodeURIComponent(dest)}`)
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Could not save your profile. Please try again.'
   }

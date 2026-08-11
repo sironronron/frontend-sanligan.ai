@@ -179,6 +179,48 @@ body {
   }
 }
 
+/*
+ * Long-form markdown rendered by renderMarkdown() — terms, privacy policy.
+ * The renderer emits theme-token utilities for headings/tables/quotes; this
+ * only restores the block rhythm preflight strips, using theme colors.
+ */
+.markdown-body {
+  color: var(--foreground);
+  line-height: 1.65;
+}
+
+.markdown-body p {
+  margin-block: 0.75em;
+}
+
+.markdown-body li {
+  margin-block: 0.25em;
+}
+
+.markdown-body strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.markdown-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--border);
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+}
+
+.markdown-body th {
+  background-color: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+}
+
 .saligan-search-mark {
   background-color: #f9d29b;
   color: #5e3122;

@@ -16,6 +16,12 @@ export interface User {
   kyc_document_types: string | null
   kyc_experience_level: string | null
   kyc_completed_at: string | null
+  terms_accepted_at: string | null
+  terms_version: string | null
+  /** True only when the accepted version matches the version currently published. */
+  terms_accepted: boolean
+  terms_current_version: string
+  marketing_opt_in: boolean
   created_at: string
 }
 
@@ -29,6 +35,13 @@ export const useAuthStore = defineStore('auth', () => {
   const hasOrganization = computed(() => user.value?.organization_id != null)
 
   const kycCompleted = computed(() => user.value?.kyc_completed_at != null)
+
+  const hasAcceptedTerms = computed(() => user.value?.terms_accepted === true)
+
+  /** The user accepted an earlier version and has to accept the updated terms. */
+  const needsTermsReacceptance = computed(
+    () => user.value != null && user.value.terms_accepted_at != null && !user.value.terms_accepted,
+  )
 
   function homePath() {
     if (!hasOrganization.value) return '/organization/setup'
@@ -129,6 +142,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function acceptTerms(marketingOptIn: boolean = false) {
+    busy.value = true
+    try {
+      await api('/terms/accept', {
+        method: 'POST',
+        body: { marketing_opt_in: marketingOptIn },
+      })
+      if (user.value) {
+        user.value = {
+          ...user.value,
+          terms_accepted_at: new Date().toISOString(),
+          terms_version: user.value.terms_current_version,
+          terms_accepted: true,
+          marketing_opt_in: marketingOptIn,
+        }
+      }
+    } finally {
+      busy.value = false
+    }
+  }
+
   async function sendPasswordResetLink(email: string) {
     return api<{ message: string }>('/forgot-password', {
       method: 'POST',
@@ -149,6 +183,8 @@ export const useAuthStore = defineStore('auth', () => {
     busy,
     hasOrganization,
     kycCompleted,
+    hasAcceptedTerms,
+    needsTermsReacceptance,
     homePath,
     fetchUser,
     login,
@@ -157,6 +193,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     saveKyc,
     clearKyc,
+    acceptTerms,
     sendPasswordResetLink,
     resetPassword,
   }

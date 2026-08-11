@@ -9,6 +9,7 @@ import { Toaster } from '~/components/ui/sonner'
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+    <TermsAcceptModal />
     <Toaster />
   </div>
 </template>
