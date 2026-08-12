@@ -36,6 +36,10 @@ export default defineNuxtConfig({
     allowedOrigins: process.env.NUXT_ALLOWED_ORIGINS || '',
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      // Supabase Auth is the identity layer. The publishable (anon) key is
+      // designed to ship to browsers; the service-role key never appears here.
+      supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
+      supabasePublishableKey: process.env.NUXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
     },
   },
 

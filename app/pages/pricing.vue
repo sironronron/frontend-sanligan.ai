@@ -44,8 +44,52 @@ const planLimits = (plan: Plan) => [
     : `Overage ${plan.overage_label}/msg`,
 ]
 
-function priceFor(plan: Plan) {
-  return activeInterval.value === 'annual' ? plan.price_annual_label : plan.price_label
+/** Feature keys arrive snake-cased (e.g. `web_search`); render them readable. */
+function featureLabel(feature: string): string {
+  return feature.replaceAll('_', ' ')
+}
+
+/** Centavos rendered as pesos, keeping decimals only when there are any. */
+function peso(centavos: number): string {
+  const value = centavos / 100
+
+  return `₱${value.toLocaleString('en-PH', {
+    minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+/** The yearly charge, mirroring the API's fallback when no annual price is set. */
+function annualPrice(plan: Plan): number {
+  return plan.price_annual || plan.price * 12
+}
+
+/** What one month costs on the given interval — annual spread over twelve. */
+function monthlyPrice(plan: Plan, interval: BillingInterval): number {
+  return interval === 'annual' ? annualPrice(plan) / 12 : plan.price
+}
+
+/**
+ * The headline figure. Annual plans are quoted per month so the two intervals
+ * can be compared at a glance; the amount actually charged is stated
+ * separately by `billedLabel`, never left to be inferred from this.
+ */
+function priceFor(plan: Plan, interval: BillingInterval = activeInterval.value) {
+  return peso(monthlyPrice(plan, interval))
+}
+
+/** The total charged when checkout completes, for the given interval. */
+function billedAmount(plan: Plan, interval: BillingInterval): number {
+  return interval === 'annual' ? annualPrice(plan) : plan.price
+}
+
+function billedLabel(plan: Plan, interval: BillingInterval = activeInterval.value) {
+  return peso(billedAmount(plan, interval))
+}
+
+/** What the annual interval saves against paying monthly for a year. */
+function annualSavingsLabel(plan: Plan) {
+  return peso(plan.price * 12 - annualPrice(plan))
 }
 
 function isCurrent(plan: Plan) {
@@ -167,31 +211,41 @@ onMounted(async () => {
           v-for="plan in plans"
           :key="plan.id"
           class="relative flex flex-col"
-          :class="plan.slug === 'pro' ? 'border-primary shadow-lg' : ''"
+          :class="plan.slug === 'pro'
+            ? 'overflow-visible ring-2 ring-primary shadow-lg'
+            : ''"
         >
+          <!--
+            The badge straddles the top edge, so the card has to opt out of the
+            `overflow-hidden` it carries by default or the upper half is clipped
+            away. Highlighting is a ring rather than a border because the card
+            outlines itself with `ring-1` and sets no border width — a border
+            colour alone would have nothing to paint.
+          -->
           <Badge
             v-if="plan.slug === 'pro'"
-            class="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground"
+            class="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 bg-primary text-primary-foreground shadow-sm"
           >
             Most popular
           </Badge>
           <CardHeader>
             <CardTitle>{{ plan.name }}</CardTitle>
-            <CardDescription>{{ plan.interval === 'yearly' ? 'per month, billed yearly' : 'per month' }}</CardDescription>
+            <CardDescription>{{ activeInterval === 'annual' ? 'per month, billed yearly' : 'per month' }}</CardDescription>
           </CardHeader>
           <CardContent class="flex flex-1 flex-col gap-6">
             <div>
               <span class="text-4xl font-bold tracking-tight">{{ priceFor(plan) }}</span>
               <span class="text-sm text-muted-foreground"> /month</span>
               <p v-if="activeInterval === 'annual'" class="mt-1 text-xs text-muted-foreground">
-                billed annually · save 2 months
+                <span class="line-through">{{ plan.price_label }}/month</span>
+                · save {{ annualSavingsLabel(plan) }} a year
               </p>
             </div>
 
             <ul class="space-y-2 text-sm">
               <li v-for="feature in plan.features" :key="feature" class="flex items-start gap-2">
                 <CheckIcon class="mt-0.5 size-4 shrink-0 text-primary" />
-                <span>{{ feature }}</span>
+                <span class="capitalize">{{ featureLabel(feature) }}</span>
               </li>
               <li v-for="limit in planLimits(plan)" :key="limit" class="flex items-start gap-2 text-muted-foreground">
                 <CheckIcon class="mt-0.5 size-4 shrink-0 text-primary" />
@@ -211,6 +265,10 @@ onMounted(async () => {
               <p v-if="hasActiveSubscription && !isCurrent(plan)" class="mt-2 text-center text-xs text-muted-foreground">
                 Switch takes effect immediately
               </p>
+              <p v-else-if="!isCurrent(plan)" class="mt-2 text-center text-xs text-muted-foreground">
+                {{ billedLabel(plan) }} billed today, then
+                {{ activeInterval === 'annual' ? 'every year' : 'every month' }}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -227,7 +285,13 @@ onMounted(async () => {
         <div class="mb-8 text-center">
           <h1 class="text-2xl font-bold tracking-tight">Subscribe to {{ selectedPlan.name }}</h1>
           <p class="mt-2 text-muted-foreground">
-            {{ priceFor(selectedPlan) }} per month · billed {{ selectedInterval === 'annual' ? 'yearly' : 'monthly' }}
+            {{ priceFor(selectedPlan, selectedInterval) }} per month · billed {{ selectedInterval === 'annual' ? 'yearly' : 'monthly' }}
+          </p>
+          <p class="mt-1 text-sm font-medium">
+            {{ billedLabel(selectedPlan, selectedInterval) }} charged today
+            <span v-if="selectedInterval === 'annual'" class="font-normal text-muted-foreground">
+              — covers 12 months, saving {{ annualSavingsLabel(selectedPlan) }}
+            </span>
           </p>
         </div>
 
@@ -236,7 +300,7 @@ onMounted(async () => {
             <ul class="space-y-2 text-sm">
               <li v-for="feature in selectedPlan.features" :key="feature" class="flex items-start gap-2">
                 <CheckIcon class="mt-0.5 size-4 shrink-0 text-primary" />
-                <span>{{ feature }}</span>
+                <span>{{ featureLabel(feature) }}</span>
               </li>
               <li v-for="limit in planLimits(selectedPlan)" :key="limit" class="flex items-start gap-2 text-muted-foreground">
                 <CheckIcon class="mt-0.5 size-4 shrink-0 text-primary" />
@@ -246,7 +310,7 @@ onMounted(async () => {
 
             <Button class="w-full" :disabled="processing" @click="handleCheckout">
               <Loader2Icon v-if="processing" class="size-4 animate-spin" />
-              {{ processing ? 'Preparing checkout…' : `Pay ${priceFor(selectedPlan)}` }}
+              {{ processing ? 'Preparing checkout…' : `Pay ${billedLabel(selectedPlan, selectedInterval)}` }}
             </Button>
             <p class="text-center text-xs text-muted-foreground">
               You'll be taken to PayMongo's secure payment page to complete your subscription. Cards and Maya accepted.

@@ -12,8 +12,11 @@ const email = ref('')
 const sent = ref(false)
 const error = ref('')
 const fieldErrors = ref<Record<string, string>>({})
+const submitting = ref(false)
 
 async function handleSubmit() {
+  if (submitting.value) return
+
   error.value = ''
   fieldErrors.value = {}
   sent.value = false
@@ -23,6 +26,8 @@ async function handleSubmit() {
     return
   }
 
+  submitting.value = true
+
   try {
     await auth.sendPasswordResetLink(email.value)
     sent.value = true
@@ -30,6 +35,8 @@ async function handleSubmit() {
     const parsed = parseApiError(err, 'Something went wrong. Please try again.')
     error.value = parsed.message
     fieldErrors.value = parsed.fields
+  } finally {
+    submitting.value = false
   }
 }
 </script>
@@ -55,7 +62,7 @@ async function handleSubmit() {
         <Button class="h-10 w-full" @click="navigateTo('/login')">
           Back to sign in
         </Button>
-        <Button variant="ghost" class="h-10 w-full" :loading="auth.busy" @click="handleSubmit">
+        <Button variant="ghost" class="h-10 w-full" :loading="submitting" @click="handleSubmit">
           Resend the link
         </Button>
       </div>
@@ -90,8 +97,8 @@ async function handleSubmit() {
         </p>
       </div>
 
-      <Button type="submit" class="h-10 w-full" :loading="auth.busy">
-        {{ auth.busy ? 'Sending…' : 'Send reset link' }}
+      <Button type="submit" class="h-10 w-full" :loading="submitting">
+        {{ submitting ? 'Sending…' : 'Send reset link' }}
       </Button>
     </form>
 

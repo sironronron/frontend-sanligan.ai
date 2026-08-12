@@ -24,7 +24,7 @@ interface Document {
 const api = useApi()
 const caseStore = useCaseStore()
 const fileDrop = useFileDrop()
-const { fileUrl } = useDocumentFile()
+const { download: downloadDocument } = useDocumentFile()
 
 const cases = computed(() => caseStore.cases)
 const attachTarget = ref<Document | null>(null)
@@ -374,13 +374,14 @@ async function removeDocument(doc: Document) {
             <EyeIcon class="size-4" />
             <span class="sr-only">View {{ doc.title }}</span>
           </Button>
-          <a
-            :href="fileUrl(doc.id, 'attachment')"
+          <button
+            type="button"
             class="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             :aria-label="`Download ${doc.title}`"
+            @click="downloadDocument(doc.id, doc.original_filename)"
           >
             <DownloadIcon class="size-4" />
-          </a>
+          </button>
           <Button
             variant="ghost"
             size="icon"

@@ -11,7 +11,7 @@ export interface ViewerDocument {
 const props = defineProps<{ document: ViewerDocument }>()
 const emit = defineEmits<{ close: [] }>()
 
-const { fileUrl } = useDocumentFile()
+const { fetchBlob, objectUrl, download } = useDocumentFile()
 
 const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'text/md', 'text/x-markdown'])
 
@@ -19,25 +19,47 @@ const isPdf = computed(() => props.document.mime_type === 'application/pdf')
 const isImage = computed(() => props.document.mime_type.startsWith('image/'))
 const isText = computed(() => TEXT_MIME_TYPES.has(props.document.mime_type))
 
-const inlineUrl = computed(() => fileUrl(props.document.id, 'inline'))
-const downloadUrl = computed(() => fileUrl(props.document.id, 'attachment'))
-
+// The API authenticates a bearer token, which an iframe, img, or download
+// anchor cannot send, so the file is fetched here and handed to the DOM as a
+// blob: URL instead of a direct API URL.
+const inlineUrl = ref<string | null>(null)
 const text = ref<string | null>(null)
 const textError = ref('')
 const loadingText = ref(false)
+const downloading = ref(false)
 
-async function loadText() {
-  if (!isText.value || text.value !== null) return
-  loadingText.value = true
-  textError.value = ''
+async function loadPreview() {
+  if (isText.value) {
+    if (text.value !== null) return
+
+    loadingText.value = true
+    textError.value = ''
+    try {
+      text.value = await (await fetchBlob(props.document.id)).text()
+    } catch (err: any) {
+      textError.value = err?.message ?? 'Could not load the file content.'
+    } finally {
+      loadingText.value = false
+    }
+
+    return
+  }
+
+  if (!isPdf.value && !isImage.value) return
+
   try {
-    const response = await fetch(inlineUrl.value, { credentials: 'include' })
-    if (!response.ok) throw new Error(`Could not load the file (HTTP ${response.status})`)
-    text.value = await response.text()
+    inlineUrl.value = await objectUrl(props.document.id)
   } catch (err: any) {
-    textError.value = err?.message ?? 'Could not load the file content.'
+    textError.value = err?.message ?? 'Could not load the file.'
+  }
+}
+
+async function downloadFile() {
+  downloading.value = true
+  try {
+    await download(props.document.id, props.document.original_filename)
   } finally {
-    loadingText.value = false
+    downloading.value = false
   }
 }
 
@@ -46,11 +68,17 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  void loadText()
+  void loadPreview()
   window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
+  // The blob holds the whole file in memory until it is revoked.
+  if (inlineUrl.value) {
+    URL.revokeObjectURL(inlineUrl.value)
+    inlineUrl.value = null
+  }
+
   window.removeEventListener('keydown', onKeydown)
 })
 </script>
@@ -74,13 +102,15 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <a
-              :href="downloadUrl"
-              class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            <button
+              type="button"
+              :disabled="downloading"
+              class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+              @click="downloadFile"
             >
               <DownloadIcon class="size-3.5" />
               Download
-            </a>
+            </button>
             <Button variant="ghost" size="icon" class="size-7" aria-label="Close preview" @click="emit('close')">
               <XIcon class="size-4" />
             </Button>
@@ -88,11 +118,15 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="isPdf" class="min-h-0 flex-1">
-          <iframe :src="inlineUrl" class="h-full w-full border-0" title="Document preview" />
+          <iframe v-if="inlineUrl" :src="inlineUrl" class="h-full w-full border-0" title="Document preview" />
+          <div v-else class="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2Icon class="size-4 animate-spin" />
+            Loading…
+          </div>
         </div>
 
         <div v-else-if="isImage" class="min-h-0 flex-1 overflow-auto bg-muted/30 p-6">
-          <img :src="inlineUrl" :alt="document.original_filename" class="mx-auto max-h-full max-w-full object-contain" />
+          <img v-if="inlineUrl" :src="inlineUrl" :alt="document.original_filename" class="mx-auto max-h-full max-w-full object-contain" />
         </div>
 
         <div v-else-if="isText" class="min-h-0 flex-1 overflow-auto">
@@ -106,13 +140,15 @@ onBeforeUnmount(() => {
 
         <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <span>This file type cannot be previewed inline.</span>
-          <a
-            :href="downloadUrl"
-            class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          <button
+            type="button"
+            :disabled="downloading"
+            class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+            @click="downloadFile"
           >
             <DownloadIcon class="size-3.5" />
             Download {{ document.original_filename }}
-          </a>
+          </button>
         </div>
       </div>
     </div>

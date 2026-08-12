@@ -18,7 +18,7 @@ import {
   EyeIcon,
   SearchIcon,
 } from '@lucide/vue'
-import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
+import { authHeaders } from '~/lib/http'
 import { useCaseStore, type LegalCase, type CaseIntake, type CaseConversation } from '~/stores/cases'
 import { useTodoStore } from '~/stores/todos'
 import { useAuthStore } from '~/stores/auth'
@@ -82,7 +82,7 @@ const auth = useAuthStore()
 
 const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
 const { downloadExport } = useDocumentExport()
-const { fileUrl } = useDocumentFile()
+const { download: downloadDocument } = useDocumentFile()
 
 const caseDetail = ref<LegalCase | null>(null)
 const loading = ref(true)
@@ -122,6 +122,8 @@ const streaming = ref(false)
 const sending = ref(false)
 const streamError = ref('')
 const streamController = ref<AbortController | null>(null)
+// Reveals queued deltas character by character; rebuilt per send().
+let textStreamer: TextStreamer | null = null
 const currentStatus = ref<string | null>(null)
 const currentStatusLabel = ref<string | null>(null)
 const intakeFields = ref<IntakeField[] | null>(null)
@@ -342,7 +344,13 @@ const CHAT_MIN_WIDTH = 400
 
 function previewMaxWidth(): number {
   const chatWidth = mainChatEl.value?.getBoundingClientRect().width ?? 0
-  return Math.max(chatWidth - CHAT_MIN_WIDTH, 320)
+
+  // The chat section and the preview panel are flex siblings, so the chat
+  // shrinks by exactly what the panel gains: only their SUM is stable while
+  // dragging. Subtracting the reserve from the chat width alone made the limit
+  // fall as the panel grew, so the panel was clamped back, the chat grew, the
+  // limit rose, and the panel grew again — the stutter at the boundary.
+  return Math.max(chatWidth + previewWidth.value - CHAT_MIN_WIDTH, MIN_PREVIEW_WIDTH)
 }
 
 const conversationId = computed(() => activeConversationId.value ?? caseDetail.value?.conversation_id ?? null)
@@ -538,7 +546,8 @@ function handleFrame(frame: string, target: Message) {
       markStepActive(payload.status, currentStatusLabel.value ?? statusLabels[payload.status] ?? payload.status)
     }
   } else if (event === 'delta' && typeof payload.delta === 'string') {
-    target.content += payload.delta
+    if (textStreamer) textStreamer.push(payload.delta)
+    else target.content += payload.delta
     awaitingIntake.value = false
     completeStep('composing')
   } else if (event === 'citation' && typeof payload.url === 'string') {
@@ -561,11 +570,13 @@ function handleFrame(frame: string, target: Message) {
     refreshTodos()
     completeStep('create_todo')
   } else if (event === 'done') {
+    textStreamer?.flush()
     completeActiveSteps()
     if (intakeFields.value === null) {
       awaitingIntake.value = false
     }
   } else if (event === 'error') {
+    textStreamer?.flush()
     streamError.value = String(payload.message ?? 'The AI provider could not complete the response.')
     awaitingIntake.value = false
   }
@@ -674,22 +685,21 @@ async function send(questionOverride?: string | Event) {
       created_at: new Date().toISOString(),
     })
     messages.value.push(assistant)
+    textStreamer = createTextStreamer((chunk) => {
+      assistant.content += chunk
+    })
     streaming.value = true
 
     await nextTick()
     scrollToBottom()
 
-    await ensureCsrfCookie(apiBase)
-
     streamController.value = new AbortController()
     const response = await fetch(`${apiBase}/api/conversations/${conversationId.value}/messages`, {
       method: 'POST',
-      credentials: 'include',
-      headers: {
+      headers: await authHeaders({
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        'X-XSRF-TOKEN': getXsrfToken() ?? '',
-      },
+      }),
       body: JSON.stringify({ message: question }),
       signal: streamController.value.signal,
     })
@@ -732,14 +742,18 @@ async function send(questionOverride?: string | Event) {
       handleFrame(buffer, assistant)
     }
 
+    textStreamer.flush()
     lastAssistantText = assistant.content
   } catch (err: any) {
+    textStreamer?.flush()
+
     if (err?.name === 'AbortError') {
       streamError.value = ''
     } else {
       streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
     }
   } finally {
+    textStreamer = null
     streamController.value = null
     streaming.value = false
     sending.value = false
@@ -784,6 +798,7 @@ function searchNavigate(messageId: string) {
 }
 
 function stopStreaming() {
+  textStreamer?.flush()
   streamController.value?.abort()
   streamController.value = null
   currentStatus.value = null
@@ -964,6 +979,8 @@ onBeforeUnmount(() => {
     clearInterval(documentPollTimer)
     documentPollTimer = null
   }
+  textStreamer?.stop()
+  textStreamer = null
   streamController.value?.abort()
   streamController.value = null
 })
@@ -1170,13 +1187,14 @@ watch(
               >
                 <EyeIcon class="size-3.5" />
               </Button>
-              <a
-                :href="fileUrl(doc.id, 'attachment')"
+              <button
+                type="button"
                 class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground max-lg:opacity-100"
                 :aria-label="`Download ${doc.title}`"
+                @click="downloadDocument(doc.id, doc.original_filename)"
               >
                 <DownloadIcon class="size-3.5" />
-              </a>
+              </button>
               <Button
                 variant="ghost"
                 size="icon"

@@ -1,33 +1,19 @@
-let csrfReady: Promise<void> | null = null
+import { accessToken } from '~/lib/supabase'
 
-export function ensureCsrfCookie(base: string): Promise<void> {
-  if (!csrfReady) {
-    csrfReady = $fetch<void>('/sanctum/csrf-cookie', {
-      baseURL: base,
-      credentials: 'include',
-    }).catch((error) => {
-      csrfReady = null
-      throw error
-    })
-  }
+/**
+ * Request headers for a call to the Laravel API.
+ *
+ * The API authenticates the Supabase access token from the `Authorization`
+ * header (see the `supabase` guard). It is entirely stateless — there is no
+ * session cookie and no CSRF token to fetch first, which is why callers no
+ * longer need a priming request before a POST.
+ */
+export async function authHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const token = await accessToken()
 
-  return csrfReady
-}
-
-export function resetCsrfCookie(): void {
-  csrfReady = null
-}
-
-export function getXsrfToken(): string | null {
-  if (typeof document === 'undefined') return null
-
-  const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/)
-
-  if (!match) return null
-
-  try {
-    return decodeURIComponent(match[1] as string)
-  } catch {
-    return match[1] as string
+  return {
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
   }
 }

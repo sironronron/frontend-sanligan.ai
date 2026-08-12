@@ -21,6 +21,7 @@ const useCaseOther = ref('')
 const documentTypes = ref<string[]>([])
 const experienceLevel = ref<string | null>(null)
 const error = ref('')
+const submitting = ref(false)
 const nextUrl = useRoute().query.next
 
 function destination() {
@@ -70,8 +71,11 @@ function back() {
 }
 
 async function handleSubmit() {
-  if (!canContinue()) return
+  if (submitting.value || !canContinue()) return
+
   error.value = ''
+  submitting.value = true
+
   try {
     await auth.saveKyc({
       kyc_role: role.value!,
@@ -85,6 +89,8 @@ async function handleSubmit() {
     await navigateTo(`/preparing?next=${encodeURIComponent(dest)}`)
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Could not save your profile. Please try again.'
+  } finally {
+    submitting.value = false
   }
 }
 </script>
@@ -257,8 +263,8 @@ async function handleSubmit() {
               <ArrowLeftIcon class="mr-2 size-4" />
               Back
             </Button>
-            <Button type="button" size="lg" :disabled="!canContinue()" :loading="auth.busy" @click="handleSubmit">
-              {{ auth.busy ? 'Setting up…' : 'Get Started' }}
+            <Button type="button" size="lg" :disabled="submitting || !canContinue()" :loading="submitting" @click="handleSubmit">
+              {{ submitting ? 'Setting up…' : 'Get Started' }}
             </Button>
           </div>
         </template>

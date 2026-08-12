@@ -17,6 +17,8 @@ const useCaseOther = ref(auth.user?.kyc_use_case_other ?? '')
 const documentTypes = ref<string[]>((auth.user?.kyc_document_types ?? '').split(',').filter(Boolean))
 const experienceLevel = ref<string | null>(auth.user?.kyc_experience_level ?? null)
 const confirmingClear = ref(false)
+const saving = ref(false)
+const clearing = ref(false)
 
 const dirty = computed(() => {
   const current = auth.user
@@ -61,7 +63,9 @@ function formatDate(value: string | null) {
 }
 
 async function handleSave() {
+  if (saving.value) return
   if (!role.value || !useCase.value) return
+  saving.value = true
   try {
     await auth.saveKyc({
       kyc_role: role.value,
@@ -74,12 +78,17 @@ async function handleSave() {
     toast.success('Your personalization was saved')
   } catch (err: any) {
     toast.error(err?.data?.message ?? 'Could not save your personalization')
+  } finally {
+    saving.value = false
   }
 }
 
 async function handleClear() {
+  if (clearing.value) return
+
   if (confirmingClear.value) {
     confirmingClear.value = false
+    clearing.value = true
     try {
       await auth.clearKyc()
       role.value = null
@@ -91,6 +100,8 @@ async function handleClear() {
       toast.success('Your personalization was cleared')
     } catch (err: any) {
       toast.error(err?.data?.message ?? 'Could not clear your personalization')
+    } finally {
+      clearing.value = false
     }
     return
   }
@@ -241,16 +252,16 @@ async function handleClear() {
             v-if="auth.kycCompleted"
             variant="ghost"
             :class="confirmingClear ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'"
-            :disabled="auth.busy"
+            :disabled="saving || clearing"
             @click="handleClear"
           >
-            <Loader2Icon v-if="auth.busy" class="size-4 animate-spin" />
+            <Loader2Icon v-if="clearing" class="size-4 animate-spin" />
             <TrashIcon v-else class="size-4" />
             {{ confirmingClear ? 'Confirm clear' : 'Clear profile' }}
           </Button>
           <span v-else />
-          <Button :disabled="!dirty || !role || !useCase" :loading="auth.busy" @click="handleSave">
-            {{ auth.busy ? 'Saving…' : 'Save changes' }}
+          <Button :disabled="!dirty || !role || !useCase || saving || clearing" :loading="saving" @click="handleSave">
+            {{ saving ? 'Saving…' : 'Save changes' }}
           </Button>
         </div>
       </CardContent>

@@ -12,7 +12,7 @@ import {
   SearchIcon,
   PanelLeftIcon,
 } from '@lucide/vue'
-import { ensureCsrfCookie, getXsrfToken } from '~/lib/http'
+import { authHeaders } from '~/lib/http'
 import { useTodoStore } from '~/stores/todos'
 import { useBillingStore, upgradeMessage } from '~/stores/billing'
 import { useAuthStore } from '~/stores/auth'
@@ -85,6 +85,8 @@ const streaming = ref(false)
 const streamError = ref('')
 const sending = ref(false)
 const streamController = ref<AbortController | null>(null)
+// Reveals queued deltas character by character; rebuilt per send().
+let textStreamer: TextStreamer | null = null
 const currentStatus = ref<string | null>(null)
 const currentStatusLabel = ref<string | null>(null)
 const lastQuestion = ref('')
@@ -135,6 +137,20 @@ const busy = computed(() => sending.value || streaming.value)
 const messagesContainer = ref<HTMLElement | null>(null)
 
 const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
+
+const mainChatEl = ref<HTMLElement | null>(null)
+
+// Reserve a minimum comfortable chat width so the PDF preview resize can never
+// cross into the conversation area.
+const CHAT_MIN_WIDTH = 400
+
+function previewMaxWidth(): number {
+  const chatWidth = mainChatEl.value?.getBoundingClientRect().width ?? 0
+
+  // The chat section and the preview panel are flex siblings, so only their SUM
+  // is stable while dragging — see the same guard on the case view.
+  return Math.max(chatWidth + previewWidth.value - CHAT_MIN_WIDTH, MIN_PREVIEW_WIDTH)
+}
 
 // The preview is the widest panel and is resizable, so it takes the rail rather
 // than opening beside it.
@@ -297,7 +313,8 @@ function handleFrame(frame: string, target: Message) {
       markStepActive(payload.status, currentStatusLabel.value ?? statusLabels[payload.status] ?? payload.status)
     }
   } else if (event === 'delta' && typeof payload.delta === 'string') {
-    target.content += payload.delta
+    if (textStreamer) textStreamer.push(payload.delta)
+    else target.content += payload.delta
     awaitingIntake.value = false
     completeStep('composing')
   } else if (event === 'citation' && typeof payload.url === 'string') {
@@ -320,11 +337,13 @@ function handleFrame(frame: string, target: Message) {
     refreshTodos()
     completeStep('create_todo')
   } else if (event === 'done') {
+    textStreamer?.flush()
     completeActiveSteps()
     if (intakeFields.value === null) {
       awaitingIntake.value = false
     }
   } else if (event === 'error') {
+    textStreamer?.flush()
     streamError.value = String(payload.message ?? 'The AI provider could not complete the response.')
     awaitingIntake.value = false
   }
@@ -534,23 +553,21 @@ async function send(questionOverride?: string | Event) {
       created_at: new Date().toISOString(),
     })
     messages.value.push(assistant)
+    textStreamer = createTextStreamer((chunk) => {
+      assistant.content += chunk
+    })
     streaming.value = true
 
     await nextTick()
     scrollToBottom()
 
-    await ensureCsrfCookie(apiBase)
-
-    const xsrfToken = getXsrfToken()
     streamController.value = new AbortController()
     const response = await fetch(`${apiBase}/api/conversations/${conv.id}/messages`, {
       method: 'POST',
-      credentials: 'include',
-      headers: {
+      headers: await authHeaders({
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
-      },
+      }),
       body: JSON.stringify({ message: question }),
       signal: streamController.value.signal,
     })
@@ -594,14 +611,18 @@ async function send(questionOverride?: string | Event) {
       scrollToBottom()
     }
 
+    textStreamer.flush()
     lastAssistantText = assistant.content
   } catch (err: any) {
+    textStreamer?.flush()
+
     if (err?.name === 'AbortError') {
       streamError.value = ''
     } else {
       streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
     }
   } finally {
+    textStreamer = null
     streamController.value = null
     currentStatus.value = null
     currentStatusLabel.value = null
@@ -652,6 +673,7 @@ onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 function stopStreaming() {
+  textStreamer?.flush()
   streamController.value?.abort()
   streamController.value = null
   currentStatus.value = null
@@ -700,6 +722,8 @@ watch(activeId, async (id) => {
 })
 
 onBeforeUnmount(() => {
+  textStreamer?.stop()
+  textStreamer = null
   streamController.value?.abort()
   streamController.value = null
 })
@@ -717,7 +741,11 @@ onBeforeUnmount(() => {
       @delete="deleteConversation"
     />
 
-    <section class="flex min-w-0 flex-1 flex-col">
+    <section
+      ref="mainChatEl"
+      class="flex min-w-0 flex-1 flex-col"
+      :class="previewDoc ? 'lg:min-w-[400px]' : ''"
+    >
       <div class="flex items-center justify-between border-b px-2 py-2.5 sm:px-4">
           <div class="flex min-w-0 items-center gap-1.5">
             <Button
@@ -879,7 +907,7 @@ onBeforeUnmount(() => {
       <div
         class="group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize touch-none select-none"
         aria-hidden="true"
-        @pointerdown="startResize"
+        @pointerdown="startResize($event, previewMaxWidth)"
       >
         <div class="mx-auto h-full w-px bg-border transition-colors group-hover:bg-primary/60" />
       </div>

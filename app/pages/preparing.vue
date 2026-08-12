@@ -1,216 +1,326 @@
 <script setup lang="ts">
+import { CheckIcon } from '@lucide/vue'
+
 definePageMeta({
   layout: 'bare',
   middleware: ['auth'],
 })
 
 const auth = useAuthStore()
+const route = useRoute()
 
+/** Each line names something the account genuinely gets set up with. */
 const steps = [
-  { title: 'Batayan', phrase: 'Preparing your legal workspace' },
-  { title: 'Batayan', phrase: 'Setting up your document library' },
-  { title: 'Batayan', phrase: 'Configuring your practice areas' },
-  { title: 'Batayan', phrase: 'Initializing your case files' },
-  { title: 'Batayan', phrase: 'Personalizing your experience' },
+  'Preparing your legal workspace',
+  'Setting up your document library',
+  'Configuring your practice areas',
+  'Initializing your case files',
+  'Personalizing your experience',
 ] as const
 
-const currentStep = ref(0)
-const destination = ref<string | null>(null)
-const completed = ref(false)
+const STEP_MS = 1500
+/** A beat on the finished state, so the last tick is seen rather than skipped. */
+const SETTLE_MS = 900
 
-const currentTitle = computed(() => steps[currentStep.value]?.title ?? 'Batayan')
-const currentPhrase = computed(() => steps[currentStep.value]?.phrase ?? 'Preparing')
+const activeStep = ref(0)
+const finished = ref(false)
+
+/** First name only — "Setting things up, Maria" reads as addressed to a person. */
+const firstName = computed(() => String(auth.user?.name ?? '').trim().split(/\s+/)[0] ?? '')
+
+const progress = computed(() =>
+  Math.round(((finished.value ? steps.length : activeStep.value) / steps.length) * 100),
+)
+
+const timers: ReturnType<typeof setTimeout>[] = []
 
 onMounted(() => {
-  const route = useRoute()
-  destination.value = (route.query.next as string) || auth.homePath()
+  const destination = (route.query.next as string) || auth.homePath()
 
-  const interval = setInterval(() => {
-    if (currentStep.value < steps.length - 1) {
-      currentStep.value++
-    }
-  }, 1600)
+  steps.forEach((_, index) => {
+    if (index === 0) return
 
-  setTimeout(() => {
-    clearInterval(interval)
-    completed.value = true
-    setTimeout(() => {
-      if (destination.value) {
-        navigateTo(destination.value)
-      }
-    }, 600)
-  }, 8500)
+    timers.push(setTimeout(() => { activeStep.value = index }, STEP_MS * index))
+  })
+
+  timers.push(setTimeout(() => { finished.value = true }, STEP_MS * steps.length))
+  timers.push(setTimeout(() => navigateTo(destination), STEP_MS * steps.length + SETTLE_MS))
 })
+
+// Without this, a user who navigates away mid-sequence is still yanked to the
+// destination when the last timer fires against the unmounted component.
+onUnmounted(() => timers.forEach(clearTimeout))
 </script>
 
 <template>
-  <div class="preparing-page">
-    <div class="preparing-content">
-      <!-- Pulsing ring -->
-      <div class="pulse-container">
-        <div class="pulse-ring"></div>
-        <div class="pulse-ring delay-1"></div>
-        <div class="pulse-ring delay-2"></div>
-        <div class="dot"></div>
+  <div class="preparing">
+    <!--
+      Ambient wash. Purely decorative and drifting slowly behind the content,
+      so the screen reads as alive during the wait rather than frozen.
+    -->
+    <div aria-hidden="true" class="glow glow-one" />
+    <div aria-hidden="true" class="glow glow-two" />
+
+    <div class="relative flex w-full max-w-lg flex-col items-center px-6">
+      <h1 class="wordmark font-heading">
+        Batayan
+      </h1>
+
+      <p class="mt-3 text-center text-sm text-muted-foreground sm:text-base">
+        <template v-if="firstName">
+          Setting things up, <span class="font-medium text-foreground">{{ firstName }}</span>.
+        </template>
+        <template v-else>
+          Setting up your workspace.
+        </template>
+      </p>
+
+      <!--
+        The checklist is the point: a spinner says "wait", a list ticking over
+        says the work is real and specific to this account.
+      -->
+      <ol class="mt-10 w-full space-y-1" role="status" aria-live="polite">
+        <li
+          v-for="(step, index) in steps"
+          :key="step"
+          class="step"
+          :class="{
+            'step-done': finished || index < activeStep,
+            'step-active': !finished && index === activeStep,
+          }"
+          :style="{ animationDelay: `${index * 90}ms` }"
+        >
+          <span class="marker">
+            <CheckIcon v-if="finished || index < activeStep" class="size-3.5" />
+            <span v-else-if="index === activeStep" class="spinner" />
+            <span v-else class="pip" />
+          </span>
+          <span class="step-label">{{ step }}</span>
+        </li>
+      </ol>
+
+      <div
+        class="mt-10 h-1 w-full max-w-sm overflow-hidden rounded-full bg-border"
+        role="progressbar"
+        :aria-valuenow="progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-label="Preparing your workspace"
+      >
+        <div class="progress-fill" :style="{ width: `${progress}%` }" />
       </div>
 
-      <!-- Title -->
-      <Transition name="title-fade" mode="out-in">
-        <h1 :key="currentStep" class="preparing-title">
-          {{ currentTitle }}
-        </h1>
-      </Transition>
-
-      <!-- Description -->
-      <Transition name="phrase-slide" mode="out-in">
-        <p :key="currentStep" class="preparing-phrase">
-          {{ currentPhrase }}...
+      <Transition name="ready">
+        <p v-if="finished" class="mt-5 text-sm font-medium text-primary">
+          Your workspace is ready.
         </p>
       </Transition>
-
-      <!-- Progress bar -->
-      <div class="progress-bar">
-        <div class="progress-fill"></div>
-      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.preparing-page {
-  position: fixed;
-  inset: 0;
+.preparing {
+  position: relative;
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  background: var(--bg-primary);
-  z-index: 50;
-}
-
-.preparing-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
-}
-
-/* Pulse animation */
-.pulse-container {
-  position: relative;
-  width: 60px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent-primary);
-  position: relative;
-  z-index: 1;
-}
-
-.pulse-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 2px solid var(--accent-primary);
-  opacity: 0;
-  animation: pulse-expand 2s ease-out infinite;
-}
-
-.pulse-ring.delay-1 {
-  animation-delay: 0.6s;
-}
-
-.pulse-ring.delay-2 {
-  animation-delay: 1.2s;
-}
-
-@keyframes pulse-expand {
-  0% {
-    transform: scale(0.5);
-    opacity: 0.6;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
-}
-
-/* Title */
-.preparing-title {
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.03em;
-}
-
-/* Phrase */
-.preparing-phrase {
-  font-size: 1rem;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-/* Transitions */
-.title-fade-enter-active,
-.title-fade-leave-active {
-  transition: all 0.3s ease;
-}
-
-.title-fade-enter-from {
-  opacity: 0;
-  transform: scale(0.95);
-}
-
-.title-fade-leave-to {
-  opacity: 0;
-  transform: scale(1.05);
-}
-
-.phrase-slide-enter-active,
-.phrase-slide-leave-active {
-  transition: all 0.3s ease;
-}
-
-.phrase-slide-enter-from {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-.phrase-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-/* Progress bar */
-.progress-bar {
-  width: 200px;
-  height: 3px;
-  background: var(--border-primary);
-  border-radius: 9999px;
   overflow: hidden;
-  margin-top: 1rem;
+  padding: 3rem 0;
 }
+
+/* Ambient glows ---------------------------------------------------------- */
+
+.glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.glow-one {
+  top: -6rem;
+  right: -4rem;
+  width: 26rem;
+  height: 26rem;
+  background: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  animation: drift-one 14s ease-in-out infinite;
+}
+
+.glow-two {
+  bottom: -8rem;
+  left: -5rem;
+  width: 30rem;
+  height: 30rem;
+  background: color-mix(in oklab, var(--color-peach) 26%, transparent);
+  animation: drift-two 18s ease-in-out infinite;
+}
+
+@keyframes drift-one {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-2.5rem, 2rem, 0) scale(1.12); }
+}
+
+@keyframes drift-two {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.06); }
+  50% { transform: translate3d(2rem, -2.5rem, 0) scale(1); }
+}
+
+/* Wordmark --------------------------------------------------------------- */
+
+.wordmark {
+  /* Fluid rather than fixed: this is the one element that should dominate the
+     screen on a laptop without overflowing a narrow phone. */
+  font-size: clamp(3.25rem, 13vw, 6.5rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  /* The sweep rides across the text itself via background-clip, so the accent
+     colour reads as light moving over the letterforms. Endpoints are the
+     theme's own foreground, so it resolves correctly in light and dark. */
+  background-image: linear-gradient(
+    100deg,
+    var(--color-foreground) 25%,
+    var(--color-primary) 45%,
+    var(--color-peach) 52%,
+    var(--color-primary) 59%,
+    var(--color-foreground) 78%
+  );
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sheen 4.5s ease-in-out infinite, rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes sheen {
+  0%, 100% { background-position: 100% 0; }
+  50% { background-position: 0 0; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Checklist -------------------------------------------------------------- */
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.25rem;
+  font-size: 0.9375rem;
+  color: var(--color-muted-foreground);
+  opacity: 0.45;
+  transition: opacity 0.5s ease, color 0.5s ease;
+  /*
+   * Transform only, and `backwards` rather than `both`. A filled animation
+   * keeps its last keyframe applied and outranks normal declarations, so an
+   * entrance that ended on `opacity: 1` would pin every pending row fully lit
+   * and defeat the dimming below. Opacity stays purely class-driven.
+   */
+  animation: step-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes step-in {
+  from { transform: translateY(0.5rem); }
+  to { transform: translateY(0); }
+}
+
+.step-active {
+  opacity: 1;
+  color: var(--color-foreground);
+}
+
+.step-done {
+  opacity: 0.75;
+}
+
+.marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+
+.pip {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.4;
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  border: 2px solid color-mix(in oklab, var(--color-primary) 25%, transparent);
+  border-top-color: var(--color-primary);
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* The label slides a hair as it becomes current — enough to draw the eye down
+   the list without the row jumping. */
+.step-label {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.step-active .step-label {
+  transform: translateX(0.125rem);
+}
+
+/* Progress --------------------------------------------------------------- */
 
 .progress-fill {
-  width: 100%;
   height: 100%;
-  background: var(--accent-primary);
   border-radius: 9999px;
-  animation: progress-animate 8.5s ease-in-out forwards;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-peach));
+  /* Driven off the step state rather than a fixed keyframe, so the bar and the
+     checklist can never drift out of sync. */
+  transition: width 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes progress-animate {
-  0% {
-    width: 0%;
+.ready-enter-active {
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ready-enter-from {
+  opacity: 0;
+  transform: translateY(0.5rem);
+}
+
+/* Motion preferences ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .glow,
+  .wordmark,
+  .step,
+  .spinner {
+    animation: none;
   }
-  100% {
-    width: 100%;
+
+  .wordmark {
+    /* No sweep, so paint the text normally rather than leaving it transparent. */
+    background-image: none;
+    color: var(--color-foreground);
+  }
+
+  .progress-fill,
+  .step,
+  .step-label,
+  .ready-enter-active {
+    transition-duration: 0.01ms;
   }
 }
 </style>

@@ -2,27 +2,22 @@
 import { CircleAlertIcon, CircleCheckIcon } from '@lucide/vue'
 
 definePageMeta({
-  middleware: 'guest',
   layout: 'default',
 })
 
 const auth = useAuthStore()
-const route = useRoute()
-
-const token = computed(() => String(route.query.token ?? ''))
-const email = ref(String(route.query.email ?? ''))
 const password = ref('')
 const passwordConfirmation = ref('')
 const done = ref(false)
 const error = ref('')
 const fieldErrors = ref<Record<string, string>>({})
+const submitting = ref(false)
 
 const MIN_PASSWORD_LENGTH = 8
 
 function validate(): boolean {
   const errors: Record<string, string> = {}
 
-  if (email.value.trim() === '') errors.email = 'Enter your email address.'
   if (password.value.length < MIN_PASSWORD_LENGTH) errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`
   if (passwordConfirmation.value !== password.value) errors.password_confirmation = 'Passwords do not match.'
 
@@ -32,17 +27,23 @@ function validate(): boolean {
 }
 
 async function handleSubmit() {
+  if (submitting.value) return
+
   error.value = ''
 
   if (!validate()) return
 
+  submitting.value = true
+
   try {
-    await auth.resetPassword(token.value, email.value, password.value, passwordConfirmation.value)
+    await auth.resetPassword(password.value)
     done.value = true
   } catch (err) {
     const parsed = parseApiError(err, 'The reset link is invalid or has expired.')
     error.value = parsed.message
     fieldErrors.value = parsed.fields
+  } finally {
+    submitting.value = false
   }
 }
 </script>
@@ -79,23 +80,6 @@ async function handleSubmit() {
       </div>
 
       <div class="space-y-2">
-        <Label for="email">Email</Label>
-        <Input
-          id="email"
-          v-model="email"
-          type="email"
-          autocomplete="email"
-          required
-          class="h-10"
-          :aria-invalid="fieldErrors.email ? true : undefined"
-          :aria-describedby="fieldErrors.email ? 'email-error' : undefined"
-        />
-        <p v-if="fieldErrors.email" id="email-error" class="text-xs text-destructive">
-          {{ fieldErrors.email }}
-        </p>
-      </div>
-
-      <div class="space-y-2">
         <Label for="password">New password</Label>
         <PasswordField
           id="password"
@@ -123,8 +107,8 @@ async function handleSubmit() {
         </p>
       </div>
 
-      <Button type="submit" class="h-10 w-full" :loading="auth.busy">
-        {{ auth.busy ? 'Resetting…' : 'Reset password' }}
+      <Button type="submit" class="h-10 w-full" :loading="submitting">
+        {{ submitting ? 'Resetting…' : 'Reset password' }}
       </Button>
     </form>
 

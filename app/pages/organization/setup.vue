@@ -14,9 +14,13 @@ if (auth.hasOrganization) {
 
 const name = ref('')
 const error = ref('')
+const submitting = ref(false)
 
 async function handleSubmit() {
+  if (submitting.value) return
+
   error.value = ''
+  submitting.value = true
 
   try {
     await auth.createOrganization(name.value)
@@ -26,6 +30,8 @@ async function handleSubmit() {
     await navigateTo(auth.kycCompleted ? next : `/onboarding?next=${encodeURIComponent(next)}`)
   } catch (err: any) {
     error.value = err?.data?.message ?? 'Could not create your organization. Please try again.'
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -64,8 +70,8 @@ async function handleLogout() {
             {{ error }}
           </p>
 
-          <Button type="submit" class="w-full" :loading="auth.busy">
-            {{ auth.busy ? 'Creating organization…' : 'Create organization' }}
+          <Button type="submit" class="w-full" :loading="submitting">
+            {{ submitting ? 'Creating organization…' : 'Create organization' }}
           </Button>
         </form>
       </CardContent>

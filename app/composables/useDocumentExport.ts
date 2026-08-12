@@ -1,4 +1,8 @@
-import { ensureCsrfCookie, getXsrfToken, resetCsrfCookie } from '~/lib/http'
+import { authHeaders } from '~/lib/http'
+import { useSupabase } from '~/lib/supabase'
+
+/** Narrowest the preview panel may be dragged before it stops shrinking. */
+export const MIN_PREVIEW_WIDTH = 320
 
 export interface DocumentPreview {
   blobUrl: string | null
@@ -36,17 +40,61 @@ export function useDocumentExport() {
 
     const startX = event.clientX
     const startWidth = previewWidth.value
-    const viewportLimit = Math.max(window.innerWidth - 24, 320)
+    const viewportLimit = Math.max(window.innerWidth - 24, MIN_PREVIEW_WIDTH)
+
+    // The panel renders the document in a blob-URL iframe, which is a separate
+    // document: without capture, dragging inward puts the cursor over the
+    // iframe and its document swallows the pointermove events, so the drag
+    // stalls until the cursor leaves again. Capturing pins every move to the
+    // handle no matter what it passes over.
+    const handle = event.currentTarget instanceof Element ? event.currentTarget : null
+
+    handle?.setPointerCapture?.(event.pointerId)
+
+    // Resolved once, on pointer down. The space available to the panel cannot
+    // change while the pointer is held, and re-reading it on every move meant
+    // measuring a sibling that had already been resized by the previous move —
+    // the panel's own width fed back into its own limit, so the drag
+    // oscillated instead of stopping at the boundary.
+    const maxWidth = Math.min(
+      viewportLimit,
+      getMaxWidth ? Math.max(getMaxWidth(), MIN_PREVIEW_WIDTH) : viewportLimit,
+    )
+
+    // pointermove fires far faster than the display refreshes, and each write
+    // triggers a re-layout of the panel and the PDF frame inside it. Coalesce
+    // to one write per frame so the drag tracks the pointer smoothly.
+    let frame = 0
+    let nextWidth = startWidth
+
+    const commit = () => {
+      frame = 0
+      previewWidth.value = nextWidth
+    }
 
     const onMove = (e: PointerEvent) => {
-      const desired = startWidth + (startX - e.clientX)
-      const upper = getMaxWidth ? Math.max(getMaxWidth(), 320) : viewportLimit
-      previewWidth.value = Math.min(Math.max(desired, 320), Math.min(viewportLimit, upper))
+      nextWidth = Math.min(Math.max(startWidth + (startX - e.clientX), MIN_PREVIEW_WIDTH), maxWidth)
+
+      if (frame === 0) {
+        frame = requestAnimationFrame(commit)
+      }
     }
 
     const onUp = () => {
+      if (frame !== 0) {
+        cancelAnimationFrame(frame)
+        frame = 0
+      }
+
+      previewWidth.value = nextWidth
+
+      if (handle?.hasPointerCapture?.(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId)
+      }
+
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
@@ -55,6 +103,10 @@ export function useDocumentExport() {
     document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp, { once: true })
+    // Capture is lost if the browser cancels the gesture (an OS window switch,
+    // a touch turning into a scroll); without this the drag state and the
+    // body's cursor/user-select overrides would be left stuck.
+    window.addEventListener('pointercancel', onUp, { once: true })
   }
 
   async function openExport(content: string, type: 'word' | 'pdf', title: string, messageId?: string) {
@@ -117,24 +169,22 @@ async function buildFromMessage(messageId: string, type: 'word' | 'pdf'): Promis
     public: { apiBase },
   } = useRuntimeConfig()
 
-  await ensureCsrfCookie(apiBase)
-
-  const request = () =>
+  const request = async () =>
     fetch(`${apiBase}/api/messages/${messageId}/export/${type}`, {
       method: 'POST',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/octet-stream',
-        ...(getXsrfToken() ? { 'X-XSRF-TOKEN': getXsrfToken() as string } : {}),
-      },
+      headers: await authHeaders({ Accept: 'application/octet-stream' }),
     })
 
   let response = await request()
 
-  if (response.status === 419) {
-    resetCsrfCookie()
-    await ensureCsrfCookie(apiBase)
-    response = await request()
+  // An expired access token is the one retryable failure here: refresh once
+  // and repeat before surfacing an export error.
+  if (response.status === 401) {
+    const { data } = await useSupabase().auth.refreshSession()
+
+    if (data.session) {
+      response = await request()
+    }
   }
 
   if (!response.ok) {
