@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeftIcon, CircleAlertIcon, MailIcon } from '@lucide/vue'
+import { timeAgo } from '~/utils/time'
 
 definePageMeta({
   middleware: 'guest',
@@ -7,6 +8,7 @@ definePageMeta({
 })
 
 const auth = useAuthStore()
+const api = useApi()
 
 const email = ref('')
 const password = ref('')
@@ -14,18 +16,77 @@ const error = ref('')
 const fieldErrors = ref<Record<string, string>>({})
 const submitting = ref(false)
 const showEmailForm = ref(false)
+const lookingUp = ref(false)
+// Set when the email has been submitted and we've moved to the password step.
+const emailConfirmed = ref(false)
+// When the account was last used, shown on the password step. Null hides the
+// greeting (never-used account or unknown email — the API does not tell which).
+const lastUsedAt = ref<string | null>(null)
 
 // The form is novalidate so errors render in the page rather than in native
 // bubbles, which means the empty cases are checked here instead of by the browser.
-function validate(): boolean {
+function validateEmailStep(): boolean {
   const errors: Record<string, string> = {}
 
   if (email.value.trim() === '') errors.email = 'Enter your email address.'
+
+  fieldErrors.value = errors
+
+  return Object.keys(errors).length === 0
+}
+
+function validatePasswordStep(): boolean {
+  const errors: Record<string, string> = {}
+
   if (password.value === '') errors.password = 'Enter your password.'
 
   fieldErrors.value = errors
 
   return Object.keys(errors).length === 0
+}
+
+/**
+ * Look up when the email was last used, then move on to the password step.
+ * The greeting is a nicety, so a failed lookup never blocks sign-in — the
+ * user just proceeds without it.
+ */
+async function continueWithEmail() {
+  if (lookingUp.value || submitting.value) return
+
+  error.value = ''
+  fieldErrors.value = {}
+
+  if (!validateEmailStep()) return
+
+  lookingUp.value = true
+
+  try {
+    const { last_used_at } = await api<{ last_used_at: string | null }>(
+      `/auth/last-used?email=${encodeURIComponent(email.value.trim())}`,
+    )
+    lastUsedAt.value = last_used_at
+  } catch {
+    lastUsedAt.value = null
+  } finally {
+    lookingUp.value = false
+  }
+
+  emailConfirmed.value = true
+}
+
+function backToEmail() {
+  emailConfirmed.value = false
+  lastUsedAt.value = null
+  error.value = ''
+  fieldErrors.value = {}
+}
+
+function backToOptions() {
+  showEmailForm.value = false
+  emailConfirmed.value = false
+  lastUsedAt.value = null
+  error.value = ''
+  fieldErrors.value = {}
 }
 
 async function handleSubmit() {
@@ -34,12 +95,12 @@ async function handleSubmit() {
   error.value = ''
   fieldErrors.value = {}
 
-  if (!validate()) return
+  if (!validatePasswordStep()) return
 
   submitting.value = true
 
   try {
-    await auth.login(email.value, password.value)
+    await auth.login(email.value.trim(), password.value)
 
     const redirect = String(useRoute().query.redirect ?? '')
 
@@ -69,13 +130,13 @@ async function handleSubmit() {
       </div>
     </template>
 
-    <template v-else>
-      <Button type="button" variant="ghost" class="-ml-2 mb-4 gap-1.5" @click="showEmailForm = false">
+    <template v-else-if="!emailConfirmed">
+      <Button type="button" variant="ghost" class="-ml-2 mb-4 gap-1.5" @click="backToOptions">
         <ArrowLeftIcon class="size-4" />
         All sign-in options
       </Button>
 
-      <form class="space-y-5" novalidate @submit.prevent="handleSubmit">
+      <form class="space-y-5" novalidate @submit.prevent="continueWithEmail">
         <div
           v-if="error"
           role="alert"
@@ -104,6 +165,69 @@ async function handleSubmit() {
           </p>
         </div>
 
+        <Button type="submit" class="h-10 w-full" :loading="lookingUp">
+          {{ lookingUp ? 'Checking…' : 'Continue' }}
+        </Button>
+      </form>
+
+      <div class="my-6 flex items-center gap-3">
+        <span class="h-px flex-1 bg-border" />
+        <span class="text-xs text-muted-foreground">or</span>
+        <span class="h-px flex-1 bg-border" />
+      </div>
+
+      <GoogleAuthButton label="Sign in with Google" @error="error = $event" />
+    </template>
+
+    <template v-else>
+      <Button type="button" variant="ghost" class="-ml-2 mb-4 gap-1.5" @click="backToOptions">
+        <ArrowLeftIcon class="size-4" />
+        All sign-in options
+      </Button>
+
+      <div
+        v-if="lastUsedAt"
+        class="flex items-start gap-2.5 rounded-lg border border-forest/25 bg-forest/10 px-3.5 py-3 text-sm"
+      >
+        <MailIcon class="mt-px size-4 shrink-0 text-forest" />
+        <span>
+          Welcome back. This account was last used
+          <span class="font-medium">{{ timeAgo(lastUsedAt) }}</span>.
+        </span>
+      </div>
+
+      <form class="space-y-5" novalidate @submit.prevent="handleSubmit">
+        <div
+          v-if="error"
+          role="alert"
+          class="flex items-start gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
+        >
+          <CircleAlertIcon class="mt-px size-4 shrink-0" />
+          <span>{{ error }}</span>
+        </div>
+
+        <div class="space-y-2">
+          <Label for="email">Email</Label>
+          <div class="flex items-center gap-3">
+            <Input
+              id="email"
+              v-model="email"
+              type="email"
+              autocomplete="email"
+              class="h-10"
+              readonly
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              class="h-10 shrink-0 px-3 text-xs"
+              @click="backToEmail"
+            >
+              Change
+            </Button>
+          </div>
+        </div>
+
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-3">
             <Label for="password">Password</Label>
@@ -115,6 +239,7 @@ async function handleSubmit() {
             id="password"
             v-model="password"
             autocomplete="current-password"
+            autofocus
             :error="fieldErrors.password ?? ''"
           />
           <p v-if="fieldErrors.password" id="password-error" class="text-xs text-destructive">
