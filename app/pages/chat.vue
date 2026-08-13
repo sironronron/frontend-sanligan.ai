@@ -576,6 +576,13 @@ async function send(questionOverride?: string | Event) {
       const payload = await response.json().catch(() => null)
       const upgrade = upgradeMessage({ status: response.status, data: payload })
       if (upgrade) {
+        // Carry the reason across the redirect. A trial that runs out of
+        // messages ends mid-conversation, and landing on the pricing page with
+        // no explanation reads as the app having lost the request.
+        toast.error(upgrade)
+        // The trial may have just ended on this very request, so refresh before
+        // the pricing page renders its trial banner from stale state.
+        await billing.fetchSubscription()
         await navigateTo('/pricing')
         return
       }
@@ -812,7 +819,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="relative min-h-0 flex-1">
-        <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto">
+        <div ref="messagesContainer" data-tour="chat-sources" class="absolute inset-0 overflow-y-auto">
           <ChatEmptyState
             v-if="messages.length === 0"
             title="Research Philippine law with Batayan"
@@ -873,7 +880,7 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <div class="border-t p-3">
+      <div data-tour="chat-composer" class="border-t p-3">
         <ChatComposer
           v-model="input"
           :disabled="busy"

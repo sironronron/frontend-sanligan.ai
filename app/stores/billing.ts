@@ -43,9 +43,13 @@ export interface Subscription {
   plan: Plan | null
   current_period_start: string | null
   current_period_end: string | null
-  trial_ends_at: string | null
   cancelled_at: string | null
-  on_trial: boolean
+  trial: {
+    /** Gate on this, not on `status`: a lapsed trial keeps status `trialing`. */
+    on_trial: boolean
+    ends_at: string | null
+    days_remaining: number | null
+  }
   usage: {
     messages: MessageUsageMeter
     documents: UsageMeter
@@ -136,7 +140,36 @@ export const useBillingStore = defineStore('billing', () => {
     }
   }
 
-  const accessGranted = computed(() => subscription.value?.status === 'active')
+  /**
+   * A live trial grants the same access a paid plan does, so gating on the
+   * status string alone would lock trial users out of the product they were
+   * just invited into.
+   */
+  const accessGranted = computed(
+    () => subscription.value?.status === 'active' || subscription.value?.trial.on_trial === true,
+  )
+
+  const onTrial = computed(() => subscription.value?.trial.on_trial === true)
+
+  const trialDaysRemaining = computed(() => subscription.value?.trial.days_remaining ?? null)
+
+  /**
+   * Redeem an invite or referral code, starting the organization's trial.
+   * Returns the trialing subscription and refreshes the store.
+   */
+  async function redeemTrialCode(code: string) {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: Subscription }>('/trial/redeem', {
+        method: 'POST',
+        body: { code },
+      })
+      subscription.value = data
+      return data
+    } finally {
+      busy.value = false
+    }
+  }
 
   const plan = computed(() => subscription.value?.plan ?? null)
 
@@ -146,12 +179,15 @@ export const useBillingStore = defineStore('billing', () => {
     subscription,
     busy,
     accessGranted,
+    onTrial,
+    trialDaysRemaining,
     plan,
     fetchPlans,
     fetchSubscription,
     subscribe,
     changePlan,
     cancel,
+    redeemTrialCode,
   }
 })
 

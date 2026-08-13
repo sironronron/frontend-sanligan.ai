@@ -162,7 +162,7 @@ onMounted(async () => {
             <FolderOpenIcon class="size-4" />
             {{ archived ? 'Archived' : 'Active' }}
           </Button>
-          <Button class="gap-1.5" @click="showIntake = true">
+          <Button data-tour="cases-new" class="gap-1.5" @click="showIntake = true">
             <PlusIcon class="size-4" />
             New Case
           </Button>

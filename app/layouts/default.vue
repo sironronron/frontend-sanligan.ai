@@ -5,6 +5,20 @@ const auth = useAuthStore()
 const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 const billing = useBillingStore()
+const tour = useProductTour()
+
+// Offered once onboarding is done, so a first-time user is not interrupted
+// while still choosing their role. Watched rather than checked on mount: the
+// profile can resolve after the layout renders, and onboarding lives on the
+// bare layout, so the flag may flip while this layout is already up. Shown
+// once per user; replayable from the account menu.
+watch(
+  () => auth.kycCompleted,
+  (completed) => {
+    if (completed) tour.maybeStart()
+  },
+  { immediate: true },
+)
 
 const navItems = computed(() => [
   { to: '/chat', label: 'Chat' },
@@ -70,6 +84,7 @@ onMounted(() => {
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
+            :data-tour="`nav-${item.to.replace('/', '')}`"
             class="rounded-md px-3 py-1.5 transition-colors hover:bg-muted"
             :class="isActive(item.to) ? 'bg-muted font-medium' : 'text-muted-foreground'"
           >
@@ -116,6 +131,9 @@ onMounted(() => {
               <DropdownMenuItem @click="navigateTo('/settings/personalization')">
                 Personalization
               </DropdownMenuItem>
+              <DropdownMenuItem @click="tour.restart()">
+                Show me around
+              </DropdownMenuItem>
               <DropdownMenuItem @click="handleLogout">
                 Log out
               </DropdownMenuItem>
@@ -128,5 +146,8 @@ onMounted(() => {
     <main class="flex flex-1 flex-col">
       <slot />
     </main>
+
+    <ProductTour />
+    <WelcomeDialog />
   </div>
 </template>

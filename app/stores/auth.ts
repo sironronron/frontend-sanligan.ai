@@ -17,6 +17,7 @@ export interface User {
   kyc_document_types: string | null
   kyc_experience_level: string | null
   kyc_completed_at: string | null
+  tour_completed_at: string | null
   terms_accepted_at: string | null
   terms_version: string | null
   /** True only when the accepted version matches the version currently published. */
@@ -209,6 +210,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * Record that the product tour is done. Stored on the account rather than in
+   * the browser so it does not reappear on the user's next device.
+   */
+  async function completeTour() {
+    if (!user.value || user.value.tour_completed_at !== null) return
+
+    // Applied locally first: the tour closes immediately, and a failed request
+    // only means it may be offered again on the next sign-in.
+    user.value = { ...user.value, tour_completed_at: new Date().toISOString() }
+
+    await api('/tour/complete', { method: 'POST' })
+  }
+
   async function acceptTerms(marketingOptIn: boolean = false) {
     busy.value = true
     try {
@@ -302,6 +317,7 @@ export const useAuthStore = defineStore('auth', () => {
     saveKyc,
     clearKyc,
     acceptTerms,
+    completeTour,
     sendPasswordResetLink,
     resetPassword,
   }

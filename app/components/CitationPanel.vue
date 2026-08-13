@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  BookOpenIcon,
   CheckIcon,
   CopyIcon,
   ExternalLinkIcon,
@@ -26,6 +27,11 @@ export interface CitationSource {
   title?: string | null
   excerpt?: string
   domain?: string | null
+  /** Set when the authority is in the knowledge base and can be read in-app. */
+  page_id?: string | null
+  has_digest?: boolean
+  /** Chunk indices of that page the answer cited, for highlighting. */
+  cited_chunk_indexes?: number[]
 }
 
 const props = defineProps<{
@@ -34,6 +40,9 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+// The authority currently open in the in-app reader.
+const reading = ref<CitationSource | null>(null)
 
 const panelEl = ref<HTMLElement | null>(null)
 const cardEls = ref<Record<string, HTMLElement | null>>({})
@@ -177,11 +186,21 @@ watch(
 
             <div class="flex shrink-0 flex-col gap-1">
               <Button
+                v-if="source.page_id"
+                variant="outline"
+                size="icon"
+                class="size-6"
+                title="Read in Batayan"
+                @click="reading = source"
+              >
+                <BookOpenIcon class="size-3" />
+              </Button>
+              <Button
                 v-if="source.url"
                 variant="outline"
                 size="icon"
                 class="size-6"
-                title="Visit"
+                title="Open the original"
                 @click="openUrl(source.url)"
               >
                 <ExternalLinkIcon class="size-3" />
@@ -204,6 +223,13 @@ watch(
       </div>
     </div>
   </aside>
+
+  <SourceReader
+    v-if="reading?.page_id"
+    :page-id="reading.page_id"
+    :cited-indexes="reading.cited_chunk_indexes ?? []"
+    @close="reading = null"
+  />
 </template>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeftIcon, CheckIcon, Loader2Icon } from '@lucide/vue'
+import { ArrowLeftIcon, CheckIcon, Loader2Icon, SparklesIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
 import { useBillingStore, type BillingInterval, type Plan } from '~/stores/billing'
 
@@ -20,9 +20,34 @@ const selectedInterval = ref<BillingInterval>('monthly')
 const processing = ref(false)
 
 const currentPlanId = computed(() => billing.subscription?.plan?.id ?? null)
+// Paid only, deliberately: a trial grants access but has no gateway
+// subscription behind it, so it must not offer "switch plan" — a trial user
+// subscribes for the first time like anyone else.
 const hasActiveSubscription = computed(() => {
   const sub = billing.subscription
   return !!sub && sub.status === 'active'
+})
+
+const onTrial = computed(() => billing.subscription?.trial.on_trial === true)
+const trialDaysRemaining = computed(() => billing.subscription?.trial.days_remaining ?? null)
+
+// A trial ends on whichever runs out first, the days or the messages, so the
+// banner leads with whichever is closer rather than always counting days.
+const trialMessagesLeft = computed(() => {
+  const meter = billing.subscription?.usage.messages
+  if (!meter || meter.limit === null) return null
+  return Math.max(0, meter.limit - meter.used)
+})
+
+const trialHeadline = computed(() => {
+  const days = trialDaysRemaining.value
+  const messages = trialMessagesLeft.value
+
+  if (messages !== null && (days === null || messages <= days * 10)) {
+    return `${messages} ${messages === 1 ? 'message' : 'messages'} left`
+  }
+
+  return `${days} ${days === 1 ? 'day' : 'days'} left`
 })
 
 const activeInterval = computed<BillingInterval>(() =>
@@ -167,7 +192,7 @@ onMounted(async () => {
 <template>
   <div class="mx-auto w-full max-w-6xl flex-1 px-4 py-10">
     <template v-if="!selectedPlan">
-      <div v-if="auth.user && hasActiveSubscription" class="mb-6 flex justify-center">
+      <div v-if="auth.user && (hasActiveSubscription || onTrial)" class="mb-6 flex justify-center">
         <NuxtLink
           to="/chat"
           class="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
@@ -176,6 +201,17 @@ onMounted(async () => {
           Back to app
         </NuxtLink>
       </div>
+      <div
+        v-if="onTrial"
+        class="mx-auto mb-8 flex max-w-md items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 py-2.5 text-sm"
+      >
+        <SparklesIcon class="size-4 shrink-0 text-primary" />
+        <span>
+          <span class="font-medium">{{ trialHeadline }}</span>
+          on your free trial. Subscribe any time to keep your workspace.
+        </span>
+      </div>
+
       <div class="mb-10 text-center">
         <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Simple pricing for your practice</h1>
         <p class="mx-auto mt-3 max-w-xl text-muted-foreground">
@@ -273,6 +309,8 @@ onMounted(async () => {
           </CardContent>
         </Card>
       </div>
+
+      <TrialCodeRedeem v-if="auth.user && !hasActiveSubscription && !onTrial" />
     </template>
 
     <template v-else>

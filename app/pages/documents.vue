@@ -260,6 +260,7 @@ async function removeDocument(doc: Document) {
     />
 
     <div
+      data-tour="documents-upload"
       class="rounded-xl border border-dashed bg-muted/30 p-6 transition-colors"
       :class="fileDrop.dragging.value ? 'border-primary bg-primary/5' : ''"
       @dragenter="fileDrop.onDragEnter"
