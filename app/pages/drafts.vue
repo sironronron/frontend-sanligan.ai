@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   DownloadIcon,
+  EyeIcon,
   FileTextIcon,
   Loader2Icon,
   XIcon,
@@ -15,6 +16,8 @@ interface GeneratedDocument {
   id: string
   conversation_id: string
   conversation_title: string | null
+  case_id: string | null
+  case_title: string | null
   title: string
   content: string
   created_at: string
@@ -38,6 +41,10 @@ function download(doc: GeneratedDocument, type: 'word' | 'pdf') {
   void openExport(doc.content, type, doc.title)
 }
 
+function preview(doc: GeneratedDocument) {
+  void openExport(doc.content, 'pdf', doc.title)
+}
+
 async function loadDocuments() {
   loading.value = true
   try {
@@ -56,7 +63,7 @@ onMounted(loadDocuments)
 <template>
   <div class="mx-auto w-full max-w-4xl px-4 py-8">
     <PageHeader
-      title="Generated documents"
+      title="Drafts"
       description="Revisit the letters, pleadings, and forms the assistant drafted for you, and download them again."
     />
 
@@ -65,7 +72,7 @@ onMounted(loadDocuments)
     <EmptyState
       v-else-if="documents.length === 0"
       :icon="FileTextIcon"
-      title="No generated documents yet"
+      title="No drafts yet"
       description="Ask the assistant to draft a letter or pleading, then export it from the chat."
     >
       <Button @click="navigateTo('/chat')">Start a draft</Button>
@@ -85,6 +92,14 @@ onMounted(loadDocuments)
             <p class="truncate text-sm font-medium">{{ doc.title }}</p>
             <p class="mt-0.5 truncate text-xs text-muted-foreground">
               <NuxtLink
+                v-if="doc.case_id && doc.case_title"
+                :to="`/cases/${doc.case_id}`"
+                class="font-medium text-primary hover:underline"
+              >
+                {{ doc.case_title }}
+              </NuxtLink>
+              <span v-if="doc.case_id && doc.case_title"> · </span>
+              <NuxtLink
                 v-if="doc.conversation_id"
                 :to="`/chat?c=${doc.conversation_id}`"
                 class="font-medium text-primary hover:underline"
@@ -96,6 +111,10 @@ onMounted(loadDocuments)
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="preview(doc)">
+              <EyeIcon class="size-3.5" />
+              Preview
+            </Button>
             <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="download(doc, 'word')">
               <DownloadIcon class="size-3.5" />
               Word
@@ -144,6 +163,10 @@ onMounted(loadDocuments)
         :src="previewDoc.blobUrl ?? undefined"
         class="w-full flex-1 border-0"
       />
+      <DocxViewer
+        v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
+        :blob-url="previewDoc.blobUrl"
+      />
       <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
         <span>Word documents cannot be previewed inline.</span>
         <a
@@ -191,6 +214,10 @@ onMounted(loadDocuments)
             v-else-if="previewDoc.type === 'pdf'"
             :src="previewDoc.blobUrl ?? undefined"
             class="w-full flex-1 rounded-b-lg border-0"
+          />
+          <DocxViewer
+            v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
+            :blob-url="previewDoc.blobUrl"
           />
           <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
             <span>Word documents cannot be previewed inline.</span>

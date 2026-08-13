@@ -126,7 +126,7 @@ watch(
 </script>
 
 <template>
-  <aside ref="panelEl" class="relative hidden w-80 shrink-0 flex-col border-l border-sidebar-border bg-sidebar lg:flex">
+  <aside ref="panelEl" class="relative hidden h-full w-80 shrink-0 flex-col border-l border-sidebar-border bg-sidebar lg:flex">
     <div class="flex items-center justify-between border-b border-sidebar-border px-4 py-2.5">
       <span class="text-sm font-medium">Citations</span>
       <Button variant="ghost" size="icon" class="size-7" aria-label="Close citations" @click="emit('close')">

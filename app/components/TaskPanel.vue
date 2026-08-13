@@ -7,7 +7,10 @@ import { cn } from '~/lib/utils'
 const props = withDefaults(defineProps<{
   conversationId: string
   class?: string
-}>(), { class: '' })
+  visible?: boolean
+  /** Closed and archived cases are read-only: no adding, editing, or deleting. */
+  readonly?: boolean
+}>(), { class: '', visible: true, readonly: false })
 
 defineEmits<{ close: [] }>()
 
@@ -43,6 +46,7 @@ function priorityBadge(priority: Todo['priority']) {
 }
 
 async function addTask() {
+  if (props.readonly) return
   const title = newTaskTitle.value.trim()
   if (!title || !props.conversationId) return
   await todoStore.addTodo({ conversation_id: props.conversationId, title })
@@ -51,11 +55,13 @@ async function addTask() {
 }
 
 function startEdit(todo: Todo) {
+  if (props.readonly) return
   editingId.value = todo.id
   editTitle.value = todo.title
 }
 
 async function saveEdit(todo: Todo) {
+  if (props.readonly) return
   const title = editTitle.value.trim()
   if (title && title !== todo.title) {
     await todoStore.updateTodo(todo.id, { title })
@@ -64,11 +70,13 @@ async function saveEdit(todo: Todo) {
 }
 
 async function toggleDone(todo: Todo) {
+  if (props.readonly) return
   const nextStatus = todo.status === 'completed' ? 'pending' : 'completed'
   await todoStore.updateTodo(todo.id, { status: nextStatus })
 }
 
 async function removeTask(todo: Todo) {
+  if (props.readonly) return
   const snapshot = todo
   await todoStore.deleteTodo(todo.id)
   toast('Task deleted', {
@@ -89,15 +97,18 @@ async function removeTask(todo: Todo) {
 }
 
 function onDragStart(todo: Todo) {
+  if (props.readonly) return
   dragId.value = todo.id
 }
 
 function onDragOver(event: DragEvent, todo: Todo) {
+  if (props.readonly) return
   event.preventDefault()
   dragOverId.value = todo.id
 }
 
 function onDrop(event: DragEvent, todo: Todo) {
+  if (props.readonly) return
   event.preventDefault()
   const fromId = dragId.value
   dragId.value = null
@@ -134,11 +145,15 @@ function formatDueDate(date: string | null) {
 </script>
 
 <template>
-  <div v-if="true" class="contents">
-    <div class="fixed inset-0 z-30 bg-black/60 lg:hidden" aria-hidden="true" @click="$emit('close')" />
+  <div class="contents">
+    <div v-if="props.visible" class="fixed inset-0 z-30 bg-black/60 lg:hidden" aria-hidden="true" @click="$emit('close')" />
     <aside
       :class="cn(
-        'fixed inset-x-0 bottom-0 z-40 flex max-h-[75dvh] w-full min-h-0 flex-col overflow-hidden rounded-t-2xl border border-sidebar-border bg-sidebar shadow-2xl lg:static lg:z-auto lg:h-auto lg:max-h-[calc(100dvh-3.5rem)] lg:w-[340px] lg:shrink-0 lg:rounded-none lg:border-l lg:shadow-none',
+        'min-h-0 flex-col overflow-hidden bg-sidebar border-sidebar-border',
+        props.visible
+          ? 'flex fixed inset-x-0 bottom-0 z-40 max-h-[75dvh] w-full rounded-t-2xl border shadow-2xl'
+          : 'hidden',
+        'lg:static lg:z-auto lg:flex lg:h-full lg:w-80 lg:shrink-0 lg:rounded-none lg:border-l lg:shadow-none',
         props.class,
       )"
     >
@@ -148,7 +163,7 @@ function formatDueDate(date: string | null) {
         <Badge variant="secondary" class="text-[10px]">{{ pendingTasks.length }} open</Badge>
       </div>
       <div class="flex items-center gap-1">
-        <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" @click="adding = !adding">
+        <Button v-if="!props.readonly" variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" @click="adding = !adding">
           <PlusIcon class="size-3.5" />
           Add
         </Button>
@@ -164,8 +179,8 @@ function formatDueDate(date: string | null) {
           v-if="tasks.length === 0 && !adding"
           class="flex flex-col items-center gap-2 py-10 text-center"
         >
-          <p class="text-xs text-muted-foreground">No tasks yet</p>
-          <Button variant="outline" size="sm" class="gap-1 text-xs" @click="adding = true">
+          <p class="text-xs text-muted-foreground">{{ props.readonly ? 'No tasks on this case' : 'No tasks yet' }}</p>
+          <Button v-if="!props.readonly" variant="outline" size="sm" class="gap-1 text-xs" @click="adding = true">
             <PlusIcon class="size-3.5" />
             Add your first task
           </Button>
@@ -192,18 +207,22 @@ function formatDueDate(date: string | null) {
           <div
             class="group flex items-start gap-2 rounded-lg border bg-card p-2.5 transition-colors hover:border-primary/30 hover:bg-muted"
             :class="{ 'opacity-50': dragId === todo.id, 'border-primary': dragOverId === todo.id }"
-            draggable="true"
+            :draggable="!props.readonly"
             @dragstart="onDragStart(todo)"
             @dragover="onDragOver($event, todo)"
             @drop="onDrop($event, todo)"
             @dragend="dragId = null; dragOverId = null"
           >
-            <GripVerticalIcon class="mt-0.5 size-3.5 shrink-0 cursor-grab text-muted-foreground/40" />
+            <GripVerticalIcon
+              class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/40"
+              :class="props.readonly ? '' : 'cursor-grab'"
+            />
             <button
               type="button"
               :aria-label="todo.status === 'completed' ? `Mark “${todo.title}” as not done` : `Mark “${todo.title}” as done`"
               :class="statusColor(todo.status)"
               class="mt-0.5 shrink-0 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              :disabled="props.readonly"
               @click="toggleDone(todo)"
             >
               <component :is="statusIcon(todo.status)" class="size-4" />
@@ -250,6 +269,7 @@ function formatDueDate(date: string | null) {
             </div>
 
             <button
+              v-if="!props.readonly"
               type="button"
               :aria-label="`Delete task: ${todo.title}`"
               class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100 max-lg:opacity-100"
@@ -274,6 +294,7 @@ function formatDueDate(date: string | null) {
               type="button"
               :aria-label="`Mark “${todo.title}” as not done`"
               class="mt-0.5 shrink-0 cursor-pointer rounded text-forest focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:text-peach"
+              :disabled="props.readonly"
               @click="toggleDone(todo)"
             >
               <CheckIcon class="size-4" />
@@ -282,6 +303,7 @@ function formatDueDate(date: string | null) {
               {{ todo.title }}
             </button>
             <button
+              v-if="!props.readonly"
               type="button"
               :aria-label="`Delete task: ${todo.title}`"
               class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100 max-lg:opacity-100"

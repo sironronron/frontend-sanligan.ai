@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { ChevronDownIcon, ChevronUpIcon, SearchIcon, XIcon } from '@lucide/vue'
 
+export interface SearchMatch {
+  id: string
+  occurrence: number
+}
+
 const props = defineProps<{
   messages: Array<{ id: string; content: string }>
 }>()
 
 const emit = defineEmits<{
-  navigate: [messageId: string]
+  navigate: [match: SearchMatch]
   close: []
   query: [query: string]
 }>()
@@ -16,12 +21,18 @@ const rootEl = ref<HTMLElement | null>(null)
 const query = ref('')
 const current = ref(0)
 
-const matches = computed(() => {
+const matches = computed<SearchMatch[]>(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return []
-  const found: Array<{ id: string }> = []
+  const found: SearchMatch[] = []
   for (const message of props.messages) {
-    if (message.content.toLowerCase().includes(q)) found.push({ id: message.id })
+    const content = message.content.toLowerCase()
+    let occurrence = 0
+    let cursor = -1
+    while ((cursor = content.indexOf(q, cursor + 1)) !== -1) {
+      found.push({ id: message.id, occurrence })
+      occurrence++
+    }
   }
   return found
 })
@@ -33,7 +44,7 @@ watch(query, (value) => {
   emit('query', value)
   const first = matches.value[0]
   if (first) {
-    emit('navigate', first.id)
+    emit('navigate', first)
   }
 })
 
@@ -42,7 +53,7 @@ function move(delta: number) {
   current.value = (current.value + delta + total.value) % total.value
   const match = matches.value[current.value]
   if (match) {
-    emit('navigate', match.id)
+    emit('navigate', match)
   }
 }
 
@@ -71,6 +82,8 @@ defineExpose({ focusInput })
         placeholder="Search messages…"
         autofocus
         @keydown.esc="clear"
+        @keydown.arrow-up.prevent="move(-1)"
+        @keydown.arrow-down.prevent="move(1)"
       />
       <button
         v-if="query"

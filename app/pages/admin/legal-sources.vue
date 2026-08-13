@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import { PlusIcon, TrashIcon, RefreshCwIcon } from '@lucide/vue'
+import { LEGAL_CATEGORIES, categoryLabel } from '~/lib/legalCategories'
 
 definePageMeta({
   middleware: 'admin',
@@ -12,6 +13,7 @@ interface LegalSource {
   base_domain: string
   seed_urls: string[]
   is_active: boolean
+  category: string
   crawled_pages_count: number
   legal_chunks_count: number
   created_at: string
@@ -31,6 +33,7 @@ const form = reactive({
   base_domain: '',
   seed_urls: '',
   is_active: true,
+  category: 'law',
 })
 
 async function loadSources() {
@@ -71,10 +74,11 @@ async function createSource() {
         base_domain: form.base_domain.trim(),
         seed_urls: seedUrls,
         is_active: form.is_active,
+        category: form.category,
       },
     })
     toast.success('Legal source added')
-    Object.assign(form, { name: '', base_domain: '', seed_urls: '', is_active: true })
+    Object.assign(form, { name: '', base_domain: '', seed_urls: '', is_active: true, category: 'law' })
     showForm.value = false
     await loadSources()
   } catch (err: any) {
@@ -152,9 +156,24 @@ onMounted(loadSources)
             />
           </div>
 
-          <div class="flex items-center gap-2">
-            <Switch id="is_active" v-model:checked="form.is_active" />
-            <Label for="is_active">Active</Label>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div class="space-y-2">
+              <Label for="source-category">Category</Label>
+              <Select v-model="form.category">
+                <SelectTrigger id="source-category" class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="c in LEGAL_CATEGORIES" :key="c.value" :value="c.value">
+                    {{ c.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="flex items-end gap-2 pb-1">
+              <Switch id="is_active" v-model:checked="form.is_active" />
+              <Label for="is_active">Active</Label>
+            </div>
           </div>
 
           <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p>
@@ -189,6 +208,7 @@ onMounted(loadSources)
                 <Badge variant="outline" :class="source.is_active ? 'text-forest dark:text-peach' : 'text-muted-foreground'">
                   {{ source.is_active ? 'Active' : 'Inactive' }}
                 </Badge>
+                <Badge variant="secondary">{{ categoryLabel(source.category) }}</Badge>
               </div>
               <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ source.base_domain }}</p>
               <p class="mt-1 text-xs text-muted-foreground">

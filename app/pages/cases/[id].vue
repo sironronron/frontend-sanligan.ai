@@ -1,31 +1,26 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import {
+  ArchiveIcon,
   ArrowLeftIcon,
+  BookOpenIcon,
   DownloadIcon,
   FileTextIcon,
   ListChecksIcon,
   Loader2Icon,
-  MessagesSquareIcon,
-  PencilIcon,
   PlusIcon,
-  SparklesIcon,
-  TrashIcon,
-  XIcon,
-  FileIcon,
-  FileUpIcon,
-  BookOpenIcon,
-  EyeIcon,
   SearchIcon,
+  XIcon,
 } from '@lucide/vue'
 import { authHeaders } from '~/lib/http'
-import { useCaseStore, type LegalCase, type CaseIntake, type CaseConversation } from '~/stores/cases'
+import { useCaseStore, type LegalCase, type CaseConversation } from '~/stores/cases'
 import { useTodoStore } from '~/stores/todos'
+import { useLabelStore } from '~/stores/labels'
 import { useAuthStore } from '~/stores/auth'
 import { upgradeMessage } from '~/stores/billing'
 import { useDocumentExport } from '~/composables/useDocumentExport'
 import DocumentViewer from '~/components/DocumentViewer.vue'
-import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
+import CaseIntakeForm, { type CaseIntakePayload } from '~/components/CaseIntakeForm.vue'
 import TemplatePicker, { type TemplateOption } from '~/components/TemplatePicker.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
 import CitationPanel from '~/components/CitationPanel.vue'
@@ -33,8 +28,15 @@ import IntakeFormSheet, { type IntakeField } from '~/components/IntakeFormSheet.
 import ChatThread from '~/components/chat/ChatThread.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
+import ChatPromptSuggestions from '~/components/chat/ChatPromptSuggestions.vue'
+import { useStarterSuggestions, type SuggestionContext } from '~/composables/useChatSuggestions'
 import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
 import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
+import CaseProgressView from '~/components/CaseProgressView.vue'
+import type { PanelToggle } from '~/components/CaseDetailHeader.vue'
+import type { ChatMessageAttachment } from '~/types/chat'
+import type { CaseDocument, GeneratedDocument } from '~/types/case'
+import { THREAD_ICONS, threadPurposeKind } from '~/lib/threads'
 
 definePageMeta({
   middleware: ['auth', 'organization'],
@@ -64,6 +66,7 @@ interface Message {
   content: string
   provider?: string | null
   sources: Source[]
+  attachments?: ChatMessageAttachment[]
   feedback?: string | null
   template_id?: string | null
   created_at: string
@@ -78,6 +81,7 @@ const {
 
 const caseStore = useCaseStore()
 const todoStore = useTodoStore()
+const labelStore = useLabelStore()
 const auth = useAuthStore()
 
 const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
@@ -105,9 +109,20 @@ function togglePanel(panel: RightPanel) {
   rightPanel.value = rightPanel.value === panel ? null : panel
 }
 
-// The case summary expands inline above the thread, not in the rail, so it
-// stays independent of the panel choice.
-const showSummary = ref(true)
+/**
+ * Chat and progress are two ways of looking at the same case, so the choice
+ * lives in the URL (`?view=progress`) — it survives a reload, it can be linked
+ * to from the case list, and the back button returns to the thread.
+ */
+const view = computed<'chat' | 'progress'>(() => (route.query.view === 'progress' ? 'progress' : 'chat'))
+
+function setView(next: 'chat' | 'progress') {
+  if (view.value === next) return
+  const query = { ...route.query }
+  if (next === 'progress') query.view = 'progress'
+  else delete query.view
+  void router.replace({ query })
+}
 
 const threads = ref<CaseConversation[]>([])
 const activeConversationId = ref<string | null>(null)
@@ -118,6 +133,7 @@ const quickPurposes = ['Draft a letter', 'Legal research', 'Summarize facts']
 
 const messages = ref<Message[]>([])
 const input = ref('')
+const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null)
 const streaming = ref(false)
 const sending = ref(false)
 const streamError = ref('')
@@ -142,6 +158,7 @@ const ratingBusy = ref<string | null>(null)
 const searchOpen = ref(false)
 const searchQuery = ref('')
 const searchActiveId = ref<string | null>(null)
+const searchActiveOccurrence = ref(0)
 const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
 
 const activeAssistantMessage = computed<Message | null>(() => {
@@ -154,53 +171,16 @@ const activeAssistantMessage = computed<Message | null>(() => {
 
 const hasCitations = computed(() => activeAssistantMessage.value !== null)
 
-interface CaseDocument {
-  id: string
-  case_id: string | null
-  title: string
-  original_filename: string
-  mime_type: string
-  status: 'queued' | 'processing' | 'ready' | 'failed'
-  error_message: string | null
-  chunk_count: number
-  created_at: string
-}
-
 const caseDocuments = ref<CaseDocument[]>([])
 const documentsLoading = ref(false)
 const uploadingDocument = ref(false)
-const caseFileInput = ref<HTMLInputElement | null>(null)
 const documentsError = ref('')
-const caseFileDrop = useFileDrop()
 const viewingDocument = ref<CaseDocument | null>(null)
 let documentPollTimer: ReturnType<typeof setInterval> | null = null
-
-interface GeneratedDocument {
-  id: string
-  conversation_id: string
-  conversation_title: string | null
-  title: string
-  content: string
-  created_at: string
-}
 
 const generatedDocuments = ref<GeneratedDocument[]>([])
 const generatedLoading = ref(false)
 const exporting = ref<string | null>(null)
-
-const documentStatusStyles: Record<CaseDocument['status'], string> = {
-  queued: 'bg-muted text-muted-foreground',
-  processing: 'bg-peach/60 text-espresso dark:bg-cream/10 dark:text-peach',
-  ready: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  failed: 'bg-destructive/10 text-destructive',
-}
-
-const documentStatusLabel: Record<CaseDocument['status'], string> = {
-  queued: 'Queued',
-  processing: 'Processing',
-  ready: 'Ready',
-  failed: 'Failed',
-}
 
 function hasPendingDocuments() {
   return caseDocuments.value.some((doc) => doc.status === 'queued' || doc.status === 'processing')
@@ -302,22 +282,8 @@ async function uploadCaseDocuments(files: File[]) {
   await loadCaseDocuments()
 }
 
-function onCaseFileSelected(event: Event) {
-  const target = event.target as HTMLInputElement
-  const files = target.files ? Array.from(target.files) : []
-  target.value = ''
-  if (files.length === 0) return
-  void uploadCaseDocuments(files)
-}
-
-function onCaseFilesDropped(event: DragEvent) {
-  const rejected = caseFileDrop.onDrop(event, (files) => {
-    void uploadCaseDocuments(files)
-  })
-
-  if (rejected.length > 0) {
-    documentsError.value = `"${rejected[0]?.name}" is not a supported file type. Use PDF, DOCX, TXT, MD, or an image.`
-  }
+function reportRejectedUpload(name: string) {
+  documentsError.value = `"${name}" is not a supported file type. Use PDF, DOCX, TXT, MD, or an image.`
 }
 
 async function removeCaseDocument(doc: CaseDocument) {
@@ -330,7 +296,37 @@ async function removeCaseDocument(doc: CaseDocument) {
   }
 }
 
+/** File a document under a new set of categories from the case sidebar. */
+async function updateDocumentCategories(doc: CaseDocument, ids: string[]) {
+  const previous = doc.categories ?? []
+
+  doc.categories = ids
+    .map((id) => labelStore.byId.get(id))
+    .filter((label): label is NonNullable<typeof label> => label !== undefined)
+
+  try {
+    const { data } = await api<{ data: CaseDocument }>(`/documents/${doc.id}`, {
+      method: 'PATCH',
+      body: { label_ids: ids },
+    })
+    doc.categories = data.categories
+  } catch (err: any) {
+    doc.categories = previous
+    toast.error(err?.data?.message ?? 'Could not update the categories')
+  }
+}
+
 const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
+
+/**
+ * Composer attachments take the same path as the case's upload panel — POST
+ * /documents with this case's id, then the usual ingestion queue — so they land
+ * in the case files list and become retrievable in this case's conversations.
+ */
+const attachmentsState = useChatAttachments({
+  caseId: () => caseDetail.value?.id ?? null,
+  onUploaded: loadCaseDocuments,
+})
 
 watch(previewDoc, (doc) => {
   if (doc) rightPanel.value = null
@@ -355,6 +351,62 @@ function previewMaxWidth(): number {
 
 const conversationId = computed(() => activeConversationId.value ?? caseDetail.value?.conversation_id ?? null)
 const busy = computed(() => sending.value || streaming.value)
+
+/**
+ * What the case record knows about this matter, handed to the suggestion
+ * engine so the offered steps follow the case — its subject, deadline, and the
+ * tasks already drafted for this thread — instead of the last reply alone.
+ */
+const suggestionContext = computed<SuggestionContext>(() => ({
+  caseTitle: caseDetail.value?.title ?? null,
+  caseType: caseDetail.value?.case_type ?? null,
+  caseDescription: caseDetail.value?.description ?? null,
+  caseStatus: caseDetail.value?.status ?? null,
+  casePriority: caseDetail.value?.priority ?? null,
+  tags: caseDetail.value?.tags ?? [],
+  relatedParties: caseDetail.value?.related_parties ?? [],
+  dueDate: caseDetail.value?.due_date ?? null,
+  threadPurpose: threads.value.find((t) => t.id === conversationId.value)?.purpose ?? null,
+  templateName: caseDetail.value?.default_template?.name ?? null,
+  openTasks: todoStore.todos
+    .filter((t) => t.conversation_id === conversationId.value && t.status !== 'completed')
+    .map((t) => ({ title: t.title, status: t.status, priority: t.priority, due_hint: t.due_hint })),
+  role: auth.user?.kyc_role ?? null,
+  useCase: auth.user?.kyc_use_case ?? null,
+  documentTypes: (auth.user?.kyc_document_types ?? '').split(',').map((v) => v.trim()).filter(Boolean),
+  experienceLevel: experienceLevel.value,
+}))
+
+const { starters } = useStarterSuggestions(suggestionContext)
+
+function selectPrompt(prompt: string) {
+  input.value = prompt
+  composerRef.value?.focus()
+}
+
+/** Say what the assistant already knows, so the first step feels informed. */
+const emptyStateDescription = computed(() => {
+  const c = caseDetail.value
+  if (!c) return 'Ask about the law, draft correspondence, or summarize the facts of this case.'
+
+  const purpose = suggestionContext.value.threadPurpose
+  const opening = purpose ? `This thread is for ${purpose.toLowerCase()}. ` : ''
+
+  const known = [
+    c.description ? 'the facts you recorded' : null,
+    c.related_parties?.length ? 'the parties involved' : null,
+    c.due_date ? `the ${formatDate(c.due_date)} deadline` : null,
+  ].filter(Boolean) as string[]
+
+  const lead = known.length > 0
+    ? `Batayan already has ${known.length > 1 ? `${known.slice(0, -1).join(', ')} and ${known.at(-1)}` : known[0]}.`
+    : 'Batayan works from this case record — add facts to it as you go.'
+
+  return `${opening}${lead} Pick a first step below, or ask anything.`
+})
+
+/** Subject of the current turn, sent by the server; shown once as a heading. */
+const currentTopic = ref<string | null>(null)
 
 const statusLabels: Record<string, string> = {
   checking_sources: 'Checking legal sources',
@@ -402,54 +454,29 @@ function completeActiveSteps() {
   }
 }
 
-const statusStyles: Record<string, string> = {
-  open: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  in_progress: 'bg-peach/60 text-espresso dark:bg-cream/10 dark:text-peach',
-  on_hold: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  closed: 'bg-muted text-muted-foreground',
-}
+// Labels, badge styling and date formatting are shared with the case list via
+// useCasePresentation; the copies that used to live here had already drifted
+// from it.
+const { statusLabel, formatDate } = useCasePresentation()
 
-const priorityStyles: Record<string, string> = {
-  low: 'bg-muted text-muted-foreground',
-  medium: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  high: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
-  urgent: 'bg-destructive/15 text-destructive dark:bg-cream/10 dark:text-destructive',
-}
+/** Closed cases are archived 30 days after they are closed. */
+const AUTO_ARCHIVE_AFTER_DAYS = 30
 
-const typeLabels: Record<string, string> = {
-  legal: 'Legal',
-  hr: 'HR',
-  customer_support: 'Customer Support',
-  administrative: 'Administrative',
-  general: 'General',
-}
+const autoArchiveDate = computed(() => {
+  const c = caseDetail.value
+  if (!c || c.status !== 'closed' || c.archived_at) return null
+  const closedAt = c.closed_at ? new Date(c.closed_at) : null
+  if (!closedAt || Number.isNaN(closedAt.getTime())) return null
+  closedAt.setDate(closedAt.getDate() + AUTO_ARCHIVE_AFTER_DAYS)
+  return closedAt.toISOString()
+})
 
-const statusLabel: Record<string, string> = {
-  open: 'Open',
-  in_progress: 'In Progress',
-  on_hold: 'On Hold',
-  closed: 'Closed',
-}
-
-const statusLabelFor = computed(() => (value: string) => statusLabel[value] ?? value)
-
-function humanize(value: string) {
-  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
-function formatDate(value: string | null) {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-}
+/**
+ * Closed and archived cases are read-only: the only things left are reading,
+ * exporting, reopening, and archiving. Everything that creates or edits
+ * content — messaging, uploads, threads, tasks, drafts, case edits — is off.
+ */
+const readOnly = computed(() => !!caseDetail.value?.archived_at || caseDetail.value?.status === 'closed')
 
 async function load(conversationId?: string | null) {
   loading.value = true
@@ -491,9 +518,15 @@ async function selectConversation(id: string) {
   await load(id)
 }
 
+/** Jumping from a line of work in the progress view back into its thread. */
+async function openThreadFromProgress(id: string) {
+  setView('chat')
+  await selectConversation(id)
+}
+
 async function createThread(purpose?: string) {
   const value = (purpose ?? newThreadPurpose.value).trim()
-  if (!value || !caseDetail.value || creating.value) return
+  if (!value || !caseDetail.value || creating.value || readOnly.value) return
   creating.value = true
   try {
     const conversation = await caseStore.createConversation(caseDetail.value.id, { purpose: value })
@@ -539,6 +572,7 @@ function handleFrame(frame: string, target: Message) {
     completeActiveSteps()
     currentStatus.value = payload.status
     currentStatusLabel.value = typeof payload.label === 'string' && payload.label !== '' ? payload.label : null
+    if (typeof payload.topic === 'string' && payload.topic !== '') currentTopic.value = payload.topic
     if (payload.status === 'collecting_facts') {
       awaitingIntake.value = true
       markStepActive('collecting_facts', 'Collecting the facts I need')
@@ -650,7 +684,7 @@ function getDisplayedContent(msg: Message): string {
 
 async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
-  if (!question || sending.value || !conversationId.value) return
+  if (!question || sending.value || !conversationId.value || readOnly.value) return
 
   messageStartIndex = messages.value.length
   lastQuestion.value = question
@@ -659,8 +693,12 @@ async function send(questionOverride?: string | Event) {
   currentStatus.value = null
   currentStatusLabel.value = null
   input.value = ''
+  // The files travel with this message; the uploads themselves stay attached
+  // to the case and remain retrievable in its conversations.
+  const attached = attachmentsState.take()
   todoToolCalled.value = false
   resetSteps()
+  currentTopic.value = null
 
   if (question.startsWith('[Intake Form Submission]') || question.startsWith('[Template:')) {
     markStepActive('drafting', 'Drafting your document')
@@ -674,6 +712,7 @@ async function send(questionOverride?: string | Event) {
       role: 'user',
       content: question,
       sources: [],
+      attachments: attached,
       created_at: new Date().toISOString(),
     })
 
@@ -700,7 +739,10 @@ async function send(questionOverride?: string | Event) {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       }),
-      body: JSON.stringify({ message: question }),
+      body: JSON.stringify({
+        message: question,
+        attachment_ids: attached.map((a) => a.id),
+      }),
       signal: streamController.value.signal,
     })
 
@@ -787,13 +829,28 @@ function toggleSearch() {
   if (!searchOpen.value) {
     searchQuery.value = ''
     searchActiveId.value = null
+    searchActiveOccurrence.value = 0
+  } else {
+    nextTick(() => searchBarRef.value?.focusInput())
   }
 }
 
-function searchNavigate(messageId: string) {
-  searchActiveId.value = messageId
+function onGlobalKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+    event.preventDefault()
+    toggleSearch()
+  }
+}
+
+function searchNavigate(match: { id: string; occurrence: number }) {
+  searchActiveId.value = match.id
+  searchActiveOccurrence.value = match.occurrence
   nextTick(() => {
-    document.getElementById(`msg-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const root = document.getElementById(`msg-${match.id}`)
+    if (!root) return
+    const marks = root.querySelectorAll('mark.saligan-search-mark')
+    const target = marks[match.occurrence] ?? marks[0]
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
 
@@ -894,6 +951,7 @@ function handleExport(m: Message, type: 'word' | 'pdf') {
 }
 
 function openEdit() {
+  if (readOnly.value) return
   editOpen.value = true
 }
 
@@ -914,7 +972,34 @@ function initialForEdit(): Partial<CaseIntakePayload> | null {
   }
 }
 
+const statusSaving = ref(false)
+
+/**
+ * Optimistic so the badge answers immediately; the previous status is restored
+ * if the write fails, since a stale badge here would misreport the matter.
+ */
+async function changeStatus(status: LegalCase['status']) {
+  const c = caseDetail.value
+  if (!c || c.status === status || statusSaving.value) return
+
+  const previous = c.status
+  c.status = status
+  statusSaving.value = true
+  try {
+    await caseStore.updateCaseStatus(c.id, status)
+    toast.success(`Status set to ${statusLabel(status)}`)
+  } catch (err: any) {
+    c.status = previous
+    toast.error(err?.data?.message ?? 'Could not change the status')
+  } finally {
+    statusSaving.value = false
+  }
+}
+
+const editSaving = ref(false)
+
 async function handleEditSubmit(payload: CaseIntakePayload) {
+  editSaving.value = true
   try {
     await caseStore.updateCase(String(route.params.id), payload)
     editOpen.value = false
@@ -922,6 +1007,8 @@ async function handleEditSubmit(payload: CaseIntakePayload) {
     await load()
   } catch (err: any) {
     toast.error(err?.data?.message ?? 'Could not update the case')
+  } finally {
+    editSaving.value = false
   }
 }
 
@@ -929,7 +1016,44 @@ function handleEditCancel() {
   editOpen.value = false
 }
 
+/** Inline tag edits from the case brief are patched straight onto the case. */
+async function saveCaseTags(tags: string[]) {
+  const c = caseDetail.value
+  if (!c || readOnly.value) return
+  const previous = c.tags
+  c.tags = tags
+  try {
+    await caseStore.updateCase(c.id, { tags })
+  } catch (err: any) {
+    c.tags = previous
+    toast.error(err?.data?.message ?? 'Could not update the tags')
+  }
+}
+
+/** Update thread tags with optimistic UI. */
+async function updateThreadTags(threadId: string, ids: string[]) {
+  const thread = threads.value.find((t) => t.id === threadId)
+  if (!thread) return
+
+  const previous = thread.tags ?? []
+  thread.tags = ids
+    .map((id) => labelStore.byId.get(id))
+    .filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)
+
+  try {
+    const { data } = await api<{ data: { tags?: typeof thread.tags } }>(`/conversations/${threadId}`, {
+      method: 'PATCH',
+      body: { label_ids: ids },
+    })
+    thread.tags = data.tags ?? []
+  } catch {
+    thread.tags = previous
+    toast.error('Could not update the tags')
+  }
+}
+
 async function draftLetter(template: TemplateOption) {
+  if (readOnly.value) return
   pickerOpen.value = false
   await nextTick()
 
@@ -964,6 +1088,55 @@ const statusLabelNow = computed(() => {
   return currentStatusLabel.value ?? statusLabels[currentStatus.value] ?? currentStatus.value
 })
 
+const openTaskCount = computed(() =>
+  conversationId.value
+    ? todoStore.todos.filter((t) => t.conversation_id === conversationId.value && t.status !== 'completed').length
+    : 0,
+)
+
+/**
+ * The side panels that can be opened over the thread. Built as data so the
+ * toolbar stays one loop rather than four near-identical buttons. Summary is
+ * no longer among them — the brief lives at the top of the thread now, with
+ * its own disclosure, so a header toggle for it was a second control for one
+ * piece of state.
+ */
+const panelToggles = computed(() => {
+  const toggles: PanelToggle[] = [
+    {
+      key: 'search',
+      label: 'Search',
+      icon: SearchIcon,
+      active: searchOpen.value,
+      toggle: toggleSearch,
+    },
+  ]
+
+  if (activeAssistantMessage.value) {
+    toggles.push({
+      key: 'citations',
+      label: 'Citations',
+      icon: BookOpenIcon,
+      active: showCitations.value,
+      count: activeAssistantMessage.value.sources.length,
+      toggle: () => togglePanel('citations'),
+    })
+  }
+
+  if (conversationId.value) {
+    toggles.push({
+      key: 'tasks',
+      label: 'Tasks',
+      icon: ListChecksIcon,
+      active: showTasks.value,
+      count: openTaskCount.value,
+      toggle: () => togglePanel('tasks'),
+    })
+  }
+
+  return toggles
+})
+
 watch(messages, async () => {
   if (messages.value.length === 0) return
   await nextTick()
@@ -971,10 +1144,12 @@ watch(messages, async () => {
 }, { deep: true })
 
 onMounted(async () => {
+  window.addEventListener('keydown', onGlobalKeydown)
   await Promise.all([load(), loadTemplates()])
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
   if (documentPollTimer !== null) {
     clearInterval(documentPollTimer)
     documentPollTimer = null
@@ -997,220 +1172,30 @@ watch(
 
 <template>
   <div class="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
-    <aside v-if="caseDetail && !loading" class="hidden w-64 shrink-0 flex-col overflow-hidden border-r bg-muted/20 md:flex">
-      <div class="flex h-full min-h-0 flex-col p-3">
-        <div class="flex items-center justify-between px-1">
-          <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Threads</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            class="size-7 p-0"
-            :disabled="creating"
-            aria-label="New thread"
-            @click="creatingThread = !creatingThread"
-          >
-            <PlusIcon class="size-4" />
-          </Button>
-        </div>
-
-        <div v-if="creatingThread" class="mt-2 space-y-2 rounded-lg border bg-background p-2 shadow-sm">
-          <Input
-            v-model="newThreadPurpose"
-            class="h-8 text-xs"
-            placeholder="Purpose, e.g. Draft a letter"
-            :disabled="creating"
-            @keydown.enter="createThread()"
-          />
-          <div class="flex flex-wrap gap-1">
-            <Button
-              v-for="purpose in quickPurposes"
-              :key="purpose"
-              variant="outline"
-              size="sm"
-              class="h-6 px-2 text-[11px]"
-              :disabled="creating"
-              @click="createThread(purpose)"
-            >
-              {{ purpose }}
-            </Button>
-          </div>
-          <div class="flex items-center justify-end gap-1">
-            <Button variant="ghost" size="sm" class="h-6 text-[11px]" :disabled="creating" @click="cancelCreateThread">
-              Cancel
-            </Button>
-            <Button size="sm" class="h-6 text-[11px]" :disabled="creating || !newThreadPurpose.trim()" @click="createThread()">
-              <Loader2Icon v-if="creating" class="size-3 animate-spin" />
-              Create
-            </Button>
-          </div>
-        </div>
-
-        <nav class="mt-2 max-h-[35dvh] min-h-0 space-y-1 overflow-y-auto pr-1">
-          <button
-            v-for="thread in threads"
-            :key="thread.id"
-            class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
-            :class="thread.id === activeConversationId ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'"
-            @click="selectConversation(thread.id)"
-          >
-            <MessagesSquareIcon class="size-3.5 shrink-0" />
-            <span class="min-w-0 flex-1 truncate font-medium">{{ thread.purpose || thread.title || 'Untitled' }}</span>
-            <span v-if="thread.messages_count > 0" class="text-[10px] text-muted-foreground">{{ thread.messages_count }}</span>
-          </button>
-        </nav>
-
-        <div class="mt-4 flex min-h-0 flex-col rounded-lg border-t pt-3">
-          <div class="flex items-center justify-between px-1">
-            <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Generated</p>
-            <NuxtLink to="/generated-documents" class="px-1 text-[10px] font-medium text-primary hover:underline">
-              View all
-            </NuxtLink>
-          </div>
-
-          <div class="mt-1.5 min-h-0 max-h-[22dvh] space-y-1.5 overflow-y-auto pr-1">
-            <div v-if="generatedLoading && generatedDocuments.length === 0" class="px-1 py-1 text-[11px] text-muted-foreground">
-              Loading…
-            </div>
-            <div v-else-if="generatedDocuments.length === 0" class="px-1 py-1 text-[11px] text-muted-foreground">
-              No drafts exported yet. Draft a letter, then export it from the chat.
-            </div>
-
-            <div
-              v-for="doc in generatedDocuments"
-              :key="doc.id"
-              class="rounded-lg border bg-background px-2 py-1.5"
-            >
-              <p class="truncate text-[11px] font-medium">{{ doc.title }}</p>
-              <p class="mt-0.5 text-[10px] text-muted-foreground">{{ formatDate(doc.created_at) }}</p>
-              <div class="mt-1.5 flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="h-6 flex-1 gap-1 px-1.5 text-[10px]"
-                  :disabled="exporting !== null"
-                  @click="downloadGenerated(doc, 'word')"
-                >
-                  <Loader2Icon v-if="exporting === `${doc.id}:word`" class="size-2.5 animate-spin" />
-                  <DownloadIcon v-else class="size-2.5" />
-                  Word
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  class="h-6 flex-1 gap-1 px-1.5 text-[10px]"
-                  :disabled="exporting !== null"
-                  @click="downloadGenerated(doc, 'pdf')"
-                >
-                  <Loader2Icon v-if="exporting === `${doc.id}:pdf`" class="size-2.5 animate-spin" />
-                  <DownloadIcon v-else class="size-2.5" />
-                  PDF
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          class="mt-4 flex min-h-0 flex-1 flex-col rounded-lg border-t pt-3 transition-colors"
-          :class="caseFileDrop.dragging.value ? 'rounded-lg border-primary bg-primary/5' : ''"
-          @dragenter="caseFileDrop.onDragEnter"
-          @dragover="caseFileDrop.onDragOver"
-          @dragleave="caseFileDrop.onDragLeave"
-          @drop="onCaseFilesDropped"
-        >
-          <div class="flex items-center justify-between px-1">
-            <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Documents</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="size-7 p-0"
-              :disabled="uploadingDocument"
-              aria-label="Upload document"
-              @click="caseFileInput?.click()"
-            >
-              <Loader2Icon v-if="uploadingDocument" class="size-4 animate-spin" />
-              <FileUpIcon v-else class="size-4" />
-            </Button>
-            <input
-              ref="caseFileInput"
-              type="file"
-              multiple
-              accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic"
-              class="hidden"
-              @change="onCaseFileSelected"
-            />
-          </div>
-
-          <p class="px-1 pt-1 text-[10px] leading-tight text-muted-foreground">
-            PDF, DOCX, TXT, MD, or image (OCR) — drag files here or upload, attached to this case for retrieval.
-          </p>
-
-          <div class="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-            <div v-if="documentsLoading && caseDocuments.length === 0" class="px-1 py-1 text-[11px] text-muted-foreground">
-              Loading documents…
-            </div>
-            <div v-else-if="caseDocuments.length === 0" class="px-1 py-1 text-[11px] text-muted-foreground">
-              No documents yet.
-            </div>
-
-            <div
-              v-for="doc in caseDocuments"
-              :key="doc.id"
-              class="group flex items-center gap-1.5 rounded-lg border bg-background px-2 py-1.5"
-            >
-              <div class="flex min-w-0 flex-1 items-center gap-2">
-                <FileIcon class="size-3.5 shrink-0 text-muted-foreground" />
-                <div class="min-w-0">
-                  <p class="truncate text-[11px] font-medium">{{ doc.title }}</p>
-                  <p class="mt-0.5 flex items-center gap-1 truncate text-[10px] text-muted-foreground">
-                    <span
-                      class="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[9px] font-medium"
-                      :class="documentStatusStyles[doc.status]"
-                    >
-                      <Loader2Icon
-                        v-if="doc.status === 'queued' || doc.status === 'processing'"
-                        class="size-2.5 animate-spin"
-                      />
-                      {{ documentStatusLabel[doc.status] }}
-                    </span>
-                    <span v-if="doc.status === 'ready'" class="truncate">{{ doc.chunk_count }} chunks</span>
-                    <span v-if="doc.status === 'failed' && doc.error_message" class="truncate">{{ doc.error_message }}</span>
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground max-lg:opacity-100"
-                :aria-label="`View ${doc.title}`"
-                @click="viewingDocument = doc"
-              >
-                <EyeIcon class="size-3.5" />
-              </Button>
-              <button
-                type="button"
-                class="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground max-lg:opacity-100"
-                :aria-label="`Download ${doc.title}`"
-                @click="downloadDocument(doc.id, doc.original_filename)"
-              >
-                <DownloadIcon class="size-3.5" />
-              </button>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive max-lg:opacity-100"
-                :aria-label="`Delete ${doc.title}`"
-                @click="removeCaseDocument(doc)"
-              >
-                <TrashIcon class="size-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          <p v-if="documentsError" class="px-1 pt-2 text-[10px] text-destructive">{{ documentsError }}</p>
-        </div>
-      </div>
-    </aside>
+    <CaseSidebar
+      v-if="caseDetail && !loading"
+      :threads="threads"
+      :active-conversation-id="activeConversationId"
+      :creating="creating"
+      :documents="caseDocuments"
+      :documents-loading="documentsLoading"
+      :documents-error="documentsError"
+      :uploading="uploadingDocument"
+      :generated="generatedDocuments"
+      :generated-loading="generatedLoading"
+      :exporting="exporting"
+      :readonly="readOnly"
+      @select-thread="selectConversation"
+      @create-thread="createThread"
+      @upload="uploadCaseDocuments"
+      @rejected-upload="reportRejectedUpload"
+      @view-document="viewingDocument = $event"
+      @download-document="downloadDocument($event.id, $event.original_filename)"
+      @delete-document="removeCaseDocument"
+      @update-document-categories="updateDocumentCategories"
+      @download-generated="downloadGenerated"
+      @update-thread-tags="updateThreadTags"
+    />
 
     <section
       ref="mainChatEl"
@@ -1237,141 +1222,58 @@ watch(
       </template>
 
       <template v-else>
-        <div class="border-b px-4 py-3">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex min-w-0 items-center gap-3">
-              <Button variant="ghost" size="icon" class="size-8 shrink-0" @click="router.push('/cases')">
-                <ArrowLeftIcon class="size-4" />
-              </Button>
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h1 class="truncate text-base font-semibold">{{ caseDetail.title }}</h1>
-                  <Badge :class="statusStyles[caseDetail.status]" class="text-[10px]">
-                    {{ statusLabelFor(caseDetail.status) }}
-                  </Badge>
-                  <Badge v-if="caseDetail.priority" :class="priorityStyles[caseDetail.priority]" class="text-[10px]">
-                    {{ caseDetail.priority }}
-                  </Badge>
-                </div>
-                <div class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                  <span v-if="caseDetail.reference">{{ caseDetail.reference }}</span>
-                  <span>{{ typeLabels[caseDetail.case_type] ?? humanize(caseDetail.case_type) }}</span>
-                  <span v-if="caseDetail.due_date">Due {{ formatDate(caseDetail.due_date) }}</span>
-                  <span v-if="caseDetail.archived_at">Archived {{ formatDate(caseDetail.archived_at) }}</span>
-                </div>
-              </div>
-            </div>
+        <CaseDetailHeader
+          :case="caseDetail"
+          :view="view"
+          :status-saving="statusSaving"
+          :panel-toggles="panelToggles"
+          @back="router.push('/cases')"
+          @set-view="setView"
+          @change-status="changeStatus"
+          @draft="pickerOpen = true"
+          @edit="openEdit"
+          @archive="archiveCase"
+          @restore="restoreCase"
+        />
 
-            <div class="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'text-primary': searchOpen }"
-                @click="toggleSearch"
-              >
-                <SearchIcon class="size-4" />
-                <span class="hidden sm:inline">{{ searchOpen ? 'Close search' : 'Search' }}</span>
-              </Button>
-              <Button v-if="!caseDetail.archived_at" variant="outline" size="sm" class="gap-1.5 px-2 text-xs sm:px-3" @click="openEdit">
-                <PencilIcon class="size-3.5" />
-                <span class="hidden sm:inline">Edit</span>
-              </Button>
-              <Button v-if="!caseDetail.archived_at" size="sm" class="gap-1.5 px-2 text-xs sm:px-3" @click="pickerOpen = true">
-                <FileTextIcon class="size-3.5" />
-                <span class="hidden sm:inline">Draft a letter</span>
-              </Button>
-              <Button
-                v-if="activeAssistantMessage"
-                variant="ghost"
-                size="sm"
-                class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'bg-muted text-primary': showCitations }"
-                :aria-pressed="showCitations"
-                @click="togglePanel('citations')"
-              >
-                <BookOpenIcon class="size-4" />
-                <span class="hidden sm:inline">{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
-                <Badge v-if="activeAssistantMessage.sources.length > 0" variant="secondary" class="px-1.5 text-[10px]">
-                  {{ activeAssistantMessage.sources.length }}
-                </Badge>
-              </Button>
-              <Button
-                v-if="caseDetail.description"
-                variant="ghost"
-                size="sm"
-                class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'bg-muted text-primary': showSummary }"
-                :aria-pressed="showSummary"
-                @click="showSummary = !showSummary"
-              >
-                <EyeIcon class="size-4" />
-                <span class="hidden sm:inline">{{ showSummary ? 'Hide summary' : 'Summary' }}</span>
-              </Button>
-              <Button
-                v-if="conversationId"
-                variant="ghost"
-                size="sm"
-                class="gap-1.5 px-2 text-xs sm:px-3"
-                :class="{ 'bg-muted text-primary': showTasks }"
-                :aria-pressed="showTasks"
-                @click="togglePanel('tasks')"
-              >
-                <ListChecksIcon class="size-4" />
-                <span class="hidden sm:inline">{{ showTasks ? 'Hide tasks' : 'Tasks' }}</span>
-                <Badge v-if="conversationId && todoStore.todos.some((t) => t.conversation_id === conversationId)" variant="secondary" class="px-1.5 text-[10px]">
-                  {{ todoStore.todos.filter((t) => t.conversation_id === conversationId && t.status !== 'completed').length }}
-                </Badge>
-              </Button>
-              <Button v-if="!caseDetail.archived_at" variant="ghost" size="sm" class="gap-1.5 px-2 text-xs text-muted-foreground sm:px-3" @click="archiveCase">
-                <TrashIcon class="size-3.5" />
-                <span class="hidden sm:inline">Archive</span>
-              </Button>
-              <Button v-else variant="ghost" size="sm" class="gap-1.5 px-2 text-xs sm:px-3" @click="restoreCase">
-                <PlusIcon class="size-3.5" />
-                <span class="hidden sm:inline">Restore</span>
-              </Button>
-            </div>
-          </div>
-
-          <div v-if="showSummary && (caseDetail.description || caseDetail.related_parties?.length || caseDetail.tags?.length)" class="mt-3 border-t pt-3">
-            <p v-if="caseDetail.description" class="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-              {{ caseDetail.description }}
-            </p>
-            <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <span v-if="caseDetail.related_parties?.length" class="text-[11px] text-muted-foreground">
-                <span class="font-medium">Parties:</span>
-                {{ caseDetail.related_parties.join(' · ') }}
-              </span>
-              <div v-if="caseDetail.tags?.length" class="flex flex-wrap items-center gap-1">
-                <Badge v-for="tag in caseDetail.tags" :key="tag" variant="secondary" class="text-[10px]">
-                  {{ tag }}
-                </Badge>
-              </div>
-            </div>
-          </div>
+        <div
+          v-if="autoArchiveDate"
+          class="flex shrink-0 items-start gap-2 border-b bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+        >
+          <ArchiveIcon class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p>
+            This case is closed. It will be archived on
+            <span class="font-medium text-foreground">{{ formatDate(autoArchiveDate) }}</span> if you
+            don't reopen it. You can still reopen it anytime from the archived cases tab.
+          </p>
         </div>
 
-        <div class="md:hidden flex items-center gap-1.5 overflow-x-auto border-b px-3 py-2">
+        <div v-if="view === 'progress'" class="min-h-0 flex-1 overflow-y-auto">
+          <CaseProgressView :case-id="caseDetail.id" @open-thread="openThreadFromProgress" />
+        </div>
+
+        <template v-else>
+        <div class="flex items-center gap-1.5 overflow-x-auto border-b px-3 py-2 md:hidden">
           <button
             v-for="thread in threads"
             :key="thread.id"
-            class="shrink-0 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors"
+            class="flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors"
             :class="thread.id === activeConversationId ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'"
             @click="selectConversation(thread.id)"
           >
+            <component :is="THREAD_ICONS[threadPurposeKind(thread.purpose)]" class="size-3.5" />
             {{ thread.purpose || thread.title || 'Untitled' }}
           </button>
-          <Button variant="ghost" size="sm" class="h-6 shrink-0 px-2 text-[11px]" :disabled="creating" @click="creatingThread = !creatingThread">
-            <PlusIcon class="size-3.5" />
+          <Button v-if="!readOnly" variant="ghost" size="xs" class="shrink-0" :disabled="creating" @click="creatingThread = !creatingThread">
+            <PlusIcon />
             New
           </Button>
         </div>
 
-        <div v-if="creatingThread && caseDetail" class="space-y-2 border-b bg-muted/20 p-3 md:hidden">
+        <div v-if="creatingThread && caseDetail && !readOnly" class="space-y-2 border-b bg-muted/20 p-3 md:hidden">
           <Input
             v-model="newThreadPurpose"
-            class="h-8 text-xs"
+            class="h-8 text-sm"
             placeholder="Purpose, e.g. Draft a letter"
             :disabled="creating"
             @keydown.enter="createThread()"
@@ -1381,35 +1283,38 @@ watch(
               v-for="purpose in quickPurposes"
               :key="purpose"
               variant="outline"
-              size="sm"
-              class="h-6 px-2 text-[11px]"
+              size="xs"
               :disabled="creating"
               @click="createThread(purpose)"
             >
               {{ purpose }}
             </Button>
-            <Button size="sm" class="ml-auto h-6 text-[11px]" :disabled="creating || !newThreadPurpose.trim()" @click="createThread()">
-              <Loader2Icon v-if="creating" class="size-3 animate-spin" />
+            <Button size="xs" class="ml-auto" :disabled="creating || !newThreadPurpose.trim()" @click="createThread()">
+              <Loader2Icon v-if="creating" class="animate-spin" />
               Create
             </Button>
           </div>
         </div>
+
+        <CaseBrief
+          v-if="caseDetail"
+          :case="caseDetail"
+          :editable="!readOnly"
+          @edit="openEdit"
+          @update-tags="saveCaseTags"
+        />
 
         <div class="relative min-h-0 flex-1">
           <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto">
           <ChatEmptyState
             v-if="messages.length === 0"
             title="Work on this case"
-            description="Ask about the law, draft correspondence, or summarize case facts. You can also pick a template to draft a letter."
+            :description="emptyStateDescription"
             eyebrow="Batayan AI"
           >
-            <Button variant="outline" class="justify-start gap-2 text-left" @click="pickerOpen = true">
-              <FileTextIcon class="size-4 text-primary" />
-              <span class="text-xs">Draft a letter from a template</span>
-            </Button>
-            <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'Summarize the key facts and deadlines of this case.'">
-              <SparklesIcon class="size-4 text-primary" />
-              <span class="text-xs">Summarize this case</span>
+            <Button v-if="!readOnly" variant="outline" class="w-full justify-start gap-2 text-left" @click="pickerOpen = true">
+              <FileTextIcon class="size-4 shrink-0 text-primary" />
+              <span class="min-w-0 truncate text-sm">Draft a letter from a template</span>
             </Button>
           </ChatEmptyState>
 
@@ -1418,6 +1323,7 @@ watch(
             :messages="messages"
             :streaming="streaming"
             :status-label="statusLabelNow"
+            :topic="currentTopic"
             :current-status="currentStatus"
             :activity-steps="activitySteps"
             :awaiting-intake="awaitingIntake"
@@ -1429,7 +1335,9 @@ watch(
             :display-content="getDisplayedContent"
             :search-query="searchQuery"
             :active-search-id="searchActiveId"
+            :active-search-occurrence="searchActiveOccurrence"
             :experience-level="experienceLevel"
+            :suggestion-context="suggestionContext"
             @markdown-click="handleMarkdownClick"
             @rate="rateMessage"
             @export="handleExport"
@@ -1444,23 +1352,38 @@ watch(
         </div>
 
         <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
-          <ChatSearchBar :messages="messages" @query="searchQuery = $event" @navigate="searchNavigate" @close="toggleSearch" />
+          <ChatSearchBar
+            ref="searchBarRef"
+            :messages="messages"
+            @query="searchQuery = $event"
+            @navigate="searchNavigate"
+            @close="toggleSearch"
+          />
         </div>
 
         <div class="border-t p-3">
+          <!-- <ChatPromptSuggestions :suggestions="starters" @select="selectPrompt" /> -->
           <ChatComposer
+            ref="composerRef"
             v-model="input"
             :disabled="busy"
+            :readonly="readOnly"
             :streaming="streaming"
-            :can-send="conversationId !== null"
-            placeholder="Ask about this case, draft a letter, or summarize the facts…"
+            :attachments="attachmentsState.attachments.value"
+            :can-send="conversationId !== null && !attachmentsState.pending.value"
+            :can-attach="caseDetail !== null && !readOnly"
+            :placeholder="readOnly ? 'This case is closed — you can read it but not message it.' : 'Ask about this case, draft a letter, or summarize the facts…'"
+            help-context="case"
             @send="send()"
             @stop="stopStreaming"
+            @attach="attachmentsState.add"
+            @remove-attachment="attachmentsState.remove"
           />
-          <p v-if="!conversationId" class="mx-auto mt-1 max-w-3xl text-center text-[11px] text-muted-foreground">
+          <p v-if="!conversationId" class="mx-auto mt-1 max-w-3xl text-center text-xs text-muted-foreground">
             This case has no conversation thread yet.
           </p>
         </div>
+        </template>
       </template>
     </section>
 
@@ -1507,6 +1430,10 @@ watch(
         :src="previewDoc.blobUrl ?? undefined"
         class="flex-1 w-full border-0"
       />
+      <DocxViewer
+        v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
+        :blob-url="previewDoc.blobUrl"
+      />
       <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
         <span>Word documents cannot be previewed inline.</span>
         <a
@@ -1520,26 +1447,43 @@ watch(
       </div>
     </aside>
 
-    <TaskPanel
-      v-if="showTasks && conversationId"
-      :conversation-id="conversationId"
-      @close="rightPanel = null"
-    />
+    <div
+      class="grid h-full transition-[grid-template-columns] duration-200 ease-out"
+      :style="{ gridTemplateColumns: showTasks && conversationId && view === 'chat' ? '1fr' : '0fr' }"
+    >
+      <div class="h-full min-w-0 overflow-hidden">
+        <TaskPanel
+          v-if="conversationId"
+          :visible="showTasks && view === 'chat'"
+          :conversation-id="conversationId"
+          :readonly="readOnly"
+          @close="rightPanel = null"
+        />
+      </div>
+    </div>
 
     <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
 
-    <CitationPanel
-      v-if="hasCitations && showCitations"
-      :message="activeAssistantMessage"
-      :active-citation="activeCitation"
-      @close="rightPanel = null"
-    />
+    <div
+      class="grid h-full transition-[grid-template-columns] duration-200 ease-out"
+      :style="{ gridTemplateColumns: hasCitations && showCitations && view === 'chat' ? '1fr' : '0fr' }"
+    >
+      <div class="h-full min-w-0 overflow-hidden">
+        <CitationPanel
+          v-if="view === 'chat'"
+          :message="activeAssistantMessage"
+          :active-citation="activeCitation"
+          @close="rightPanel = null"
+        />
+      </div>
+    </div>
 
     <CaseIntakeForm
       v-if="editOpen"
       :initial="initialForEdit()"
       :templates="templates"
-      submit-label="Save Changes"
+      :busy="editSaving"
+      :submit-label="editSaving ? 'Saving…' : 'Save Changes'"
       @submit="handleEditSubmit"
       @cancel="handleEditCancel"
     />
@@ -1592,22 +1536,26 @@ watch(
           <div v-else-if="previewDoc.error" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-destructive">
             {{ previewDoc.error }}
           </div>
-          <iframe
-            v-else-if="previewDoc.type === 'pdf'"
-            :src="previewDoc.blobUrl ?? undefined"
-            class="flex-1 w-full border-0 rounded-b-lg"
-          />
-          <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
-            <span>Word documents cannot be previewed inline.</span>
-            <a
-              :href="previewDoc.blobUrl ?? undefined"
-              download
-              class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <DownloadIcon class="size-3.5" />
-              Download Word document
-            </a>
-          </div>
+<iframe
+              v-else-if="previewDoc.type === 'pdf'"
+              :src="previewDoc.blobUrl ?? undefined"
+              class="flex-1 w-full border-0 rounded-b-lg"
+            />
+            <DocxViewer
+              v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
+              :blob-url="previewDoc.blobUrl"
+            />
+            <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
+              <span>Word documents cannot be previewed inline.</span>
+              <a
+                :href="previewDoc.blobUrl ?? undefined"
+                download
+                class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                <DownloadIcon class="size-3.5" />
+                Download Word document
+              </a>
+            </div>
         </div>
       </div>
     </Teleport>

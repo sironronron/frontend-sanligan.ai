@@ -6,6 +6,7 @@ const route = useRoute()
 const tabs = [
   { to: '/admin/legal-sources', label: 'Legal sources' },
   { to: '/admin/crawled-pages', label: 'Crawled pages' },
+  { to: '/admin/legal-documents', label: 'Uploaded documents' },
   { to: '/admin/system-prompts', label: 'System prompts' },
 ]
 

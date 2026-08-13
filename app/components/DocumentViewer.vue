@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { DownloadIcon, FileIcon, Loader2Icon, XIcon } from '@lucide/vue'
+import { DownloadIcon, Loader2Icon, XIcon } from '@lucide/vue'
+import { renderMarkdown } from '~/utils/markdown'
 
 export interface ViewerDocument {
   id: string
@@ -12,12 +13,37 @@ const props = defineProps<{ document: ViewerDocument }>()
 const emit = defineEmits<{ close: [] }>()
 
 const { fetchBlob, objectUrl, download } = useDocumentFile()
+const { fileIcon } = useFileTypeIcon()
 
+const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'text/md', 'text/x-markdown'])
+const MARKDOWN_MIME_TYPES = new Set(['text/markdown', 'text/md', 'text/x-markdown'])
+
+function isTextFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  return (
+    lower.endsWith('.md') ||
+    lower.endsWith('.markdown') ||
+    lower.endsWith('.txt') ||
+    lower.endsWith('.text')
+  )
+}
 
 const isPdf = computed(() => props.document.mime_type === 'application/pdf')
 const isImage = computed(() => props.document.mime_type.startsWith('image/'))
-const isText = computed(() => TEXT_MIME_TYPES.has(props.document.mime_type))
+const isDocx = computed(() => {
+  if (props.document.mime_type === DOCX_MIME_TYPE) return true
+  return props.document.original_filename.toLowerCase().endsWith('.docx')
+})
+const isText = computed(() => {
+  if (TEXT_MIME_TYPES.has(props.document.mime_type)) return true
+  return isTextFile(props.document.original_filename)
+})
+const isMarkdown = computed(() => {
+  if (MARKDOWN_MIME_TYPES.has(props.document.mime_type)) return true
+  const name = props.document.original_filename.toLowerCase()
+  return name.endsWith('.md') || name.endsWith('.markdown')
+})
 
 // The API authenticates a bearer token, which an iframe, img, or download
 // anchor cannot send, so the file is fetched here and handed to the DOM as a
@@ -27,8 +53,34 @@ const text = ref<string | null>(null)
 const textError = ref('')
 const loadingText = ref(false)
 const downloading = ref(false)
+const docxContainer = ref<HTMLElement | null>(null)
+const docxError = ref('')
+const docxLoading = ref(false)
+const docxRendered = ref(false)
 
 async function loadPreview() {
+  if (isDocx.value) {
+    if (docxRendered.value) return
+
+    docxLoading.value = true
+    docxError.value = ''
+    try {
+      const blob = await fetchBlob(props.document.id)
+      await nextTick()
+      const container = docxContainer.value
+      if (!container) throw new Error('Preview container not ready')
+      const { renderAsync } = await import('docx-preview')
+      await renderAsync(blob, container)
+      docxRendered.value = true
+    } catch (err: any) {
+      docxError.value = err?.message ?? 'Could not render the document.'
+    } finally {
+      docxLoading.value = false
+    }
+
+    return
+  }
+
   if (isText.value) {
     if (text.value !== null) return
 
@@ -95,7 +147,7 @@ onBeforeUnmount(() => {
       >
         <div class="flex items-center justify-between gap-3 border-b px-4 py-2.5">
           <div class="flex min-w-0 items-center gap-2">
-            <FileIcon class="size-4 shrink-0 text-muted-foreground" />
+            <component :is="fileIcon(document.original_filename, document.mime_type)" class="size-4 shrink-0 text-muted-foreground" />
             <div class="min-w-0">
               <p class="truncate text-sm font-medium">{{ document.title }}</p>
               <p class="truncate text-[11px] text-muted-foreground">{{ document.original_filename }}</p>
@@ -129,12 +181,30 @@ onBeforeUnmount(() => {
           <img v-if="inlineUrl" :src="inlineUrl" :alt="document.original_filename" class="mx-auto max-h-full max-w-full object-contain" />
         </div>
 
+        <div v-else-if="isDocx" class="relative min-h-0 flex-1 overflow-auto">
+          <div ref="docxContainer" class="p-4" />
+          <div
+            v-if="docxLoading"
+            class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-background text-sm text-muted-foreground"
+          >
+            <Loader2Icon class="size-4 animate-spin" />
+            Loading…
+          </div>
+          <div
+            v-else-if="docxError"
+            class="absolute inset-0 z-10 flex items-center justify-center bg-background p-6 text-center text-sm text-destructive"
+          >
+            {{ docxError }}
+          </div>
+        </div>
+
         <div v-else-if="isText" class="min-h-0 flex-1 overflow-auto">
           <div v-if="loadingText" class="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2Icon class="size-4 animate-spin" />
             Loading…
           </div>
           <p v-else-if="textError" class="p-6 text-center text-sm text-destructive">{{ textError }}</p>
+          <div v-else-if="isMarkdown" class="markdown-body p-6 text-sm" v-html="renderMarkdown(text ?? '')" />
           <pre v-else class="whitespace-pre-wrap break-words p-6 font-sans text-sm leading-relaxed">{{ text }}</pre>
         </div>
 

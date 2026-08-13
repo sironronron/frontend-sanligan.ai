@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { FolderOpenIcon, Loader2Icon, PlusIcon, SearchIcon } from '@lucide/vue'
+import { ArchiveIcon, FolderOpenIcon, PlusIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
-import { useCaseStore, CASE_STATUSES, CASE_PRIORITIES, CASE_TYPES } from '~/stores/cases'
+import { useCaseStore, CASE_STATUSES, CASE_PRIORITIES, CASE_TYPES, type LegalCase } from '~/stores/cases'
 import { upgradeMessage } from '~/stores/billing'
 import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
 
@@ -14,6 +14,8 @@ const api = useApi()
 const route = useRoute()
 const router = useRouter()
 
+const { typeLabel, priorityLabel, dueState } = useCasePresentation()
+
 const isDetail = computed(() => !!route.params.id)
 
 const search = ref('')
@@ -25,70 +27,36 @@ const templates = ref<IntakeTemplateOption[]>([])
 const showIntake = ref(false)
 const creating = ref(false)
 
+/**
+ * Sorting is client-side: the list is already fully in memory after the
+ * filtered fetch, and a round trip to reorder rows the user is looking at
+ * would be a visible stall for no gain.
+ */
+type SortKey = 'activity' | 'due' | 'priority' | 'created' | 'title'
+
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: 'activity', label: 'Recent activity' },
+  { value: 'due', label: 'Due date' },
+  { value: 'priority', label: 'Priority' },
+  { value: 'created', label: 'Newest first' },
+  { value: 'title', label: 'Title (A–Z)' },
+]
+
+const sort = ref<SortKey>('activity')
+
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+
 let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-const statusStyles: Record<string, string> = {
-  open: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  in_progress: 'bg-peach/60 text-espresso dark:bg-cream/10 dark:text-peach',
-  on_hold: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  closed: 'bg-muted text-muted-foreground',
-}
-
-const priorityStyles: Record<string, string> = {
-  low: 'bg-muted text-muted-foreground',
-  medium: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  high: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
-  urgent: 'bg-destructive/15 text-destructive dark:bg-cream/10 dark:text-destructive',
-}
-
-const typeLabels: Record<string, string> = {
-  legal: 'Legal',
-  hr: 'HR',
-  customer_support: 'Customer Support',
-  administrative: 'Administrative',
-  general: 'General',
-}
-
-const statusLabel: Record<string, string> = {
-  open: 'Open',
-  in_progress: 'In Progress',
-  on_hold: 'On Hold',
-  closed: 'Closed',
-}
-
-function statusLabelFor(value: string) {
-  return statusLabel[value] ?? value
-}
-
-function humanize(value: string) {
-  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
-function formatDate(value: string | null) {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function relativeTime(value: string | null) {
-  if (!value) return ''
-  const diff = Date.now() - new Date(value).getTime()
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return formatDate(value)
-}
 
 watch([search, statusFilter, typeFilter, priorityFilter, archived], () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     void loadCases()
   }, 300)
+})
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
 })
 
 async function loadCases() {
@@ -99,6 +67,95 @@ async function loadCases() {
     priority: priorityFilter.value === 'all' ? undefined : priorityFilter.value,
     archived: archived.value,
   })
+}
+
+function timeOf(value: string | null) {
+  const t = value ? new Date(value).getTime() : Number.NaN
+  return Number.isNaN(t) ? null : t
+}
+
+const sortedCases = computed<LegalCase[]>(() => {
+  const list = [...caseStore.cases]
+
+  switch (sort.value) {
+    case 'due':
+      // Cases with no deadline sink to the bottom rather than sorting as epoch 0.
+      return list.sort((a, b) => {
+        const at = timeOf(a.due_date)
+        const bt = timeOf(b.due_date)
+        if (at === null && bt === null) return 0
+        if (at === null) return 1
+        if (bt === null) return -1
+        return at - bt
+      })
+    case 'priority':
+      return list.sort(
+        (a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9),
+      )
+    case 'created':
+      return list.sort((a, b) => (timeOf(b.created_at) ?? 0) - (timeOf(a.created_at) ?? 0))
+    case 'title':
+      return list.sort((a, b) => a.title.localeCompare(b.title))
+    default:
+      return list.sort(
+        (a, b) =>
+          (timeOf(b.last_message_at) ?? timeOf(b.updated_at) ?? 0) -
+          (timeOf(a.last_message_at) ?? timeOf(a.updated_at) ?? 0),
+      )
+  }
+})
+
+/** Cases whose deadline has passed and that nobody has closed out. */
+const overdueCount = computed(
+  () =>
+    caseStore.cases.filter(
+      (c) => !c.archived_at && c.status !== 'closed' && dueState(c.due_date)?.tone === 'overdue',
+    ).length,
+)
+
+/** A live read of the list standing in for the old static blurb. */
+const summary = computed(() => {
+  const n = caseStore.cases.length
+  const noun = n === 1 ? 'case' : 'cases'
+  const scope = archived.value ? 'archived' : 'active'
+  const head = `${n} ${scope} ${noun}`
+  return overdueCount.value > 0 ? `${head} · ${overdueCount.value} past due` : head
+})
+
+/**
+ * Which narrowing controls are on, as removable chips. Four always-open
+ * selects gave no answer to "why am I seeing so few rows?" — the chips do,
+ * and they make undoing one filter a single click.
+ */
+const activeFilters = computed(() => {
+  const chips: Array<{ key: string; label: string; clear: () => void }> = []
+  if (search.value.trim()) {
+    chips.push({ key: 'search', label: `“${search.value.trim()}”`, clear: () => (search.value = '') })
+  }
+  if (typeFilter.value !== 'all') {
+    chips.push({
+      key: 'type',
+      label: `Type: ${typeLabel(typeFilter.value)}`,
+      clear: () => (typeFilter.value = 'all'),
+    })
+  }
+  if (priorityFilter.value !== 'all') {
+    chips.push({
+      key: 'priority',
+      label: `Priority: ${priorityLabel(priorityFilter.value)}`,
+      clear: () => (priorityFilter.value = 'all'),
+    })
+  }
+  return chips
+})
+
+const isFiltered = computed(() => activeFilters.value.length > 0 || statusFilter.value !== 'all')
+
+function clearFilters() {
+  search.value = ''
+  statusFilter.value = 'all'
+  typeFilter.value = 'all'
+  priorityFilter.value = 'all'
 }
 
 async function loadTemplates() {
@@ -139,6 +196,10 @@ async function openCase(id: string) {
   await router.push({ path: `/cases/${id}` })
 }
 
+async function openProgress(id: string) {
+  await router.push({ path: `/cases/${id}`, query: { view: 'progress' } })
+}
+
 onMounted(async () => {
   await Promise.all([loadCases(), loadTemplates()])
 })
@@ -146,20 +207,17 @@ onMounted(async () => {
 
 <template>
   <div>
-    <div v-if="!isDetail" class="mx-auto w-full max-w-6xl px-4 py-6">
-      <PageHeader
-        title="Cases"
-        description="Track your legal matters, deadlines, and correspondence in one place."
-      >
+    <div v-if="!isDetail" class="mx-auto w-full max-w-5xl px-4 py-6">
+      <PageHeader title="Cases" :description="summary">
         <template #actions>
           <Button
             variant="outline"
             class="gap-1.5"
-            :class="{ 'text-primary': archived }"
+            :class="archived ? 'text-primary' : ''"
             :aria-pressed="archived"
             @click="archived = !archived"
           >
-            <FolderOpenIcon class="size-4" />
+            <component :is="archived ? ArchiveIcon : FolderOpenIcon" class="size-4" />
             {{ archived ? 'Archived' : 'Active' }}
           </Button>
           <Button data-tour="cases-new" class="gap-1.5" @click="showIntake = true">
@@ -169,111 +227,134 @@ onMounted(async () => {
         </template>
       </PageHeader>
 
-    <div class="mb-5 flex flex-wrap items-center gap-2">
-      <div class="relative min-w-52 flex-1">
-        <SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input v-model="search" class="pl-9 text-sm" placeholder="Search title, reference, tags…" />
+      <!--
+        Status is the filter people reach for constantly, so it gets a
+        permanent segmented control instead of hiding inside a select next to
+        two it is used far less often than.
+      -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center overflow-x-auto rounded-lg border bg-muted/40 p-0.5" role="tablist" aria-label="Filter by status">
+          <button
+            v-for="option in [{ value: 'all', label: 'All' }, ...CASE_STATUSES]"
+            :key="option.value"
+            type="button"
+            role="tab"
+            :aria-selected="statusFilter === option.value"
+            class="inline-flex h-7 shrink-0 items-center rounded-md px-3 text-xs font-medium transition-colors"
+            :class="statusFilter === option.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+            @click="statusFilter = option.value"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+
+        <div class="relative min-w-48 flex-1">
+          <SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input v-model="search" class="h-8 pl-9 text-sm" placeholder="Search title, reference, tags…" />
+        </div>
+
+        <Select v-model="typeFilter">
+          <SelectTrigger class="w-36">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            <SelectItem v-for="t in CASE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select v-model="priorityFilter">
+          <SelectTrigger class="w-32">
+            <SelectValue placeholder="Priority" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All priorities</SelectItem>
+            <SelectItem v-for="p in CASE_PRIORITIES" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <!--
+          Wrapped so the trigger's justify-between sees one child plus its
+          chevron; a bare leading icon would get spread to the far edge.
+        -->
+        <Select v-model="sort">
+          <SelectTrigger class="w-44" aria-label="Sort cases">
+            <span class="flex min-w-0 items-center gap-1.5">
+              <SlidersHorizontalIcon class="size-3.5 shrink-0 text-muted-foreground" />
+              <SelectValue />
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      <Select v-model="statusFilter">
-        <SelectTrigger class="w-40 text-sm">
-          <SelectValue :placeholder="'Status'" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
-          <SelectItem v-for="s in CASE_STATUSES" :key="s.value" :value="s.value">{{ s.label }}</SelectItem>
-        </SelectContent>
-      </Select>
+      <div v-if="activeFilters.length > 0" class="mt-2 flex flex-wrap items-center gap-1.5">
+        <button
+          v-for="chip in activeFilters"
+          :key="chip.key"
+          type="button"
+          class="inline-flex h-6 items-center gap-1 rounded-4xl border bg-card px-2 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:text-destructive"
+          @click="chip.clear()"
+        >
+          {{ chip.label }}
+          <XIcon class="size-3" />
+        </button>
+        <Button variant="ghost" size="xs" class="text-muted-foreground" @click="clearFilters">Clear all</Button>
+      </div>
 
-      <Select v-model="typeFilter">
-        <SelectTrigger class="w-44 text-sm">
-          <SelectValue :placeholder="'Case type'" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All types</SelectItem>
-          <SelectItem v-for="t in CASE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select v-model="priorityFilter">
-        <SelectTrigger class="w-36 text-sm">
-          <SelectValue :placeholder="'Priority'" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All priorities</SelectItem>
-          <SelectItem v-for="p in CASE_PRIORITIES" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
-        </SelectContent>
-      </Select>
-    </div>
-
-    <div v-if="caseStore.loading" class="space-y-2">
-      <Skeleton v-for="i in 5" :key="i" class="h-24 w-full rounded-xl" />
-    </div>
-
-    <div v-else-if="caseStore.cases.length === 0" class="rounded-xl border border-dashed py-16 text-center">
-      <FolderOpenIcon class="mx-auto size-8 text-muted-foreground" />
-      <p class="mt-3 text-sm font-medium">{{ archived ? 'No archived cases' : 'No cases yet' }}</p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        {{ archived ? 'Restore a case from the archive to keep working on it.' : 'Create your first case to start tracking it.' }}
-      </p>
-      <Button v-if="!archived" class="mt-4 gap-1.5" @click="showIntake = true">
-        <PlusIcon class="size-4" />
-        New Case
-      </Button>
-    </div>
-
-    <div v-else class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <button
-        v-for="c in caseStore.cases"
-        :key="c.id"
-        class="group flex flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
-        @click="openCase(c.id)"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <p class="truncate text-sm font-semibold group-hover:text-primary">{{ c.title }}</p>
-            <p v-if="c.reference" class="mt-0.5 text-[11px] text-muted-foreground">{{ c.reference }}</p>
-          </div>
-          <div class="flex shrink-0 flex-wrap items-center gap-1.5">
-            <Badge :class="statusStyles[c.status]" class="text-[10px]">
-              {{ statusLabelFor(c.status) }}
-            </Badge>
-            <Badge v-if="c.priority" :class="priorityStyles[c.priority]" class="text-[10px]">
-              {{ c.priority }}
-            </Badge>
-          </div>
+      <div class="mt-4">
+        <div v-if="caseStore.loading" class="space-y-2">
+          <Skeleton v-for="i in 6" :key="i" class="h-[4.75rem] w-full rounded-xl" />
         </div>
 
-        <p v-if="c.description" class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-          {{ c.description }}
-        </p>
-
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-          <span>{{ typeLabels[c.case_type] ?? humanize(c.case_type) }}</span>
-          <span v-if="c.due_date">Due {{ formatDate(c.due_date) }}</span>
-          <span v-if="c.open_tasks_count > 0">{{ c.open_tasks_count }} open task{{ c.open_tasks_count === 1 ? '' : 's' }}</span>
-          <span v-if="c.archived_at">Archived</span>
+        <!--
+          A filtered-to-nothing list and a genuinely empty workspace need
+          different offers: one wants its filters back, the other wants a case.
+        -->
+        <div v-else-if="sortedCases.length === 0 && isFiltered" class="rounded-xl border border-dashed py-14 text-center">
+          <SearchIcon class="mx-auto size-7 text-muted-foreground" />
+          <p class="mt-3 text-sm font-medium">No cases match these filters</p>
+          <p class="mt-1 text-xs text-muted-foreground">Try a broader search, or clear the filters to see everything.</p>
+          <Button variant="outline" size="sm" class="mt-4" @click="clearFilters">Clear filters</Button>
         </div>
 
-        <div v-if="c.last_message_at" class="border-t pt-2 text-[11px] text-muted-foreground">
-          <span class="line-clamp-1">
-            <span class="mr-1 font-medium">Last message</span>
-            {{ c.last_message_snippet || '' }}
-          </span>
-          <span class="mt-0.5 block">{{ relativeTime(c.last_message_at) }}</span>
+        <div v-else-if="sortedCases.length === 0" class="rounded-xl border border-dashed py-14 text-center">
+          <FolderOpenIcon class="mx-auto size-7 text-muted-foreground" />
+          <p class="mt-3 text-sm font-medium">{{ archived ? 'No archived cases' : 'No cases yet' }}</p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            {{ archived ? 'Restore a case from the archive to keep working on it.' : 'Create your first case to start tracking it.' }}
+          </p>
+          <Button v-if="!archived" class="mt-4 gap-1.5" @click="showIntake = true">
+            <PlusIcon class="size-4" />
+            New Case
+          </Button>
         </div>
-      </button>
+
+        <div v-else class="space-y-2">
+          <CaseListItem
+            v-for="c in sortedCases"
+            :key="c.id"
+            :case="c"
+            @open="openCase"
+            @progress="openProgress"
+          />
+        </div>
+      </div>
+
+      <CaseIntakeForm
+        v-if="showIntake"
+        :templates="templates"
+        :busy="creating"
+        :submit-label="creating ? 'Creating…' : 'Create Case'"
+        @submit="handleIntakeSubmit"
+        @cancel="handleIntakeCancel"
+      />
     </div>
 
-    <CaseIntakeForm
-      v-if="showIntake"
-      :templates="templates"
-      :submit-label="creating ? 'Creating…' : 'Create Case'"
-      @submit="handleIntakeSubmit"
-      @cancel="handleIntakeCancel"
-    />
-    </div>
-
-    <NuxtPage />
+    <NuxtPage :transition="{ name: 'page', mode: 'out-in' }" />
   </div>
 </template>

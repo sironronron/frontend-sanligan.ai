@@ -3,13 +3,14 @@ import { Loader2Icon } from '@lucide/vue'
 import ChatMessage from '~/components/chat/ChatMessage.vue'
 import ChatSuggestions from '~/components/chat/ChatSuggestions.vue'
 import ActivityTimeline from '~/components/ActivityTimeline.vue'
-import { useChatSuggestions } from '~/composables/useChatSuggestions'
+import { useChatSuggestions, type SuggestionContext } from '~/composables/useChatSuggestions'
 import type { ChatActivityStep, ChatMessage as ChatMessageType } from '~/types/chat'
 
 const props = defineProps<{
   messages: ChatMessageType[]
   streaming: boolean
   statusLabel: string | null
+  topic: string | null
   currentStatus: string | null
   activitySteps: ChatActivityStep[]
   awaitingIntake: boolean
@@ -21,7 +22,9 @@ const props = defineProps<{
   displayContent: (m: ChatMessageType) => string
   searchQuery?: string
   activeSearchId?: string | null
+  activeSearchOccurrence?: number
   experienceLevel?: string | null
+  suggestionContext?: SuggestionContext
 }>()
 
 const emit = defineEmits<{
@@ -37,8 +40,9 @@ const emit = defineEmits<{
 const messagesRef = computed(() => props.messages)
 const streamingRef = computed(() => props.streaming)
 const experienceLevelRef = computed(() => props.experienceLevel ?? null)
+const suggestionContextRef = computed<SuggestionContext>(() => props.suggestionContext ?? {})
 
-const { suggestions } = useChatSuggestions(messagesRef, experienceLevelRef, streamingRef)
+const { suggestions } = useChatSuggestions(messagesRef, experienceLevelRef, streamingRef, suggestionContextRef)
 </script>
 
 <template>
@@ -51,10 +55,12 @@ const { suggestions } = useChatSuggestions(messagesRef, experienceLevelRef, stre
       :display-content="displayContent(m)"
       :is-streaming="streaming && index === messages.length - 1"
       :status-label="statusLabel"
+      :topic="topic"
       :activity-steps="activitySteps"
       :awaiting-intake="awaitingIntake"
       :search-query="searchQuery"
       :active-search-id="activeSearchId"
+      :active-search-occurrence="activeSearchOccurrence"
       @markdown-click="(event, message) => $emit('markdown-click', event, message)"
       @rate="(message, feedback) => $emit('rate', message, feedback)"
       @export="(message, type) => $emit('export', message, type)"

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
-import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon, LinkIcon, EyeIcon, DownloadIcon } from '@lucide/vue'
+import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon, LinkIcon, EyeIcon, DownloadIcon, FilterIcon, SparklesIcon } from '@lucide/vue'
 import { useCaseStore } from '~/stores/cases'
+import { useLabelStore, type AppliedLabel } from '~/stores/labels'
 import { upgradeMessage } from '~/stores/billing'
 import DocumentViewer from '~/components/DocumentViewer.vue'
+import LabelPicker from '~/components/LabelPicker.vue'
 
 definePageMeta({
   middleware: ['auth', 'organization', 'subscription'],
@@ -18,13 +20,17 @@ interface Document {
   error_message: string | null
   chunk_count: number
   case_id: string | null
+  categories: AppliedLabel[]
   created_at: string
 }
 
 const api = useApi()
 const caseStore = useCaseStore()
+const labelStore = useLabelStore()
 const fileDrop = useFileDrop()
 const { download: downloadDocument } = useDocumentFile()
+// EmptyState keeps the generic glyph: it stands for no file in particular.
+const { fileIcon } = useFileTypeIcon()
 
 const cases = computed(() => caseStore.cases)
 const attachTarget = ref<Document | null>(null)
@@ -111,10 +117,35 @@ async function pollDocuments() {
   }
 }
 
+/**
+ * A document can be filed under several categories at once, so the filter
+ * needs to say how a multi-category selection reads: `any` widens the net,
+ * `all` narrows to the documents doing every one of those jobs.
+ */
+const filterCategoryIds = ref<string[]>([])
+const matchMode = ref<'any' | 'all'>('any')
+const showUnfiled = ref(false)
+
+const filtering = computed(() => filterCategoryIds.value.length > 0 || showUnfiled.value)
+
+function documentQuery() {
+  const params = new URLSearchParams()
+  for (const id of filterCategoryIds.value) params.append('category_id[]', id)
+  if (filterCategoryIds.value.length > 1) params.append('match', matchMode.value)
+  if (showUnfiled.value) params.append('uncategorized', '1')
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+function clearFilters() {
+  filterCategoryIds.value = []
+  showUnfiled.value = false
+}
+
 async function loadDocuments() {
   loading.value = true
   try {
-    const { data } = await api<{ data: Document[] }>('/documents')
+    const { data } = await api<{ data: Document[] }>(`/documents${documentQuery()}`)
     toastStatusChanges(data)
     documents.value = data
   } catch {
@@ -125,8 +156,45 @@ async function loadDocuments() {
   }
 }
 
+watch([filterCategoryIds, matchMode, showUnfiled], () => {
+  void loadDocuments()
+})
+
+/**
+ * Whether the filing on a document is still just the classifier's suggestion.
+ * Worth flagging: a suggested category is a starting point a lawyer should
+ * confirm, and confirming it is a matter of touching the picker.
+ */
+function isSuggested(doc: Document) {
+  return (doc.categories ?? []).some((category) => category.source === 'ai')
+}
+
+/**
+ * File a document under a new set of categories. The picker sends the whole
+ * set it is showing, so this replaces rather than merges.
+ */
+async function updateCategories(doc: Document, ids: string[]) {
+  const previous = doc.categories ?? []
+
+  doc.categories = ids
+    .map((id) => labelStore.byId.get(id))
+    .filter((label): label is NonNullable<typeof label> => label !== undefined)
+
+  try {
+    const { data } = await api<{ data: Document }>(`/documents/${doc.id}`, {
+      method: 'PATCH',
+      body: { label_ids: ids },
+    })
+    doc.categories = data.categories
+  } catch (err: any) {
+    doc.categories = previous
+    toast.error(err?.data?.message ?? 'Could not update the categories')
+  }
+}
+
 onMounted(() => {
   loadDocuments()
+  void labelStore.fetchLabels()
   if (caseStore.cases.length === 0) void caseStore.fetchCases()
 })
 
@@ -301,7 +369,7 @@ async function removeDocument(doc: Document) {
           :key="`${file.name}-${index}`"
           class="flex items-center gap-3 rounded-lg bg-background p-3 text-sm shadow-sm"
         >
-          <FileIcon class="size-4 shrink-0 text-muted-foreground" />
+          <component :is="fileIcon(file.name, file.type)" class="size-4 shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1 truncate">{{ file.name }}</span>
           <span class="shrink-0 text-xs text-muted-foreground">{{ formatBytes(file.size) }}</span>
           <Button
@@ -326,11 +394,65 @@ async function removeDocument(doc: Document) {
     </div>
 
     <div class="mt-8 space-y-2">
+      <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+        <FilterIcon class="size-3.5 shrink-0 text-muted-foreground" />
+        <LabelPicker
+          v-model="filterCategoryIds"
+          kind="document_category"
+          trigger-label="Category"
+          :max="5"
+        />
+
+        <div v-if="filterCategoryIds.length > 1" class="flex items-center gap-1 text-xs text-muted-foreground">
+          <button
+            type="button"
+            class="rounded px-1.5 py-0.5"
+            :class="matchMode === 'any' ? 'bg-accent text-foreground' : 'hover:text-foreground'"
+            @click="matchMode = 'any'"
+          >
+            Any
+          </button>
+          <button
+            type="button"
+            class="rounded px-1.5 py-0.5"
+            :class="matchMode === 'all' ? 'bg-accent text-foreground' : 'hover:text-foreground'"
+            @click="matchMode = 'all'"
+          >
+            All
+          </button>
+        </div>
+
+        <button
+          type="button"
+          class="rounded-md border px-2 py-0.5 text-xs"
+          :class="showUnfiled ? 'border-primary bg-primary/10 text-primary' : 'border-dashed text-muted-foreground hover:text-foreground'"
+          @click="showUnfiled = !showUnfiled"
+        >
+          Unfiled
+        </button>
+
+        <button
+          v-if="filtering"
+          type="button"
+          class="ml-auto text-xs text-muted-foreground underline-offset-2 hover:underline"
+          @click="clearFilters"
+        >
+          Clear
+        </button>
+      </div>
+
       <h2 v-if="!loading && documents.length > 0" class="text-sm font-medium text-muted-foreground">
         {{ documents.length }} document{{ documents.length === 1 ? '' : 's' }}
       </h2>
 
       <ListSkeleton v-if="loading" :rows="3" />
+
+      <EmptyState
+        v-else-if="documents.length === 0 && filtering"
+        :icon="FilterIcon"
+        title="No documents match"
+        description="No document is filed under that combination. Try widening the filter or clearing it."
+      />
 
       <EmptyState
         v-else-if="documents.length === 0"
@@ -342,7 +464,7 @@ async function removeDocument(doc: Document) {
       <div v-for="doc in documents" :key="doc.id" class="rounded-xl border bg-card">
         <div class="flex items-center gap-3 p-4">
           <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <FileIcon class="size-4" />
+            <component :is="fileIcon(doc.original_filename, doc.mime_type)" class="size-4" />
           </div>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
@@ -365,6 +487,23 @@ async function removeDocument(doc: Document) {
               <span v-else-if="doc.status === 'failed' && doc.error_message"> · {{ doc.error_message }}</span>
               <span> · {{ formatDate(doc.created_at) }}</span>
             </p>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <LabelPicker
+                kind="document_category"
+                trigger-label="File under"
+                :max="5"
+                :model-value="(doc.categories ?? []).map((category) => category.id)"
+                @update:model-value="(ids) => updateCategories(doc, ids)"
+              />
+              <span
+                v-if="isSuggested(doc)"
+                class="inline-flex items-center gap-1 rounded-md bg-peach/40 px-1.5 py-0.5 text-[10px] text-espresso dark:bg-cream/10 dark:text-peach"
+                title="Filed automatically from the document's contents — confirm or change it."
+              >
+                <SparklesIcon class="size-3" />
+                Suggested
+              </span>
+            </div>
           </div>
           <Button
             variant="ghost"

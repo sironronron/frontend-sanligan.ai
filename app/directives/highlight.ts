@@ -1,6 +1,12 @@
 import type { Directive } from 'vue'
 
 const MARK_CLASS = 'saligan-search-mark'
+const ACTIVE_CLASS = 'saligan-search-active'
+
+export interface HighlightValue {
+  query: string
+  active?: number | null
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -13,10 +19,11 @@ function clearMarks(root: Element) {
   root.normalize()
 }
 
-function applyHighlight(root: Element, query: string) {
+function applyHighlight(root: Element, value: string | HighlightValue) {
   clearMarks(root)
 
-  const q = query.trim().toLowerCase()
+  const options = typeof value === 'string' ? { query: value, active: null } : value
+  const q = options.query?.trim().toLowerCase() ?? ''
   if (!q) return
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
@@ -25,9 +32,10 @@ function applyHighlight(root: Element, query: string) {
     textNodes.push(walker.currentNode as Text)
   }
 
+  const regex = new RegExp(escapeRegExp(q), 'gi')
+  let markIndex = 0
   for (const node of textNodes) {
     const text = node.textContent ?? ''
-    const regex = new RegExp(escapeRegExp(q), 'gi')
     const matches = Array.from(text.matchAll(regex))
     if (matches.length === 0) continue
 
@@ -40,8 +48,11 @@ function applyHighlight(root: Element, query: string) {
       }
       const mark = document.createElement('mark')
       mark.className = MARK_CLASS
+      mark.dataset.searchIdx = String(markIndex)
+      if (options.active === markIndex) mark.classList.add(ACTIVE_CLASS)
       mark.textContent = text.slice(index, index + match[0].length)
       frag.appendChild(mark)
+      markIndex++
       last = index + match[0].length
     }
     if (last < text.length) {
@@ -51,7 +62,7 @@ function applyHighlight(root: Element, query: string) {
   }
 }
 
-export const vHighlight: Directive<HTMLElement, string> = {
+export const vHighlight: Directive<HTMLElement, string | HighlightValue> = {
   mounted(el, binding) {
     applyHighlight(el, binding.value ?? '')
   },

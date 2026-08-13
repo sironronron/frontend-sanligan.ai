@@ -7,6 +7,7 @@ export interface CaseConversation {
   purpose: string | null
   messages_count: number
   last_message_at: string | null
+  tags?: Array<{ id: string; name: string; slug: string; color?: string | null }>
   created_at: string
   updated_at: string
 }
@@ -36,6 +37,7 @@ export interface LegalCase {
   total_tasks_count: number
   last_message_at: string | null
   last_message_snippet: string | null
+  closed_at: string | null
   archived_at: string | null
   created_at: string
   updated_at: string
@@ -61,6 +63,98 @@ export interface LegalCase {
     created_at: string
     updated_at: string
   }>
+}
+
+export interface CaseProgressEvent {
+  type:
+    | 'case_created'
+    | 'thread_created'
+    | 'document_uploaded'
+    | 'document_generated'
+    | 'task_created'
+    | 'task_completed'
+    | 'memory_recorded'
+    | 'message_sent'
+    | 'message_received'
+    | 'case_archived'
+  at: string
+  title: string
+  description: string | null
+  meta: Record<string, string | null>
+}
+
+export interface CaseProgress {
+  case: Pick<
+    LegalCase,
+    | 'id'
+    | 'title'
+    | 'reference'
+    | 'case_type'
+    | 'status'
+    | 'priority'
+    | 'description'
+    | 'related_parties'
+    | 'tags'
+    | 'due_date'
+    | 'archived_at'
+    | 'created_at'
+    | 'updated_at'
+  >
+  stages: Array<{ key: string; label: string; state: 'done' | 'active' | 'pending' }>
+  progress: { percent: number; basis: 'tasks' | 'status'; label: string }
+  deadline: { due_date: string; days_remaining: number; overdue: boolean } | null
+  stats: {
+    days_open: number
+    threads: number
+    messages: number
+    user_messages: number
+    assistant_messages: number
+    documents: { total: number; ready: number; processing: number; failed: number }
+    generated_documents: number
+    tasks: { total: number; completed: number; in_progress: number; pending: number; overdue: number }
+    key_facts: number
+    last_activity_at: string | null
+  }
+  threads: Array<{
+    id: string
+    label: string
+    messages_count: number
+    first_message_at: string | null
+    last_message_at: string | null
+    total_tasks: number
+    open_tasks: number
+    created_at: string | null
+  }>
+  tasks: Array<{
+    id: string
+    title: string
+    status: 'pending' | 'on-going' | 'completed'
+    priority: 'low' | 'medium' | 'high' | null
+    due_hint: string | null
+    due_date: string | null
+    overdue: boolean
+    thread: string | null
+    conversation_id: string
+    created_at: string | null
+    updated_at: string | null
+  }>
+  documents: Array<{
+    id: string
+    title: string
+    original_filename: string
+    status: 'queued' | 'processing' | 'ready' | 'failed'
+    created_at: string | null
+  }>
+  generated_documents: Array<{
+    id: string
+    title: string
+    thread: string | null
+    conversation_id: string
+    created_at: string | null
+  }>
+  key_facts: Record<'fact' | 'preference' | 'deadline' | 'strategy', Array<{ id: string; content: string; created_at: string | null }>>
+  timeline: CaseProgressEvent[]
+  timeline_truncated: boolean
 }
 
 export interface CaseFilters {
@@ -141,6 +235,11 @@ export const useCaseStore = defineStore('cases', () => {
     return data
   }
 
+  async function fetchCaseProgress(id: string) {
+    const { data } = await api<{ data: CaseProgress }>(`/cases/${id}/progress`)
+    return data
+  }
+
   async function createConversation(caseId: string, payload: { purpose?: string; title?: string }) {
     const { data } = await api<{ data: CaseConversation }>(`/cases/${caseId}/conversations`, {
       method: 'POST',
@@ -167,6 +266,24 @@ export const useCaseStore = defineStore('cases', () => {
     }
     const index = cases.value.findIndex((c) => c.id === id)
     if (index !== -1) cases.value[index] = { ...cases.value[index], ...data }
+    return data
+  }
+
+  /**
+   * Move a case between statuses on its own. The full update needs every
+   * required intake field, which a one-click status switch has no business
+   * resending.
+   */
+  async function updateCaseStatus(id: string, status: LegalCase['status']) {
+    const { data } = await api<{ data: LegalCase }>(`/cases/${id}/status`, {
+      method: 'PATCH',
+      body: { status },
+    })
+    if (current.value?.id === id) {
+      current.value = { ...current.value, status: data.status }
+    }
+    const index = cases.value.findIndex((c) => c.id === id)
+    if (index !== -1) cases.value[index] = { ...cases.value[index]!, status: data.status }
     return data
   }
 
@@ -201,9 +318,11 @@ export const useCaseStore = defineStore('cases', () => {
     current,
     fetchCases,
     fetchCase,
+    fetchCaseProgress,
     createConversation,
     createCase,
     updateCase,
+    updateCaseStatus,
     duplicateCase,
     archiveCase,
     restoreCase,

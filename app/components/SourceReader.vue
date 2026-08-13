@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { BookOpenIcon, ExternalLinkIcon, Loader2Icon, XIcon } from '@lucide/vue'
+import { categoryLabel } from '~/lib/legalCategories'
 
 /**
  * Reads a cited authority inside Batayan instead of sending the user to the
@@ -23,6 +24,8 @@ interface ReaderPage {
   promulgation_date: string | null
   url: string | null
   source_name: string | null
+  category: string
+  kind: string
   digest: string | null
   has_digest: boolean
   chunks: ReaderChunk[]
@@ -102,7 +105,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <p class="mt-0.5 truncate text-xs text-muted-foreground">
               <span v-if="page?.gr_number && page?.law_name">{{ page.gr_number }} · </span>
               <span v-if="page?.promulgation_date">{{ page.promulgation_date }} · </span>
-              <span>{{ page?.source_name ?? 'Knowledge base' }}</span>
+              <span class="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{{ categoryLabel(page?.category) }}</span>
+              <span v-if="page?.kind === 'uploaded'" class="ml-1 text-[10px] uppercase tracking-wide">· uploaded</span>
+              <span class="ml-1">{{ page?.source_name ?? 'Knowledge base' }}</span>
             </p>
           </div>
           <div class="flex shrink-0 items-center gap-1">

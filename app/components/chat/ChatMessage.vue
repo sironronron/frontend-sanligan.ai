@@ -5,28 +5,30 @@ import {
   CopyIcon,
   DownloadIcon,
   ExternalLinkIcon,
-  FileIcon,
   FileTextIcon,
   GlobeIcon,
   Loader2Icon,
   ThumbsDownIcon,
   ThumbsUpIcon,
 } from '@lucide/vue'
+import { toast } from '~/components/ui/sonner'
 import { renderMarkdown } from '~/utils/markdown'
 import { vHighlight } from '~/directives/highlight'
 import ActivityTimeline from '~/components/ActivityTimeline.vue'
 import CitedText from '~/components/CitedText.vue'
-import type { ChatActivityStep, ChatMessage, ChatSource } from '~/types/chat'
+import type { ChatActivityStep, ChatMessage, ChatMessageAttachment, ChatSource } from '~/types/chat'
 
 const props = defineProps<{
   message: ChatMessage
   displayContent: string
   isStreaming: boolean
   statusLabel: string | null
+  topic: string | null
   activitySteps: ChatActivityStep[]
   awaitingIntake: boolean
   searchQuery?: string
   activeSearchId?: string | null
+  activeSearchOccurrence?: number
 }>()
 
 const emit = defineEmits<{
@@ -37,6 +39,25 @@ const emit = defineEmits<{
 
 const persisted = computed(() => !props.message.id.startsWith('local-'))
 const copied = ref(false)
+
+const { download: downloadDocument } = useDocumentFile()
+const { fileIcon } = useFileTypeIcon()
+
+const attachments = computed<ChatMessageAttachment[]>(() => props.message.attachments ?? [])
+
+const downloading = ref<string | null>(null)
+
+async function openAttachment(attachment: ChatMessageAttachment) {
+  if (downloading.value) return
+  downloading.value = attachment.id
+  try {
+    await downloadDocument(attachment.id, attachment.original_filename)
+  } catch {
+    toast.error(`Could not open "${attachment.original_filename}"`)
+  } finally {
+    downloading.value = null
+  }
+}
 
 interface IntakePair {
   key: string
@@ -133,6 +154,11 @@ const matchesSearch = computed(
 const isActiveSearch = computed(
   () => matchesSearch.value && props.activeSearchId === props.message.id,
 )
+
+const highlightValue = computed(() => ({
+  query: props.searchQuery ?? '',
+  active: isActiveSearch.value ? props.activeSearchOccurrence ?? 0 : null,
+}))
 </script>
 
 <template>
@@ -163,7 +189,14 @@ const isActiveSearch = computed(
             <span class="absolute size-full animate-ping rounded-full bg-primary/20" />
             <Loader2Icon class="size-3.5 animate-spin text-primary" />
           </span>
-          <span class="font-medium text-foreground/90">{{ statusLabel ?? 'Thinking…' }}</span>
+          <!--
+            The heading names the subject once. The per-step detail lives in
+            the timeline below, so the two no longer say the same sentence.
+          -->
+          <span class="min-w-0 font-medium text-foreground/90">
+            <template v-if="topic">Researching <span class="text-primary">{{ topic }}</span></template>
+            <template v-else>{{ statusLabel ?? 'Thinking…' }}</template>
+          </span>
         </div>
         <ActivityTimeline v-if="activitySteps.length > 0" :steps="activitySteps" class="mt-3" />
       </div>
@@ -172,6 +205,24 @@ const isActiveSearch = computed(
       <div v-else class="flex min-w-0 max-w-[85%] flex-col">
         <!-- User -->
         <template v-if="message.role === 'user'">
+          <!-- Files sent with this message -->
+          <ul v-if="attachments.length > 0" class="mb-1.5 flex flex-wrap justify-end gap-1.5">
+            <li v-for="attachment in attachments" :key="attachment.id">
+              <button
+                type="button"
+                class="flex max-w-full items-center gap-1.5 rounded-lg border bg-card px-2 py-1 text-xs transition-colors hover:bg-accent disabled:opacity-60"
+                :title="`Download ${attachment.original_filename}`"
+                :disabled="downloading === attachment.id"
+                @click="openAttachment(attachment)"
+              >
+                <Loader2Icon v-if="downloading === attachment.id" class="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                <component :is="fileIcon(attachment.original_filename, attachment.mime_type)" v-else class="size-3.5 shrink-0 text-muted-foreground" />
+                <span class="min-w-0 truncate font-medium">{{ attachment.original_filename }}</span>
+                <span v-if="attachment.status === 'failed'" class="shrink-0 text-destructive">· Failed</span>
+              </button>
+            </li>
+          </ul>
+
           <template v-if="intakePairs(message.content)">
             <div class="w-full rounded-2xl border bg-card/80 px-4 py-3 shadow-sm">
               <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
@@ -181,13 +232,13 @@ const isActiveSearch = computed(
               <dl class="mt-2.5 space-y-2">
                 <div v-for="pair in intakePairs(message.content)" :key="pair.key">
                   <dt class="text-[10px] uppercase tracking-wide text-muted-foreground/80">{{ pair.label }}</dt>
-                  <dd v-highlight="searchQuery" class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ pair.value || '—' }}</dd>
+                  <dd v-highlight="highlightValue" class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ pair.value || '—' }}</dd>
                 </div>
               </dl>
             </div>
           </template>
           <template v-else>
-            <div v-highlight="searchQuery" class="whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
+            <div v-highlight="highlightValue" class="whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
               {{ message.content }}
             </div>
           </template>
@@ -206,7 +257,7 @@ const isActiveSearch = computed(
             <span class="font-medium">{{ statusLabel }}</span>
           </div>
           <div
-            v-highlight="searchQuery"
+            v-highlight="highlightValue"
             class="break-words text-[0.95rem] leading-7"
             v-html="renderMarkdown(displayContent)"
             @click="emit('markdown-click', $event, message)"

@@ -24,7 +24,7 @@ const navItems = computed(() => [
   { to: '/chat', label: 'Chat' },
   { to: '/cases', label: 'Cases' },
   { to: '/documents', label: 'Documents' },
-  { to: '/generated-documents', label: 'Generated' },
+  { to: '/drafts', label: 'Drafts' },
   { to: '/templates', label: 'Templates' },
   ...(auth.user?.is_admin ? [{ to: '/admin/legal-sources', label: 'Admin' }] : []),
 ])
@@ -102,6 +102,7 @@ onMounted(() => {
             <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
           </button>
           <TasksDropdown class="hidden md:block" />
+          <NotificationsDropdown />
           <DropdownMenu>
             <DropdownMenuTrigger
               class="flex items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"

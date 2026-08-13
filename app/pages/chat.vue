@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import {
-  FileIcon,
   Loader2Icon,
-  ScaleIcon,
-  SparklesIcon,
   XIcon,
   DownloadIcon,
   ListChecksIcon,
@@ -23,9 +20,14 @@ import type { IntakeField } from '~/components/IntakeFormSheet.vue'
 import ChatThread from '~/components/chat/ChatThread.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
+import ChatPromptSuggestions from '~/components/chat/ChatPromptSuggestions.vue'
+import { useStarterSuggestions, type SuggestionContext } from '~/composables/useChatSuggestions'
 import ChatConversationList from '~/components/chat/ChatConversationList.vue'
 import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
 import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
+import LabelPicker from '~/components/LabelPicker.vue'
+import { useLabelStore, type AppliedLabel } from '~/stores/labels'
+import type { ChatMessageAttachment } from '~/types/chat'
 
 definePageMeta({
   middleware: ['auth', 'organization', 'subscription'],
@@ -55,6 +57,7 @@ interface Message {
   content: string
   provider?: string | null
   sources: Source[]
+  attachments?: ChatMessageAttachment[]
   feedback?: string | null
   template_id?: string | null
   created_at: string
@@ -65,6 +68,9 @@ interface Conversation {
   title: string | null
   messages_count: number
   last_message_at: string | null
+  case_id?: string | null
+  case_tags?: string[]
+  tags?: AppliedLabel[]
   created_at: string
   updated_at: string
   messages?: Message[]
@@ -81,6 +87,7 @@ const conversations = ref<Conversation[]>([])
 const activeId = ref<string | null>(null)
 const messages = ref<Message[]>([])
 const input = ref('')
+const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null)
 const streaming = ref(false)
 const streamError = ref('')
 const sending = ref(false)
@@ -118,6 +125,7 @@ const ratingBusy = ref<string | null>(null)
 const searchOpen = ref(false)
 const searchQuery = ref('')
 const searchActiveId = ref<string | null>(null)
+const searchActiveOccurrence = ref(0)
 const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
 
 const mobileConversations = ref(false)
@@ -137,6 +145,13 @@ const busy = computed(() => sending.value || streaming.value)
 const messagesContainer = ref<HTMLElement | null>(null)
 
 const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
+
+/**
+ * Files attached from the composer are ordinary uploads: they go through
+ * POST /documents and the usual ingestion queue, then retrieval picks them up
+ * for this conversation like any other document the user owns.
+ */
+const attachmentsState = useChatAttachments()
 
 const mainChatEl = ref<HTMLElement | null>(null)
 
@@ -159,26 +174,61 @@ watch(previewDoc, (doc) => {
 })
 
 const todoStore = useTodoStore()
+const labelStore = useLabelStore()
 const billing = useBillingStore()
 const auth = useAuthStore()
 
 const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
+
+/**
+ * There is no case here, so suggestions lean on the onboarding profile — what
+ * the user said they do and what they came to draft — plus the tasks and
+ * threads they already have open.
+ */
+const suggestionContext = computed<SuggestionContext>(() => ({
+  openTasks: todoStore.todos
+    .filter((t) => t.conversation_id === activeId.value && t.status !== 'completed')
+    .map((t) => ({ title: t.title, status: t.status, priority: t.priority, due_hint: t.due_hint })),
+  recentThreadTitles: conversations.value
+    .filter((c) => c.id !== activeId.value && c.messages_count > 0)
+    .map((c) => c.title ?? '')
+    .filter(Boolean)
+    .slice(0, 3),
+  role: auth.user?.kyc_role ?? null,
+  useCase: auth.user?.kyc_use_case ?? null,
+  documentTypes: (auth.user?.kyc_document_types ?? '').split(',').map((v) => v.trim()).filter(Boolean),
+  experienceLevel: experienceLevel.value,
+}))
+
+const { starters } = useStarterSuggestions(suggestionContext)
+
+function selectPrompt(prompt: string) {
+  input.value = prompt
+  composerRef.value?.focus()
+}
+
 const intakeFields = ref<IntakeField[] | null>(null)
 const intakeDefaults = ref<Record<string, string> | null>(null)
 const awaitingIntake = ref(false)
 const intakeDismissed = ref(false)
 const todoToolCalled = ref(false)
 
+// Fallbacks only — the server sends a label with every status frame. Kept
+// short and free of the question's topic: the topic is shown once, as the
+// card's heading, rather than repeated on every row beneath it.
 const statusLabels: Record<string, string> = {
   checking_sources: 'Checking legal sources',
   searching_web: 'Searching the web',
-  composing: 'Composing your answer',
+  composing: 'Writing your answer',
   collecting_facts: 'Collecting the facts I need',
-  gathering_facts: 'Gathering the facts needed for your document',
+  gathering_facts: 'Gathering the facts needed',
   drafting_document: 'Drafting your document',
   filling_template: 'Filling in your template',
-  preparing_next_steps: 'Preparing your next-steps checklist',
+  preparing_next_steps: 'Preparing your next steps',
 }
+
+/** What this turn is about, sent once by the server and shown as the heading. */
+const currentTopic = ref<string | null>(null)
 
 interface ActivityStep {
   key: string
@@ -220,12 +270,51 @@ const activeConversation = computed(
   () => conversations.value.find((c) => c.id === activeId.value) ?? null,
 )
 
+/** Tags the thread list is filtered by; empty means show everything. */
+const threadFilterTagIds = ref<string[]>([])
+
 async function loadConversations() {
+  const params = new URLSearchParams()
+  for (const id of threadFilterTagIds.value) params.append('tag_id[]', id)
+  const query = params.toString() ? `?${params.toString()}` : ''
+
   try {
-    const { data } = await api<{ data: Conversation[] }>('/conversations')
+    const { data } = await api<{ data: Conversation[] }>(`/conversations${query}`)
     conversations.value = data
   } catch {
     conversations.value = []
+  }
+}
+
+watch(threadFilterTagIds, () => {
+  void loadConversations()
+})
+
+/**
+ * Retag the open thread. The picker hands over the whole set it is showing,
+ * so this replaces what the thread carried.
+ */
+async function updateThreadTags(ids: string[]) {
+  if (!activeId.value) return
+
+  const conversation = activeConversation.value
+  const previous = conversation?.tags ?? []
+
+  if (conversation) {
+    conversation.tags = ids
+      .map((id) => labelStore.byId.get(id))
+      .filter((label): label is NonNullable<typeof label> => label !== undefined)
+  }
+
+  try {
+    const { data } = await api<{ data: Conversation }>(`/conversations/${activeId.value}`, {
+      method: 'PATCH',
+      body: { label_ids: ids },
+    })
+    if (conversation) conversation.tags = data.tags ?? []
+  } catch {
+    if (conversation) conversation.tags = previous
+    toast.error('Could not update the tags')
   }
 }
 
@@ -306,6 +395,7 @@ function handleFrame(frame: string, target: Message) {
     completeActiveSteps()
     currentStatus.value = payload.status
     currentStatusLabel.value = typeof payload.label === 'string' && payload.label !== '' ? payload.label : null
+    if (typeof payload.topic === 'string' && payload.topic !== '') currentTopic.value = payload.topic
     if (payload.status === 'collecting_facts') {
       awaitingIntake.value = true
       markStepActive('collecting_facts', 'Collecting the facts I need')
@@ -521,8 +611,12 @@ async function send(questionOverride?: string | Event) {
   currentStatus.value = null
   currentStatusLabel.value = null
   input.value = ''
+  // The files travel with this message; the uploads themselves stay in the
+  // user's library and remain retrievable for the rest of the conversation.
+  const attached = attachmentsState.take()
   todoToolCalled.value = false
   resetSteps()
+  currentTopic.value = null
 
   if (question.startsWith('[Intake Form Submission]')) {
     markStepActive('drafting', 'Drafting your document')
@@ -542,6 +636,7 @@ async function send(questionOverride?: string | Event) {
       role: 'user',
       content: question,
       sources: [],
+      attachments: attached,
       created_at: new Date().toISOString(),
     })
 
@@ -568,7 +663,10 @@ async function send(questionOverride?: string | Event) {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       }),
-      body: JSON.stringify({ message: question }),
+      body: JSON.stringify({
+        message: question,
+        attachment_ids: attached.map((a) => a.id),
+      }),
       signal: streamController.value.signal,
     })
 
@@ -657,15 +755,21 @@ function toggleSearch() {
   if (!searchOpen.value) {
     searchQuery.value = ''
     searchActiveId.value = null
+    searchActiveOccurrence.value = 0
   } else {
     nextTick(() => searchBarRef.value?.focusInput())
   }
 }
 
-function searchNavigate(messageId: string) {
-  searchActiveId.value = messageId
+function searchNavigate(match: { id: string; occurrence: number }) {
+  searchActiveId.value = match.id
+  searchActiveOccurrence.value = match.occurrence
   nextTick(() => {
-    document.getElementById(`msg-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const root = document.getElementById(`msg-${match.id}`)
+    if (!root) return
+    const marks = root.querySelectorAll('mark.saligan-search-mark')
+    const target = marks[match.occurrence] ?? marks[0]
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
 
@@ -739,6 +843,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
     <ChatConversationList
+      v-model:filter-tag-ids="threadFilterTagIds"
       class="hidden md:flex"
       :conversations="conversations"
       :active-id="activeId"
@@ -771,6 +876,15 @@ onBeforeUnmount(() => {
               <p v-if="busy" class="mt-0.5 truncate text-xs text-muted-foreground">
                 {{ sending ? 'Creating…' : (statusLabel ?? 'Responding…') }}
               </p>
+              <LabelPicker
+                v-else-if="activeConversation"
+                class="mt-1"
+                kind="thread_tag"
+                trigger-label="Tag"
+                :max="10"
+                :model-value="(activeConversation.tags ?? []).map((tag) => tag.id)"
+                @update:model-value="updateThreadTags"
+              />
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-1 sm:gap-1.5">
@@ -825,26 +939,14 @@ onBeforeUnmount(() => {
             title="Research Philippine law with Batayan"
             description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
             eyebrow="Batayan AI"
-          >
-          <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'What is the scope of the Comprehensive Agrarian Reform Program?'">
-            <SparklesIcon class="size-4 text-primary" />
-            <span class="truncate text-xs">Agrarian reform scope</span>
-          </Button>
-          <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'Summarize the ruling in G.R. No. 143491.'">
-            <ScaleIcon class="size-4 text-primary" />
-            <span class="truncate text-xs">Summarize a ruling</span>
-          </Button>
-          <Button variant="outline" class="justify-start gap-2 text-left" @click="input = 'Compare RA 6657 with my uploaded documents.'">
-            <FileIcon class="size-4 text-primary" />
-            <span class="truncate text-xs">Compare my documents</span>
-          </Button>
-        </ChatEmptyState>
+          />
 
         <ChatThread
           v-else
           :messages="messages"
           :streaming="streaming"
           :status-label="statusLabel"
+          :topic="currentTopic"
           :current-status="currentStatus"
           :activity-steps="activitySteps"
           :awaiting-intake="awaitingIntake"
@@ -856,7 +958,9 @@ onBeforeUnmount(() => {
           :display-content="getDisplayedContent"
           :search-query="searchQuery"
           :active-search-id="searchActiveId"
+          :active-search-occurrence="searchActiveOccurrence"
           :experience-level="experienceLevel"
+          :suggestion-context="suggestionContext"
           @markdown-click="handleMarkdownClick"
           @rate="rateMessage"
           @export="handleExport"
@@ -881,13 +985,20 @@ onBeforeUnmount(() => {
       </div>
 
       <div data-tour="chat-composer" class="border-t p-3">
+        <!-- <ChatPromptSuggestions :suggestions="starters" @select="selectPrompt" /> -->
         <ChatComposer
+          ref="composerRef"
           v-model="input"
           :disabled="busy"
           :streaming="streaming"
+          :attachments="attachmentsState.attachments.value"
+          :can-send="!attachmentsState.pending.value"
           placeholder="Ask about Philippine law or your documents…"
+          help-context="general"
           @send="send()"
           @stop="stopStreaming"
+          @attach="attachmentsState.add"
+          @remove-attachment="attachmentsState.remove"
         />
       </div>
     </section>
@@ -948,6 +1059,10 @@ onBeforeUnmount(() => {
         :src="previewDoc.blobUrl ?? undefined"
         class="flex-1 w-full border-0"
       />
+      <DocxViewer
+        v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
+        :blob-url="previewDoc.blobUrl"
+      />
       <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
         <span>Word documents cannot be previewed inline.</span>
         <a
@@ -999,6 +1114,10 @@ onBeforeUnmount(() => {
             :src="previewDoc.blobUrl ?? undefined"
             class="flex-1 w-full border-0 rounded-b-lg"
           />
+          <DocxViewer
+            v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
+            :blob-url="previewDoc.blobUrl"
+          />
           <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
             <span>Word documents cannot be previewed inline.</span>
             <a
@@ -1034,6 +1153,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="min-h-0 flex-1">
             <ChatConversationList
+              v-model:filter-tag-ids="threadFilterTagIds"
               class="h-full w-full border-r-0"
               :conversations="conversations"
               :active-id="activeId"

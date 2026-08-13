@@ -1,0 +1,83 @@
+<script setup lang="ts">
+import { BellIcon, CheckCheckIcon, TrashIcon } from '@lucide/vue'
+import { useNotificationStore } from '~/stores/notifications'
+import { timeAgo } from '~/utils/time'
+
+definePageMeta({
+  middleware: ['auth'],
+})
+
+const notificationStore = useNotificationStore()
+
+function dueLabel(days: number, overdue: boolean) {
+  if (overdue) return 'Overdue'
+  if (days === 0) return 'Due today'
+  return `Due in ${days} ${days === 1 ? 'day' : 'days'}`
+}
+
+onMounted(() => {
+  void notificationStore.fetchNotifications()
+})
+</script>
+
+<template>
+  <div class="mx-auto w-full max-w-3xl px-4 py-6">
+    <PageHeader title="Notifications" description="Deadline reminders for your cases and tasks.">
+      <template #actions>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+          :disabled="notificationStore.unreadCount === 0"
+          @click="notificationStore.markAllRead()"
+        >
+          <CheckCheckIcon class="size-4" />
+          Mark all as read
+        </button>
+      </template>
+    </PageHeader>
+
+    <ListSkeleton v-if="notificationStore.loading" :rows="4" :icon="false" />
+
+    <EmptyState
+      v-else-if="notificationStore.notifications.length === 0"
+      :icon="BellIcon"
+      title="No notifications yet"
+      description="Deadline reminders show up here when a case or task is coming due."
+    />
+
+    <div v-else class="space-y-2">
+      <div
+        v-for="n in notificationStore.notifications"
+        :key="n.id"
+        class="group flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
+        :class="n.read ? 'opacity-70' : ''"
+      >
+        <NuxtLink :to="n.url" class="min-w-0 flex-1" @click="notificationStore.markRead(n.id)">
+          <div class="flex items-center gap-2">
+            <span class="mt-1.5 size-2 shrink-0 rounded-full" :class="n.read ? 'bg-muted-foreground/30' : 'bg-primary'" />
+            <p class="text-sm font-medium leading-tight">{{ n.title }}</p>
+          </div>
+          <div class="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+            <Badge
+              :class="n.overdue ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'"
+              class="text-[10px]"
+            >
+              {{ dueLabel(n.days, n.overdue) }}
+            </Badge>
+            <span>{{ n.kind === 'case' ? 'Case' : 'Task' }}</span>
+            <span>{{ timeAgo(n.created_at) }}</span>
+          </div>
+        </NuxtLink>
+
+        <button
+          type="button"
+          :aria-label="`Delete notification: ${n.title}`"
+          class="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 group-hover:opacity-100"
+          @click="notificationStore.remove(n.id)"
+        >
+          <TrashIcon class="size-4" />
+        </button>
+      </div>
+    </div>
+  </div>
+</template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { SparklesIcon } from '@lucide/vue'
 import type { Suggestion } from '~/composables/useChatSuggestions'
+import { suggestionIcon } from '~/components/chat/suggestionIcons'
 
 defineProps<{
   suggestions: Suggestion[]
@@ -20,11 +20,12 @@ const emit = defineEmits<{
         :key="suggestion.label"
         variant="outline"
         size="sm"
-        class="h-auto gap-1.5 px-3 py-1.5 text-xs leading-snug"
+        class="h-auto max-w-full gap-1.5 px-3 py-1.5 text-xs leading-snug"
+        :title="suggestion.prompt"
         @click="emit('select', suggestion.prompt)"
       >
-        <SparklesIcon class="size-3 shrink-0 text-primary" />
-        <span>{{ suggestion.label }}</span>
+        <component :is="suggestionIcon(suggestion.icon)" class="size-3 shrink-0 text-primary" />
+        <span class="min-w-0 truncate">{{ suggestion.label }}</span>
       </Button>
     </div>
   </div>

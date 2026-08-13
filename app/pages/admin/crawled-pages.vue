@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { categoryLabel } from '~/lib/legalCategories'
+
 definePageMeta({
   middleware: 'admin',
 })
@@ -7,6 +9,8 @@ interface CrawledPage {
   id: string
   legal_source_id: string | null
   url: string
+  kind: 'crawled' | 'uploaded'
+  category: string
   crawl_status: 'pending' | 'ok' | 'failed'
   http_status: number | null
   title: string | null
@@ -136,6 +140,10 @@ onMounted(loadPages)
               <p class="mt-0.5 max-w-md truncate text-xs text-muted-foreground">{{ p.url }}</p>
               <p v-if="p.law_name || p.gr_number" class="mt-0.5 text-xs text-muted-foreground">
                 {{ [p.law_name, p.gr_number].filter(Boolean).join(' · ') }}
+              </p>
+              <p class="mt-0.5 text-xs text-muted-foreground">
+                {{ categoryLabel(p.category) }}
+                <span v-if="p.kind === 'uploaded'"> · uploaded</span>
               </p>
               <p v-if="p.crawl_status === 'failed' && p.last_error" class="mt-0.5 text-xs text-destructive">
                 {{ p.last_error }}
