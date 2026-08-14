@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { CheckIcon, CircleAlertIcon, TicketIcon } from '@lucide/vue'
-import { toast } from '~/components/ui/sonner'
 import { useBillingStore } from '~/stores/billing'
 
 /**
@@ -23,16 +22,16 @@ async function handleRedeem() {
   redeeming.value = true
 
   try {
-    const subscription = await billing.redeemTrialCode(code.value.trim())
-    const days = subscription.trial.days_remaining
+    await billing.redeemTrialCode(code.value.trim())
 
+    // Not `/preparing`: the workspace was set up during onboarding, and running
+    // that sequence a second time reads as if redeeming undid it. The welcome
+    // screen thanks the user and states what the trial gives them instead — it
+    // carries the confirmation a toast used to, so there is no toast here.
     await navigateTo({
-      path: '/preparing',
+      path: '/welcome',
       query: { next: '/chat' },
     })
-
-    // Surfaced after the redirect starts so it lands on the destination page.
-    toast.success(days ? `Your ${days}-day trial has started.` : 'Your trial has started.')
   } catch (err) {
     error.value = parseApiError(err, 'That code could not be redeemed.').message
   } finally {
@@ -62,7 +61,9 @@ async function handleRedeem() {
       </div>
 
       <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-        Start a free trial with no card required. One trial per organization.
+        Start a free trial with no card required — a quarter of the Starter plan's
+        monthly allowance, enough to run a real matter end to end. One trial per
+        organization.
       </p>
 
       <form class="mt-4 flex gap-2" novalidate @submit.prevent="handleRedeem">

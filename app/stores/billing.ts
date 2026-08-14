@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 
 export interface Plan {
   id: string
-  slug: 'starter' | 'pro' | 'firm'
+  /** `trial` is never listed for sale — it only arrives on a redeemed trial. */
+  slug: 'trial' | 'starter' | 'pro' | 'firm'
   name: string
   price: number
   price_label: string
@@ -154,6 +155,22 @@ export const useBillingStore = defineStore('billing', () => {
   const trialDaysRemaining = computed(() => subscription.value?.trial.days_remaining ?? null)
 
   /**
+   * A gateway sends the user back the moment they pay, but the subscription
+   * only turns active when the webhook lands — so the return screens poll
+   * rather than read the status once and call the payment failed.
+   */
+  async function waitForActiveSubscription(timeoutMs = 20000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+
+    for (;;) {
+      const sub = await fetchSubscription()
+      if (sub && sub.status === 'active') return true
+      if (Date.now() >= deadline) return false
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
+  }
+
+  /**
    * Redeem an invite or referral code, starting the organization's trial.
    * Returns the trialing subscription and refreshes the store.
    */
@@ -188,6 +205,7 @@ export const useBillingStore = defineStore('billing', () => {
     changePlan,
     cancel,
     redeemTrialCode,
+    waitForActiveSubscription,
   }
 })
 

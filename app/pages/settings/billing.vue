@@ -15,16 +15,6 @@ const loading = ref(true)
 const confirmingPayment = ref(false)
 const cancelling = ref(false)
 
-async function waitForActiveSubscription(timeoutMs = 20000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const sub = await billing.fetchSubscription()
-    if (sub && sub.status === 'active') return true
-    if (Date.now() >= deadline) return false
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-  }
-}
-
 const sub = computed(() => billing.subscription)
 
 const statusLabel: Record<string, string> = {
@@ -78,9 +68,11 @@ onMounted(async () => {
   await Promise.all([billing.fetchPlans(), billing.fetchSubscription()])
   loading.value = false
 
+  // Checkouts return to `/welcome` now. This stays for sessions that were
+  // already in flight against the old success URL, which still point here.
   if (route.query.paymongo === 'return' || route.query.lemonsqueezy === 'return') {
     confirmingPayment.value = true
-    const active = await waitForActiveSubscription(20000).catch(() => false)
+    const active = await billing.waitForActiveSubscription().catch(() => false)
     confirmingPayment.value = false
     if (active) {
       toast.success('Your subscription is active')
