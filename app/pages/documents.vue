@@ -270,6 +270,7 @@ async function upload() {
 
   const files = [...selectedFiles.value]
   const failures: string[] = []
+  let upgradeHit = false
 
   for (const file of files) {
     const form = new FormData()
@@ -284,6 +285,7 @@ async function upload() {
     } catch (err: any) {
       const upgrade = upgradeMessage(err)
       if (upgrade) {
+        upgradeHit = true
         toast.error(`${upgrade}. Upgrade your plan to continue.`, { action: { label: 'Upgrade', onClick: () => navigateTo('/settings/billing') } })
         selectedFiles.value = selectedFiles.value.filter((f) => f !== file)
         break
@@ -296,7 +298,7 @@ async function upload() {
     errorMessage.value = failures[0] ?? 'Upload failed. Please try again.'
   }
 
-  if (selectedFiles.value.length === 0 && files.length > failures.length) {
+  if (!upgradeHit && selectedFiles.value.length === 0 && files.length > failures.length) {
     toast.success(`${files.length - failures.length} document${files.length - failures.length === 1 ? '' : 's'} uploaded`)
   }
 

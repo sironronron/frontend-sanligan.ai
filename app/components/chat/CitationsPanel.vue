@@ -110,7 +110,7 @@ function metaLine(entry: CitationEntry): string | null {
     return uploaded ? `Uploaded ${uploaded}` : null
   }
 
-  return [entry.grNumber, citationDate(entry.promulgationDate), entry.sourceName]
+  return [citationDate(entry.promulgationDate), entry.sourceName]
     .filter(Boolean)
     .join(' · ') || null
 }
@@ -194,6 +194,17 @@ function readableUrl(url: string | null): string {
                   {{ typeLabel(entry) }}<template v-if="metaLine(entry)"> · {{ metaLine(entry) }}</template>
                 </p>
               </div>
+
+              <!--
+                The document code or identifier, set apart on the right so it is
+                read as the source's official handle rather than a filing detail.
+              -->
+              <span
+                v-if="entry.type === 'legal' && entry.grNumber"
+                class="mt-0.5 shrink-0 rounded-md border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-muted-foreground"
+              >
+                {{ entry.grNumber }}
+              </span>
             </div>
 
             <!-- What the answer actually took from it -->
