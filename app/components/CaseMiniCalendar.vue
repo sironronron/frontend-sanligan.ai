@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from '@lucide/vue'
+import { ChevronLeftIcon, ChevronRightIcon } from '@lucide/vue'
 import { cn } from '~/lib/utils'
 
 /**
@@ -20,13 +20,13 @@ export interface ScheduleEvent {
  *
  * A case already scatters its due dates across the case brief (deadline) and
  * the tasks panel (per-task due dates), so the sidebar's left rail is where
- * they should come together. The calendar sits above the materials tabs —
- * threads, files, drafts — because it is the case's time, not its content, and
- * it stays a mini view: month/week/today, a strip of dots per day, and the
- * selected day's items underneath. The whole panel collapses to its header so
- * the rail hands the vertical space back to the lists, and it starts collapsed
- * — the header still reports how much is due — so the materials own the rail
- * unless the user reaches for the calendar.
+ * they should come together. It stays a mini view: month/week/today, a strip
+ * of dots per day, and the selected day's items underneath.
+ *
+ * It carries no disclosure of its own. The rail's deadline strip — which is
+ * already the thing on screen that says "due in 3 days" — is what opens it, so
+ * the calendar arrives from the question it answers rather than from a second
+ * grey bar stacked above the materials lists.
  */
 const props = defineProps<{
   events: ScheduleEvent[]
@@ -34,7 +34,6 @@ const props = defineProps<{
 
 type Mode = 'month' | 'week' | 'today'
 
-const collapsed = ref(true)
 const mode = ref<Mode>('month')
 const cursor = ref(startOfDay(new Date()))
 const selected = ref(startOfDay(new Date()))
@@ -192,21 +191,6 @@ const selectedLabel = computed(() =>
 
 const selectedIsToday = computed(() => toKey(selected.value) === todayKey())
 
-const periodCount = computed(() => {
-  if (mode.value === 'month') {
-    return monthWeeks.value.flat().reduce((total, cell) => total + cell.events.length, 0)
-  }
-  if (mode.value === 'week') {
-    return weekDays.value.reduce((total, cell) => total + cell.events.length, 0)
-  }
-  return selectedEvents.value.length
-})
-
-const countLabel = computed(() => {
-  if (periodCount.value === 0) return 'nothing due'
-  return `${periodCount.value} due`
-})
-
 const showAll = ref(false)
 
 function eventDotClass(event: ScheduleEvent) {
@@ -218,7 +202,7 @@ function eventDotClass(event: ScheduleEvent) {
 
 function cellClass(cell: DayCell) {
   return cn(
-    'flex h-6 flex-col items-center justify-center rounded-md text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+    'flex h-8 flex-col items-center justify-center rounded-md text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
     cell.isToday && cell.isSelected
       ? 'bg-primary text-primary-foreground font-semibold'
       : cell.isSelected
@@ -233,41 +217,25 @@ function cellClass(cell: DayCell) {
 </script>
 
 <template>
-  <div class="shrink-0 border-b">
-    <button
-      type="button"
-      class="flex w-full items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      :aria-expanded="!collapsed"
-      @click="collapsed = !collapsed"
-    >
-      <span class="flex items-center gap-1.5">
-        <CalendarIcon class="size-3.5" />
-        Calendar
-      </span>
-      <span class="flex items-center gap-1.5">
-        <span v-if="periodCount > 0" class="text-[10px] tabular-nums text-muted-foreground/70">{{ countLabel }}</span>
-        <ChevronDownIcon class="size-3.5 transition-transform" :class="collapsed ? '-rotate-90' : ''" />
-      </span>
-    </button>
-
-    <div v-if="!collapsed" class="space-y-1.5 px-2 pb-2">
+  <div>
+    <div class="space-y-2.5 px-2.5 pb-3 pt-3">
       <div class="flex items-center gap-1">
         <button
           type="button"
-          class="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           :aria-label="mode === 'today' ? 'Previous day' : 'Previous period'"
           @click="prevPeriod"
         >
-          <ChevronLeftIcon class="size-3.5" />
+          <ChevronLeftIcon class="size-4" />
         </button>
-        <span class="min-w-0 flex-1 truncate text-center text-xs font-semibold text-foreground">{{ periodLabel }}</span>
+        <span class="min-w-0 flex-1 truncate text-center text-sm font-semibold text-foreground">{{ periodLabel }}</span>
         <button
           type="button"
-          class="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           :aria-label="mode === 'today' ? 'Next day' : 'Next period'"
           @click="nextPeriod"
         >
-          <ChevronRightIcon class="size-3.5" />
+          <ChevronRightIcon class="size-4" />
         </button>
       </div>
 
@@ -276,7 +244,7 @@ function cellClass(cell: DayCell) {
           v-for="option in modeOptions"
           :key="option.key"
           type="button"
-          class="h-6 flex-1 rounded text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          class="h-7 flex-1 rounded text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           :class="mode === option.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
           @click="mode = option.key"
         >
@@ -286,8 +254,8 @@ function cellClass(cell: DayCell) {
 
       <!-- Monthly grid -->
       <div v-if="mode === 'month'">
-        <div class="grid grid-cols-7 text-center text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-          <span v-for="day in WEEKDAYS" :key="day" class="py-0.5">{{ day }}</span>
+        <div class="grid grid-cols-7 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span v-for="day in WEEKDAYS" :key="day" class="py-1">{{ day }}</span>
         </div>
         <div v-for="(week, index) in monthWeeks" :key="index" class="grid grid-cols-7 gap-px">
           <button
@@ -299,11 +267,11 @@ function cellClass(cell: DayCell) {
             @click="selectDay(cell.date)"
           >
             <span class="leading-none">{{ cell.day }}</span>
-            <span class="mt-0.5 flex h-1 items-center gap-0.5">
+            <span class="mt-1 flex h-1.5 items-center gap-1">
               <span
                 v-for="(dot, i) in cell.events.slice(0, 3)"
                 :key="`${cell.key}-${i}`"
-                class="size-1 rounded-full"
+                class="size-1.5 rounded-full"
                 :class="eventDotClass(dot)"
               />
             </span>
@@ -318,7 +286,7 @@ function cellClass(cell: DayCell) {
             v-for="cell in weekDays"
             :key="cell.key"
             type="button"
-            class="flex h-12 flex-col items-center justify-center gap-0.5 rounded-md text-[11px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            class="flex h-14 flex-col items-center justify-center gap-1 rounded-md text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             :class="cell.isToday && cell.isSelected
               ? 'bg-primary text-primary-foreground'
               : cell.isSelected
@@ -329,15 +297,15 @@ function cellClass(cell: DayCell) {
             :aria-label="cell.date.toDateString()"
             @click="selectDay(cell.date)"
           >
-            <span class="text-[9px] font-medium uppercase text-muted-foreground" :class="cell.isToday && cell.isSelected ? 'text-primary-foreground/70' : ''">
+            <span class="text-[10px] font-medium uppercase text-muted-foreground" :class="cell.isToday && cell.isSelected ? 'text-primary-foreground/70' : ''">
               {{ WEEKDAYS[cell.weekday] }}
             </span>
             <span class="leading-none font-medium">{{ cell.day }}</span>
-            <span class="flex h-1 items-center gap-0.5">
+            <span class="flex h-1.5 items-center gap-1">
               <span
                 v-for="(dot, i) in cell.events.slice(0, 3)"
                 :key="`${cell.key}-${i}`"
-                class="size-1 rounded-full"
+                class="size-1.5 rounded-full"
                 :class="eventDotClass(dot)"
               />
             </span>
@@ -346,48 +314,48 @@ function cellClass(cell: DayCell) {
       </div>
 
       <!-- Today / selected-day agenda -->
-      <div class="mt-0.5 border-t pt-1.5">
+      <div class="mt-1 border-t pt-2.5">
         <div class="flex items-center justify-between gap-1 px-0.5">
-          <p class="truncate text-[11px] font-medium text-foreground">
+          <p class="truncate text-xs font-medium text-foreground">
             {{ selectedLabel }}
             <span
               v-if="selectedIsToday"
-              class="ml-1 rounded bg-primary/10 px-1 py-px align-middle text-[9px] font-semibold uppercase tracking-wide text-primary"
+              class="ml-1.5 rounded bg-primary/10 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-primary"
             >
               Today
             </span>
           </p>
           <button
             type="button"
-            class="shrink-0 text-[10px] font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            class="shrink-0 text-xs font-medium text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             @click="goToday"
           >
             Jump to today
           </button>
         </div>
 
-        <p v-if="selectedEvents.length === 0" class="px-0.5 pt-1 text-[11px] text-muted-foreground">
+        <p v-if="selectedEvents.length === 0" class="px-0.5 pt-2 text-xs text-muted-foreground">
           Nothing scheduled this day.
         </p>
-        <div v-else class="mt-0.5 space-y-0.5">
+        <div v-else class="mt-1.5 space-y-0.5">
           <button
             v-for="event in (showAll ? selectedEvents : selectedEvents.slice(0, 3))"
             :key="event.id"
             type="button"
-            class="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            class="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             :title="event.title"
           >
-            <span class="size-1.5 shrink-0 rounded-full" :class="eventDotClass(event)" />
-            <span class="min-w-0 flex-1 truncate text-[11px] text-foreground">{{ event.title }}</span>
+            <span class="size-2 shrink-0 rounded-full" :class="eventDotClass(event)" />
+            <span class="min-w-0 flex-1 truncate text-xs text-foreground">{{ event.title }}</span>
             <span
               v-if="event.kind === 'deadline'"
-              class="shrink-0 rounded bg-destructive/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-destructive"
+              class="shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive"
             >
               Deadline
             </span>
             <span
               v-else-if="event.status === 'completed'"
-              class="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground"
+              class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
             >
               Done
             </span>
@@ -395,7 +363,7 @@ function cellClass(cell: DayCell) {
           <button
             v-if="selectedEvents.length > 3"
             type="button"
-            class="px-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            class="px-1.5 pt-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             @click="showAll = !showAll"
           >
             {{ showAll ? 'Show fewer' : `+${selectedEvents.length - 3} more` }}
