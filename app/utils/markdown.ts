@@ -20,9 +20,19 @@ function removeProtocolMarkers(text: string): string {
   return text
     .replace(/^\s*\[\[DOCUMENT_START\]\]\s*$/gm, '')
     .replace(/^\s*\[\[DOCUMENT_END\]\]\s*$/gm, '')
-    .replace(/^\s*\[\[TODO_START\]\]\s*$/gm, '')
-    .replace(/^\s*\[\[TODO_END\]\]\s*$/gm, '')
+    // The model sometimes bolds the TODO markers ("**[TODO_START]**"), drops to
+    // single brackets, or leads them with a list dash, so they are matched
+    // tolerantly — an unstripped marker renders as visible text in the reply.
+    .replace(/^[ \t*_\-–—~]*\[{1,2}TODO_(?:START|END)\]{1,2}[ \t*_\-–—~]*$/gim, '')
     .replace(/^\s*Next Steps Checklist Created Below Using create_todo Tool:\s*$/gim, '')
+    // Memory write-back markers are bookkeeping between the model and the
+    // server's MemoryWriteBackParser, never user-facing content. Strip them
+    // here too so they never flash during streaming (the server only removes
+    // them when the reply is persisted, after the stream reaches the client).
+    .replace(/\[\[MEMORY_WRITE_START\]\][\s\S]*?\[\[MEMORY_WRITE_END\]\]/g, '')
+    // While a write-back block is still streaming in it has no closing marker
+    // yet; hide the raw start marker rather than let it flash on screen.
+    .replace(/\[\[MEMORY_WRITE_START\]\][\s\S]*$/g, '')
 }
 
 /**
@@ -70,44 +80,27 @@ function citationKindOf(word: string): CitationKind {
 
 /**
  * Turn inline `[SRC <token>]` / `[DOC <token>]` / `[Source N]` / `[User Doc N]`
- * / `[Web N]` markers into clickable badges. Token badges carry
- * `data-cite-kind` / `data-cite-token`, legacy position badges
- * `data-cite-kind` / `data-cite-index`, so the parent page can highlight and
- * scroll the matching card in the citation sidebar. The button is
- * inline-styled because v-html output is not covered by scoped component
- * styles.
+ * / `[Web N]` markers into small citation badges.
+ *
+ * Each badge keeps the marker's source id (`data-cite-kind` /
+ * `data-cite-token` / `data-cite-index`), which is what the page's click
+ * handler resolves back to a source card. It is a real `<button>`, not a
+ * `<span>`: pressing one opens the sources panel on that citation, and that
+ * has to be reachable by keyboard and announced as an action rather than as a
+ * stray number in the middle of a sentence.
  */
 function transformCitations(text: string): string {
-  const style = [
-    'display:inline-flex',
-    'align-items:center',
-    'justify-content:center',
-    'min-width:1.15em',
-    'height:1.15em',
-    'padding:0 .3em',
-    'font-size:.68em',
-    'font-weight:700',
-    'line-height:1',
-    'border-radius:9999px',
-    'vertical-align:super',
-    'margin:0 .12em',
-    'cursor:pointer',
-    'color:var(--primary)',
-    'background:color-mix(in oklab,var(--primary) 12%,transparent)',
-    'border:1px solid color-mix(in oklab,var(--primary) 35%,transparent)',
-  ].join(';')
-
   return text.replace(
     /\[(SRC|DOC)\s+([A-Z0-9]+)\]|\[(Source|User\s+Doc|Web)\s+(\d+)\]/gi,
     (_match, tokenKind: string, token: string, legacyKind: string, index: string) => {
       if (tokenKind !== undefined) {
         const kind = tokenKind === 'SRC' ? 'legal' : 'document'
-        return `<button type="button" data-cite-kind="${kind}" data-cite-token="${token}" title="[${tokenKind} ${token}]" style="${style}">${token}</button>`
+        return `<button type="button" class="saligan-citation" data-cite-kind="${kind}" data-cite-token="${token}" title="Show source [${tokenKind} ${token}]" aria-label="Show source ${token}">${token}</button>`
       }
 
       const kind = citationKindOf(legacyKind)
       const label = `${legacyKind} ${index}`
-      return `<button type="button" data-cite-kind="${kind}" data-cite-index="${index}" title="${label}" style="${style}">${index}</button>`
+      return `<button type="button" class="saligan-citation" data-cite-kind="${kind}" data-cite-index="${index}" title="Show source ${label}" aria-label="Show source ${label}">${index}</button>`
     },
   )
 }
@@ -192,11 +185,19 @@ function renderMarkdownInternal(text: string): string {
   const lines = html.split('\n')
   const out: string[] = []
   let paragraph: string[] = []
+  let openList: 'ul' | 'ol' | null = null
 
   const flushParagraph = () => {
     if (paragraph.length) {
       out.push(`<p>${paragraph.join('<br>')}</p>`)
       paragraph = []
+    }
+  }
+
+  const closeList = () => {
+    if (openList !== null) {
+      out.push(`</${openList}>`)
+      openList = null
     }
   }
 
@@ -206,6 +207,7 @@ function renderMarkdownInternal(text: string): string {
 
     if (line.trim().startsWith('|') && isTableDelimiter(lines[i + 1])) {
       flushParagraph()
+      closeList()
       const rows: string[] = [line.trim()]
       i++
       while (i < lines.length) {
@@ -220,18 +222,21 @@ function renderMarkdownInternal(text: string): string {
 
     if (/^<h[123] /.test(line)) {
       flushParagraph()
+      closeList()
       out.push(line)
       continue
     }
 
     if (/^[-*]{1,3}$/.test(line.trim())) {
       flushParagraph()
+      closeList()
       out.push('<hr class="my-4 border-border" />')
       continue
     }
 
     if (/^&gt;\s?/.test(line)) {
       flushParagraph()
+      closeList()
       const quoteLines: string[] = []
       while (i < lines.length) {
         const next = lines[i]
@@ -248,25 +253,40 @@ function renderMarkdownInternal(text: string): string {
 
     if (/^[-*] .+/.test(line)) {
       flushParagraph()
-      out.push(`<li class="ml-4 list-disc">${line.replace(/^[-*] /, '')}</li>`)
+      if (openList !== 'ul') {
+        closeList()
+        out.push('<ul class="my-2 ml-4 list-disc space-y-1">')
+        openList = 'ul'
+      }
+      out.push(`<li>${line.replace(/^[-*] /, '')}</li>`)
       continue
     }
 
-    if (/^\d+\. .+/.test(line)) {
+    if (/^\d+[.)]\s+.+/.test(line)) {
       flushParagraph()
-      out.push(`<li class="ml-4 list-decimal">${line.replace(/^\d+\. /, '')}</li>`)
+      if (openList !== 'ol') {
+        closeList()
+        out.push('<ol class="my-2 ml-4 list-decimal space-y-1">')
+        openList = 'ol'
+      }
+      out.push(`<li>${line.replace(/^\d+[.)]\s+/, '')}</li>`)
       continue
     }
 
     if (line.trim() === '') {
       flushParagraph()
+      closeList()
       continue
     }
 
+    // Plain text resumes after any open list; join consecutive lines into a
+    // single paragraph with <br> as the original renderer did.
+    closeList()
     paragraph.push(line)
   }
 
   flushParagraph()
+  closeList()
 
   return out.join('\n')
 }

@@ -8,7 +8,7 @@ import DocumentViewer from '~/components/DocumentViewer.vue'
 import LabelPicker from '~/components/LabelPicker.vue'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'subscription'],
+  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
 })
 
 interface Document {
@@ -337,7 +337,7 @@ async function removeDocument(doc: Document) {
       @drop="onFilesDropped"
     >
       <div class="flex flex-col items-center gap-3 text-center">
-        <div class="flex size-12 items-center justify-center rounded-full bg-background shadow-sm">
+        <div class="flex size-12 items-center justify-center rounded-full bg-card shadow-sm">
           <FileUpIcon class="size-5 text-muted-foreground" />
         </div>
         <div>
@@ -367,7 +367,7 @@ async function removeDocument(doc: Document) {
         <div
           v-for="(file, index) in selectedFiles"
           :key="`${file.name}-${index}`"
-          class="flex items-center gap-3 rounded-lg bg-background p-3 text-sm shadow-sm"
+          class="flex items-center gap-3 rounded-lg bg-card p-3 text-sm shadow-sm"
         >
           <component :is="fileIcon(file.name, file.type)" class="size-4 shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1 truncate">{{ file.name }}</span>

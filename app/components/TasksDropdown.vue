@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, CircleIcon, ClockIcon, Loader2Icon } from '@lucide/vue'
+import { CheckIcon, CircleIcon, ClockIcon, ListChecksIcon, Loader2Icon } from '@lucide/vue'
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 withDefaults(defineProps<{ class?: string }>(), { class: '' })
@@ -25,6 +25,17 @@ function priorityBadge(priority: Todo['priority']) {
   return priority === 'high' ? 'bg-destructive/10 text-destructive' : priority === 'medium' ? 'bg-peach/60 text-espresso' : 'bg-muted text-muted-foreground'
 }
 
+function formatDueDate(date: string | null) {
+  if (!date) return ''
+  const d = new Date(`${date}T00:00:00`)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function dueText(todo: Todo) {
+  if (todo.due_date) return `Due ${formatDueDate(todo.due_date)}`
+  return todo.due_hint ?? ''
+}
+
 async function openConversation(conversationId: string) {
   await router.push({ path: '/chat', query: { c: conversationId } })
 }
@@ -44,20 +55,31 @@ onMounted(() => {
   <div :class="class">
     <DropdownMenu v-model:open="open">
       <DropdownMenuTrigger
-        class="flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors hover:bg-muted"
-        aria-label="Next steps"
+        class="flex h-8 items-center gap-2 rounded-full border px-2.5 pr-3 text-sm transition-colors hover:bg-muted"
+        aria-label="Tasks"
       >
-        <span class="font-medium tabular-nums text-foreground">
-          {{ completedTodos.length }}/{{ todoStore.todos.length }}
+        <span class="relative">
+          <span
+            class="flex size-5 items-center justify-center rounded-full"
+            :class="pendingTodos.length > 0 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
+          >
+            <ListChecksIcon class="size-3" />
+          </span>
+          <span
+            v-if="pendingTodos.length > 0"
+            class="absolute -right-1 -top-1 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-semibold leading-3 tabular-nums text-primary-foreground"
+          >
+            {{ pendingTodos.length }}
+          </span>
         </span>
-        <span class="text-muted-foreground">Tasks</span>
+        <span class="font-medium text-foreground">Tasks</span>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" class="w-80">
         <DropdownMenuLabel class="flex items-center justify-between">
-          <span class="text-sm font-medium">Next steps</span>
-          <span class="text-xs text-muted-foreground">
-            {{ pendingTodos.length }}/{{ todoStore.todos.length }} pending
+          <span class="text-sm font-medium">Tasks</span>
+          <span class="text-xs tabular-nums text-muted-foreground">
+            {{ pendingTodos.length }} open · {{ completedTodos.length }} done
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -67,13 +89,14 @@ onMounted(() => {
         </div>
 
         <div v-else-if="todoStore.todos.length === 0" class="px-3 py-8 text-center">
-          <p class="text-xs text-muted-foreground">No action items yet</p>
+          <ListChecksIcon class="mx-auto size-5 text-muted-foreground/50" />
+          <p class="mt-2 text-xs text-muted-foreground">No action items yet</p>
         </div>
 
         <template v-else>
           <div v-if="pendingTodos.length > 0">
             <p class="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Pending
+              Open · {{ pendingTodos.length }}
             </p>
             <div
               v-for="todo in pendingTodos"
@@ -87,21 +110,28 @@ onMounted(() => {
               >
                 <component :is="statusIcon(todo.status)" class="size-4" />
               </button>
-              <button
-                class="min-w-0 flex-1 text-left text-sm leading-tight"
-                @click="openConversation(todo.conversation_id)"
-              >
-                {{ todo.title }}
-              </button>
-              <Badge v-if="todo.priority" :class="priorityBadge(todo.priority)" class="px-1.5 py-0 text-[10px]">
-                {{ todo.priority }}
-              </Badge>
+              <div class="min-w-0 flex-1">
+                <button
+                  class="block w-full truncate text-left text-sm leading-tight"
+                  @click="openConversation(todo.conversation_id)"
+                >
+                  {{ todo.title }}
+                </button>
+                <div v-if="todo.priority || dueText(todo)" class="mt-0.5 flex items-center gap-1.5">
+                  <Badge v-if="todo.priority" :class="priorityBadge(todo.priority)" class="px-1.5 py-0 text-[10px]">
+                    {{ todo.priority }}
+                  </Badge>
+                  <span v-if="dueText(todo)" class="truncate text-[11px] text-muted-foreground">
+                    {{ dueText(todo) }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
           <div v-if="completedTodos.length > 0">
             <p class="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Completed
+              Done · {{ completedTodos.length }}
             </p>
             <div
               v-for="todo in completedTodos"

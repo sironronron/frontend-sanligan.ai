@@ -5,24 +5,26 @@ import {
   XIcon,
   DownloadIcon,
   ListChecksIcon,
-  BookOpenIcon,
+  QuoteIcon,
   SearchIcon,
   PanelLeftIcon,
 } from '@lucide/vue'
-import { authHeaders } from '~/lib/http'
 import { useTodoStore } from '~/stores/todos'
-import { useBillingStore, upgradeMessage } from '~/stores/billing'
+import { extractTodoItems } from '~/utils/todos'
+import { useBillingStore } from '~/stores/billing'
 import { useAuthStore } from '~/stores/auth'
 import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
-import CitationPanel from '~/components/CitationPanel.vue'
-import type { IntakeField } from '~/components/IntakeFormSheet.vue'
 import ChatThread from '~/components/chat/ChatThread.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
-import ChatPromptSuggestions from '~/components/chat/ChatPromptSuggestions.vue'
+import ChatStarters from '~/components/chat/ChatStarters.vue'
 import { useStarterSuggestions, type SuggestionContext } from '~/composables/useChatSuggestions'
 import ChatConversationList from '~/components/chat/ChatConversationList.vue'
+import CitationsPanel from '~/components/chat/CitationsPanel.vue'
+import { citationMarkFrom, collectCitations, findCitation, type CitationMark } from '~/utils/citations'
+import type { ChatMessage } from '~/types/chat'
+import type { CitationTarget } from '~/types/citations'
 import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
 import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
 import LabelPicker from '~/components/LabelPicker.vue'
@@ -30,12 +32,13 @@ import { useLabelStore, type AppliedLabel } from '~/stores/labels'
 import type { ChatMessageAttachment } from '~/types/chat'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'subscription'],
+  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
 })
 
 interface Source {
   type: 'legal' | 'document' | 'web'
   index?: number
+  token?: string
   id?: string
   chunk_index?: number
   document_id?: string
@@ -49,6 +52,9 @@ interface Source {
   excerpt?: string
   content?: string
   domain?: string | null
+  page_id?: string | null
+  has_digest?: boolean
+  cited_chunk_indexes?: number[]
 }
 
 interface Message {
@@ -79,37 +85,57 @@ interface Conversation {
 const api = useApi()
 const route = useRoute()
 const router = useRouter()
-const {
-  public: { apiBase },
-} = useRuntimeConfig()
 
 const conversations = ref<Conversation[]>([])
 const activeId = ref<string | null>(null)
+/** What the server has for the open thread; the live turn is added on top. */
 const messages = ref<Message[]>([])
 const input = ref('')
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null)
-const streaming = ref(false)
-const streamError = ref('')
-const sending = ref(false)
-const streamController = ref<AbortController | null>(null)
-// Reveals queued deltas character by character; rebuilt per send().
-let textStreamer: TextStreamer | null = null
-const currentStatus = ref<string | null>(null)
-const currentStatusLabel = ref<string | null>(null)
-const lastQuestion = ref('')
-let messageStartIndex = -1
 
 /**
- * The right rail holds one panel at a time. Citations, tasks, and the document
- * preview each used to be an independent flag, so all three could sit open at
- * once and squeeze the conversation into a narrow strip on a laptop.
+ * The answer being generated does not belong to this page — it belongs to the
+ * thread. Keeping it in the store is what lets the user walk away mid-answer,
+ * see in the thread list that Batayan is still writing, and come back to a
+ * finished (or still arriving) reply.
  */
-type RightPanel = 'citations' | 'tasks'
+const chatStream = useChatStreamStore()
 
-const rightPanel = ref<RightPanel | null>('citations')
+const turn = computed(() => chatStream.turnFor(activeId.value))
+const streaming = computed(() => turn.value?.streaming ?? false)
+const sending = computed(() => turn.value?.sending ?? false)
+const streamError = computed(() => turn.value?.error ?? '')
+const lastQuestion = computed(() => turn.value?.question ?? '')
+const currentStatus = computed(() => turn.value?.status ?? null)
+const statusLabel = computed(() => turn.value?.statusLabel ?? null)
+/** What this turn is about, sent once by the server and shown as the heading. */
+const currentTopic = computed(() => turn.value?.topic ?? null)
+const activitySteps = computed(() => turn.value?.steps ?? [])
+const intakeFields = computed(() => turn.value?.intakeFields ?? null)
+const intakeDefaults = computed(() => turn.value?.intakeDefaults ?? null)
+const awaitingIntake = computed(() => turn.value?.awaitingIntake ?? false)
+const intakeDismissed = computed(() => turn.value?.intakeDismissed ?? false)
 
-const showCitations = computed(() => rightPanel.value === 'citations')
+/** The open thread as the user sees it: saved messages plus the live turn. */
+const thread = computed<Message[]>(() => chatStream.threadFor(activeId.value, messages.value) as Message[])
+
+/** Drives the Sources button's count; the panel does the same grouping. */
+const citationCount = computed(() => collectCitations(thread.value as ChatMessage[]).length)
+
+/** The card the panel should scroll to, set by pressing a badge in an answer. */
+const citationTarget = ref<CitationTarget | null>(null)
+
+/**
+ * The right rail holds one panel at a time. Citations, the document preview,
+ * and tasks used to sit open at once and squeeze the conversation into a
+ * narrow strip on a laptop.
+ */
+type RightPanel = 'tasks' | 'citations'
+
+const rightPanel = ref<RightPanel | null>(null)
+
 const showTodos = computed(() => rightPanel.value === 'tasks')
+const showCitations = computed(() => rightPanel.value === 'citations')
 
 function togglePanel(panel: RightPanel) {
   rightPanel.value = rightPanel.value === panel ? null : panel
@@ -119,7 +145,6 @@ function openPanel(panel: RightPanel) {
   rightPanel.value = panel
 }
 
-const activeCitation = ref<{ kind: string; index?: number; token?: string } | null>(null)
 const ratingBusy = ref<string | null>(null)
 
 const searchOpen = ref(false)
@@ -130,16 +155,7 @@ const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
 
 const mobileConversations = ref(false)
 
-const activeAssistantMessage = computed<Message | null>(() => {
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const m = messages.value[i]
-    if (m && m.role === 'assistant' && m.sources.length > 0) return m
-  }
-  return null
-})
-
-const hasCitations = computed(() => activeAssistantMessage.value !== null)
-
+/** Only ever about the thread on screen — another thread may also be busy. */
 const busy = computed(() => sending.value || streaming.value)
 
 const messagesContainer = ref<HTMLElement | null>(null)
@@ -194,9 +210,9 @@ const suggestionContext = computed<SuggestionContext>(() => ({
     .map((c) => c.title ?? '')
     .filter(Boolean)
     .slice(0, 3),
-  role: auth.user?.kyc_role ?? null,
-  useCase: auth.user?.kyc_use_case ?? null,
-  documentTypes: (auth.user?.kyc_document_types ?? '').split(',').map((v) => v.trim()).filter(Boolean),
+  roles: kycKeys(auth.user?.kyc_role),
+  useCases: kycKeys(auth.user?.kyc_use_case),
+  documentTypes: kycKeys(auth.user?.kyc_document_types),
   experienceLevel: experienceLevel.value,
 }))
 
@@ -205,65 +221,6 @@ const { starters } = useStarterSuggestions(suggestionContext)
 function selectPrompt(prompt: string) {
   input.value = prompt
   composerRef.value?.focus()
-}
-
-const intakeFields = ref<IntakeField[] | null>(null)
-const intakeDefaults = ref<Record<string, string> | null>(null)
-const awaitingIntake = ref(false)
-const intakeDismissed = ref(false)
-const todoToolCalled = ref(false)
-
-// Fallbacks only — the server sends a label with every status frame. Kept
-// short and free of the question's topic: the topic is shown once, as the
-// card's heading, rather than repeated on every row beneath it.
-const statusLabels: Record<string, string> = {
-  checking_sources: 'Checking legal sources',
-  searching_web: 'Searching the web',
-  composing: 'Writing your answer',
-  collecting_facts: 'Collecting the facts I need',
-  gathering_facts: 'Gathering the facts needed',
-  drafting_document: 'Drafting your document',
-  filling_template: 'Filling in your template',
-  preparing_next_steps: 'Preparing your next steps',
-}
-
-/** What this turn is about, sent once by the server and shown as the heading. */
-const currentTopic = ref<string | null>(null)
-
-interface ActivityStep {
-  key: string
-  label: string
-  state: 'done' | 'active' | 'pending'
-}
-
-const activitySteps = ref<ActivityStep[]>([])
-
-function resetSteps() {
-  activitySteps.value = []
-}
-
-function markStepActive(key: string, label: string) {
-  const existing = activitySteps.value.find((step) => step.key === key)
-  if (existing) {
-    existing.state = 'active'
-    return
-  }
-  activitySteps.value.push({ key, label, state: 'active' })
-}
-
-function completeStep(key: string) {
-  const existing = activitySteps.value.find((step) => step.key === key)
-  if (existing) {
-    existing.state = 'done'
-  }
-}
-
-function completeActiveSteps() {
-  for (const step of activitySteps.value) {
-    if (step.state === 'active') {
-      step.state = 'done'
-    }
-  }
 }
 
 const activeConversation = computed(
@@ -323,11 +280,12 @@ async function loadConversation(id: string) {
     const { data } = await api<{ data: Conversation }>(`/conversations/${id}`)
     activeId.value = id
     messages.value = data.messages ?? []
-    intakeFields.value = null
-    intakeDefaults.value = null
-    awaitingIntake.value = false
-    intakeDismissed.value = false
+    // Any pending intake or partial answer belongs to the thread's live turn,
+    // which the store still holds — nothing to reset here.
     await router.replace({ query: { c: id } })
+    // The answer may have landed while the user was on another page; this is
+    // the moment to finish it off.
+    await finalizeTurn(id)
     await nextTick()
     scrollToBottom()
   } catch {
@@ -345,24 +303,21 @@ async function createConversation() {
   return data
 }
 
+// Starting or switching threads is allowed while an answer is still arriving:
+// the turn belongs to its own thread and keeps going without this page.
 async function startNewChat() {
-  if (busy.value) return
   activeId.value = null
   messages.value = []
-  streamError.value = ''
-  intakeFields.value = null
-  intakeDefaults.value = null
-  awaitingIntake.value = false
-  intakeDismissed.value = false
   await router.replace({ query: {} })
 }
 
 async function switchConversation(id: string) {
-  if (busy.value || id === activeId.value) return
+  if (id === activeId.value) return
   await loadConversation(id)
 }
 
 async function deleteConversation(id: string) {
+  chatStream.discard(id)
   await api(`/conversations/${id}`, { method: 'DELETE' })
   if (activeId.value === id) {
     activeId.value = null
@@ -372,126 +327,8 @@ async function deleteConversation(id: string) {
   await loadConversations()
 }
 
-function handleFrame(frame: string, target: Message) {
-  let event = 'message'
-  const dataLines: string[] = []
-
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim()
-    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
-  }
-
-  const data = dataLines.join('\n')
-  if (!data) return
-
-  let payload: Record<string, any>
-  try {
-    payload = JSON.parse(data)
-  } catch {
-    return
-  }
-
-  if (event === 'status' && typeof payload.status === 'string') {
-    completeActiveSteps()
-    currentStatus.value = payload.status
-    currentStatusLabel.value = typeof payload.label === 'string' && payload.label !== '' ? payload.label : null
-    if (typeof payload.topic === 'string' && payload.topic !== '') currentTopic.value = payload.topic
-    if (payload.status === 'collecting_facts') {
-      awaitingIntake.value = true
-      markStepActive('collecting_facts', 'Collecting the facts I need')
-    } else {
-      markStepActive(payload.status, currentStatusLabel.value ?? statusLabels[payload.status] ?? payload.status)
-    }
-  } else if (event === 'delta' && typeof payload.delta === 'string') {
-    if (textStreamer) textStreamer.push(payload.delta)
-    else target.content += payload.delta
-    awaitingIntake.value = false
-    completeStep('composing')
-  } else if (event === 'citation' && typeof payload.url === 'string') {
-    const existing = target.sources.find((s) => s.type === 'web' && s.url === payload.url)
-    if (!existing) {
-      target.sources.push({
-        type: 'web',
-        index: Number.isFinite(Number(payload.index)) ? Number(payload.index) : target.sources.filter((s) => s.type === 'web').length + 1,
-        label: typeof payload.title === 'string' ? payload.title : null,
-        title: typeof payload.title === 'string' ? payload.title : null,
-        url: payload.url,
-        domain: typeof payload.domain === 'string' ? payload.domain : null,
-        excerpt: typeof payload.excerpt === 'string' ? payload.excerpt : undefined,
-      })
-    }
-  } else if (event === 'tool_call') {
-    handleToolCall(payload, target)
-  } else if (event === 'tool_result' && payload.name === 'create_todo') {
-    todoToolCalled.value = true
-    refreshTodos()
-    completeStep('create_todo')
-  } else if (event === 'done') {
-    textStreamer?.flush()
-    completeActiveSteps()
-    if (intakeFields.value === null) {
-      awaitingIntake.value = false
-    }
-  } else if (event === 'error') {
-    textStreamer?.flush()
-    streamError.value = String(payload.message ?? 'The AI provider could not complete the response.')
-    awaitingIntake.value = false
-  }
-}
-
-function handleToolCall(payload: Record<string, any>, target: Message) {
-  if (payload.name === 'request_intake_form' && Array.isArray(payload.arguments?.fields)) {
-    intakeFields.value = payload.arguments.fields as IntakeField[]
-    intakeDefaults.value = payload.arguments.default_values ?? null
-    awaitingIntake.value = true
-    intakeDismissed.value = false
-    completeActiveSteps()
-    markStepActive('request_intake_form', 'Collecting facts from you')
-    // The document is drafted only after the intake form is submitted. Drop
-    // the streaming bubble so no partial draft appears before the form.
-    messages.value = messages.value.filter((m) => m.id !== target.id)
-  }
-}
-
-async function refreshTodos() {
-  if (activeId.value) {
-    await todoStore.fetchTodos(activeId.value)
-    openPanel('tasks')
-  }
-}
-
-function extractTodoItems(text: string): Array<{ title: string; status?: string }> {
-  const items: Array<{ title: string; status?: string }> = []
-  const cleaned = text
-    .replace(/^\s*\[\[TODO_START\]\]\s*$/gm, '')
-    .replace(/^\s*\[\[TODO_END\]\]\s*$/gm, '')
-
-  // Match various checkbox formats: "- [ ]", "- [x]", "[ ]", "[x]", "**[ ]**", "**_**"
-  const regex = /^\s*[-*]*\s*(?:\*{0,2}\[_?\]\*{0,2}|\[( |x|X)\])\s+(.+)$/gm
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(cleaned)) !== null) {
-    const rawTitle = (match[2] ?? '').trim()
-    const title = sanitizeTodoTitle(rawTitle)
-    if (title) {
-      items.push({
-        title,
-        status: match[1] && match[1] !== ' ' ? 'completed' : 'pending',
-      })
-    }
-  }
-  return items
-}
-
-function sanitizeTodoTitle(title: string): string {
-  // Strip bold/italic markdown wrapping
-  let cleaned = title.replace(/^\*{1,2}(.+?)\*{1,2}$/, '$1')
-  // Strip any remaining markdown artifacts
-  cleaned = cleaned.replace(/[_*`]/g, '')
-  return cleaned.trim()
-}
-
 async function maybeCreateTodosFromText(text: string, conversationId: string | null) {
-  if (!conversationId || todoToolCalled.value || !text) return
+  if (!conversationId || !text) return
   const items = extractTodoItems(text)
   if (items.length === 0) return
   try {
@@ -504,10 +341,8 @@ async function maybeCreateTodosFromText(text: string, conversationId: string | n
 }
 
 async function handleIntakeSubmit(data: Record<string, string>) {
-  intakeFields.value = null
-  intakeDefaults.value = null
-  awaitingIntake.value = false
-  intakeDismissed.value = false
+  if (!activeId.value) return
+  chatStream.clearIntake(activeId.value)
   const formatted = Object.entries(data)
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n')
@@ -515,61 +350,68 @@ async function handleIntakeSubmit(data: Record<string, string>) {
 }
 
 function handleIntakeCancel() {
-  // Keep the pending intake fields so the user can reopen the form, but stop
-  // the "waiting" bubble and surface a dismiss/fill-requirement prompt instead.
-  intakeDismissed.value = true
-  awaitingIntake.value = false
+  if (activeId.value) chatStream.dismissIntake(activeId.value)
 }
 
 function reopenIntake() {
-  intakeDismissed.value = false
-  awaitingIntake.value = true
+  if (activeId.value) chatStream.reopenIntake(activeId.value)
 }
 
 function abandonIntake() {
-  intakeFields.value = null
-  intakeDefaults.value = null
-  awaitingIntake.value = false
-  intakeDismissed.value = false
+  if (activeId.value) chatStream.clearIntake(activeId.value)
 }
 
 function getDisplayedContent(msg: Message): string {
   return msg.content
 }
 
-const statusLabel = computed(() => {
-  if (!currentStatus.value) return null
-  return currentStatusLabel.value ?? statusLabels[currentStatus.value] ?? currentStatus.value
-})
-
 function handleMarkdownClick(event: MouseEvent, msg: Message) {
-  const target = event.target as HTMLElement
-  const badge = target.closest('button[data-cite-kind]')
-  if (badge) {
-    const kind = badge.getAttribute('data-cite-kind')
-    const token = badge.getAttribute('data-cite-token')
-    const index = Number(badge.getAttribute('data-cite-index'))
-    if (kind && (token !== null || Number.isFinite(index))) {
-      openPanel('citations')
-      activeCitation.value = token ? { kind, token } : { kind, index }
-    }
+  const mark = citationMarkFrom(event.target)
+
+  if (mark !== null) {
+    event.preventDefault()
+    revealCitation(mark, msg as ChatMessage)
     return
   }
 
-    const link = target.closest('a[data-export-url]')
-    if (link) {
-      event.preventDefault()
-      const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
-      const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
-      void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
-    }
+  const link = (event.target as HTMLElement).closest('a[data-export-url]')
+  if (!link) return
+  event.preventDefault()
+  const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
+  const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
+  void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
 }
 
-async function refreshMessages() {
-  if (!activeId.value) return
+/**
+ * A citation badge in the answer was pressed: open the sources panel on the
+ * card it refers to. The badge is the reader's shortest route from "this
+ * sentence is sourced" to what the source actually was.
+ */
+function revealCitation(mark: CitationMark, msg: ChatMessage) {
+  const entry = findCitation(collectCitations(thread.value as ChatMessage[]), msg, mark)
+
+  if (entry === null) {
+    toast('That source is no longer available')
+    return
+  }
+
+  openPanel('citations')
+  citationTarget.value = { key: entry.key, at: Date.now() }
+}
+
+/**
+ * Pull the saved thread back down and hand the turn over to it.
+ *
+ * The refresh and the handover happen in the same tick so the answer never
+ * blinks: the saved copy replaces the streamed one in a single render.
+ */
+async function refreshMessages(id: string, settle = false) {
   try {
-    const { data } = await api<{ data: Conversation }>(`/conversations/${activeId.value}`)
-    messages.value = data.messages ?? []
+    const { data } = await api<{ data: Conversation }>(`/conversations/${id}`)
+    // The user may have moved on while the answer was finishing; their current
+    // thread must not be overwritten by another one's messages.
+    if (activeId.value === id) messages.value = data.messages ?? []
+    if (settle) chatStream.settle(id)
   } catch {
     // keep the streamed state if the refresh fails
   }
@@ -600,149 +442,102 @@ function handleExport(m: Message, type: 'word' | 'pdf') {
   void openExport(m.content, type, title, m.template_id ? m.id : undefined)
 }
 
+/**
+ * The plan ran out mid-send. Explain why before redirecting, and refresh the
+ * subscription first: a trial can end on this very request, and the pricing
+ * page would otherwise render its banner from stale state.
+ */
+async function handleUpgradeRequired(message: string): Promise<boolean> {
+  toast.error(message)
+  await billing.fetchSubscription()
+  await navigateTo('/pricing')
+
+  return true
+}
+
 async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
-  if (!question || sending.value) return
+  if (!question || busy.value) return
 
-  messageStartIndex = messages.value.length
-  lastQuestion.value = question
-  sending.value = true
-  streamError.value = ''
-  currentStatus.value = null
-  currentStatusLabel.value = null
   input.value = ''
   // The files travel with this message; the uploads themselves stay in the
   // user's library and remain retrievable for the rest of the conversation.
   const attached = attachmentsState.take()
-  todoToolCalled.value = false
-  resetSteps()
-  currentTopic.value = null
 
-  if (question.startsWith('[Intake Form Submission]')) {
-    markStepActive('drafting', 'Drafting your document')
-  }
+  const conv = activeConversation.value ?? (await createConversation())
+  if (chatStream.isStreaming(conv.id)) return
 
-  let lastAssistantText = ''
+  // Deliberately not awaited: the answer belongs to the thread from here on,
+  // and this page is free to be left, or unmounted, while it arrives.
+  void chatStream.start({
+    conversationId: conv.id,
+    question,
+    returnTo: `/chat?c=${conv.id}`,
+    attachments: attached,
+    onUpgrade: handleUpgradeRequired,
+  })
+
+  await nextTick()
+  scrollToBottom()
+}
+
+/**
+ * Wrap a finished turn up: save what it produced, then hand the thread back to
+ * the server's copy.
+ *
+ * Called from the watcher below when the answer lands while the user is
+ * watching, and from `loadConversation` when it landed while they were
+ * somewhere else — either way the thread ends up in the same state.
+ */
+const finalizing = new Set<string>()
+
+async function finalizeTurn(id: string) {
+  const finished = chatStream.turnFor(id)
+  // Both the watcher and `loadConversation` can reach a finished turn, and
+  // running the follow-up twice would file the same tasks twice.
+  if (!finished?.finishedAt || finalizing.has(id)) return
+
+  finalizing.add(id)
+
+  // A pending intake form or a failed turn still has work left in it, so the
+  // turn stays until the user submits, abandons, or retries.
+  const keep = finished.intakeFields !== null || finished.error !== ''
 
   try {
-    let conv = activeConversation.value
-
-    if (!conv) {
-      conv = await createConversation()
-    }
-
-    messages.value.push({
-      id: `local-${crypto.randomUUID()}`,
-      role: 'user',
-      content: question,
-      sources: [],
-      attachments: attached,
-      created_at: new Date().toISOString(),
-    })
-
-    const assistant: Message = reactive({
-      id: `local-${crypto.randomUUID()}`,
-      role: 'assistant',
-      content: '',
-      sources: [],
-      created_at: new Date().toISOString(),
-    })
-    messages.value.push(assistant)
-    textStreamer = createTextStreamer((chunk) => {
-      assistant.content += chunk
-    })
-    streaming.value = true
-
-    await nextTick()
-    scrollToBottom()
-
-    streamController.value = new AbortController()
-    const response = await fetch(`${apiBase}/api/conversations/${conv.id}/messages`, {
-      method: 'POST',
-      headers: await authHeaders({
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-      }),
-      body: JSON.stringify({
-        message: question,
-        attachment_ids: attached.map((a) => a.id),
-      }),
-      signal: streamController.value.signal,
-    })
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null)
-      const upgrade = upgradeMessage({ status: response.status, data: payload })
-      if (upgrade) {
-        // Carry the reason across the redirect. A trial that runs out of
-        // messages ends mid-conversation, and landing on the pricing page with
-        // no explanation reads as the app having lost the request.
-        toast.error(upgrade)
-        // The trial may have just ended on this very request, so refresh before
-        // the pricing page renders its trial banner from stale state.
-        await billing.fetchSubscription()
-        await navigateTo('/pricing')
-        return
-      }
-      throw new Error(upgrade ?? 'Something went wrong while streaming the response.')
-    }
-
-    if (!response.body) {
-      throw new Error('Streaming is not supported by this browser')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      const frames = buffer.split('\n\n')
-      buffer = frames.pop() ?? ''
-
-      for (const frame of frames) {
-        handleFrame(frame, assistant)
-        await nextTick()
-        scrollToBottom()
-      }
-    }
-
-    if (buffer.trim()) {
-      handleFrame(buffer, assistant)
-      await nextTick()
-      scrollToBottom()
-    }
-
-    textStreamer.flush()
-    lastAssistantText = assistant.content
-  } catch (err: any) {
-    textStreamer?.flush()
-
-    if (err?.name === 'AbortError') {
-      streamError.value = ''
-    } else {
-      streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
-    }
-  } finally {
-    textStreamer = null
-    streamController.value = null
-    currentStatus.value = null
-    currentStatusLabel.value = null
-    streaming.value = false
-    sending.value = false
-
     await loadConversations()
-    await maybeCreateTodosFromText(lastAssistantText, activeId.value)
-    if (!awaitingIntake.value) {
-      await refreshMessages()
+
+    if (!finished.todoToolCalled) {
+      await maybeCreateTodosFromText(finished.assistantMessage?.content ?? '', id)
     }
-    await nextTick()
-    scrollToBottom()
+
+    await refreshMessages(id, !keep)
+  } finally {
+    finalizing.delete(id)
   }
+
+  await nextTick()
+  scrollToBottom()
 }
+
+/**
+ * The watcher, rather than the send call, is what makes this survive leaving
+ * the page: it re-runs against whichever turn just completed.
+ */
+watch(
+  () => chatStream.turns[activeId.value ?? '']?.finishedAt ?? null,
+  (finishedAt, previous) => {
+    if (!finishedAt || finishedAt === previous) return
+    if (activeId.value) void finalizeTurn(activeId.value)
+  },
+)
+
+/** The model filed tasks mid-answer; show them. */
+watch(
+  () => chatStream.turns[activeId.value ?? '']?.todosUpdatedAt ?? 0,
+  (updatedAt) => {
+    if (updatedAt) openPanel('tasks')
+  },
+)
 
 function scrollToBottom() {
   if (messagesContainer.value) {
@@ -784,22 +579,12 @@ onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 function stopStreaming() {
-  textStreamer?.flush()
-  streamController.value?.abort()
-  streamController.value = null
-  currentStatus.value = null
-  currentStatusLabel.value = null
-  awaitingIntake.value = false
-  streamError.value = ''
+  if (activeId.value) chatStream.stop(activeId.value)
 }
 
 function retryLast() {
-  if (!lastQuestion.value || busy.value) return
-  if (messageStartIndex >= 0) {
-    messages.value.splice(messageStartIndex)
-  }
-  streamError.value = ''
-  void send(lastQuestion.value)
+  if (!activeId.value || !lastQuestion.value || busy.value) return
+  void chatStream.retry(activeId.value, handleUpgradeRequired)
 }
 
 onMounted(async () => {
@@ -817,8 +602,8 @@ onMounted(async () => {
   }
 })
 
-watch(messages, async () => {
-  if (messages.value.length === 0) return
+watch(thread, async () => {
+  if (thread.value.length === 0) return
   await nextTick()
   scrollToBottom()
 }, { deep: true })
@@ -832,12 +617,8 @@ watch(activeId, async (id) => {
   }
 })
 
-onBeforeUnmount(() => {
-  textStreamer?.stop()
-  textStreamer = null
-  streamController.value?.abort()
-  streamController.value = null
-})
+// Nothing to tear down: the turn is the store's, and leaving this page is
+// exactly the case it exists to survive.
 </script>
 
 <template>
@@ -847,7 +628,7 @@ onBeforeUnmount(() => {
       class="hidden md:flex"
       :conversations="conversations"
       :active-id="activeId"
-      :busy="busy"
+      :streaming-ids="chatStream.streamingIds"
       @new="startNewChat"
       @select="switchConversation"
       @delete="deleteConversation"
@@ -900,7 +681,7 @@ onBeforeUnmount(() => {
               <span class="hidden sm:inline">{{ searchOpen ? 'Close search' : 'Search' }}</span>
             </Button>
             <Button
-              v-if="activeAssistantMessage"
+              v-if="citationCount > 0"
               variant="ghost"
               size="sm"
               class="gap-1.5 px-2 text-xs sm:px-3"
@@ -908,11 +689,9 @@ onBeforeUnmount(() => {
               :aria-pressed="showCitations"
               @click="togglePanel('citations')"
             >
-              <BookOpenIcon class="size-4" />
-              <span class="hidden sm:inline">{{ showCitations ? 'Hide citations' : 'Citations' }}</span>
-              <Badge v-if="activeAssistantMessage.sources.length > 0" variant="secondary" class="px-1.5 text-[10px]">
-                {{ activeAssistantMessage.sources.length }}
-              </Badge>
+              <QuoteIcon class="size-4" />
+              <span class="hidden sm:inline">{{ showCitations ? 'Hide sources' : 'Sources' }}</span>
+              <Badge variant="secondary" class="px-1.5 text-[10px]">{{ citationCount }}</Badge>
             </Button>
             <Button
               v-if="activeConversation"
@@ -935,15 +714,17 @@ onBeforeUnmount(() => {
       <div class="relative min-h-0 flex-1">
         <div ref="messagesContainer" data-tour="chat-sources" class="absolute inset-0 overflow-y-auto">
           <ChatEmptyState
-            v-if="messages.length === 0"
+            v-if="thread.length === 0"
             title="Research Philippine law with Batayan"
             description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
             eyebrow="Batayan AI"
-          />
+          >
+            <ChatStarters :starters="starters" @select="selectPrompt" />
+          </ChatEmptyState>
 
         <ChatThread
           v-else
-          :messages="messages"
+          :messages="thread"
           :streaming="streaming"
           :status-label="statusLabel"
           :topic="currentTopic"
@@ -977,29 +758,30 @@ onBeforeUnmount(() => {
       <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
         <ChatSearchBar
           ref="searchBarRef"
-          :messages="messages"
+          :messages="thread"
           @query="searchQuery = $event"
           @navigate="searchNavigate"
           @close="toggleSearch"
         />
       </div>
 
-      <div data-tour="chat-composer" class="border-t p-3">
-        <!-- <ChatPromptSuggestions :suggestions="starters" @select="selectPrompt" /> -->
-        <ChatComposer
-          ref="composerRef"
-          v-model="input"
-          :disabled="busy"
-          :streaming="streaming"
-          :attachments="attachmentsState.attachments.value"
-          :can-send="!attachmentsState.pending.value"
-          placeholder="Ask about Philippine law or your documents…"
-          help-context="general"
-          @send="send()"
-          @stop="stopStreaming"
-          @attach="attachmentsState.add"
-          @remove-attachment="attachmentsState.remove"
-        />
+      <div data-tour="chat-composer" class="border-t px-3 py-3">
+        <div class="mx-auto w-full max-w-3xl">
+          <ChatComposer
+            ref="composerRef"
+            v-model="input"
+            :disabled="busy"
+            :streaming="streaming"
+            :attachments="attachmentsState.attachments.value"
+            :can-send="!attachmentsState.pending.value"
+            placeholder="Ask about Philippine law or your documents…"
+            help-context="general"
+            @send="send()"
+            @stop="stopStreaming"
+            @attach="attachmentsState.add"
+            @remove-attachment="attachmentsState.remove"
+          />
+        </div>
       </div>
     </section>
 
@@ -1009,17 +791,17 @@ onBeforeUnmount(() => {
       @close="rightPanel = null"
     />
 
-    <CitationPanel
-      v-if="hasCitations && showCitations"
-      :message="activeAssistantMessage"
-      :active-citation="activeCitation"
+    <CitationsPanel
+      v-if="showCitations"
+      :messages="(thread as ChatMessage[])"
+      :target="citationTarget"
       @close="rightPanel = null"
     />
 
     <!-- Floating Document Preview Panel (Large Screens) -->
     <aside
       v-if="previewDoc"
-      class="relative hidden lg:flex shrink-0 flex-col border-l bg-background"
+      class="relative hidden lg:flex shrink-0 flex-col border-l bg-card"
       :style="{ width: `${previewWidth}px` }"
     >
       <div
@@ -1083,7 +865,7 @@ onBeforeUnmount(() => {
         class="fixed inset-0 z-50 lg:hidden"
       >
         <div class="absolute inset-0 bg-black/60" @click="closePreview" />
-        <div class="absolute inset-4 flex flex-col rounded-lg bg-background shadow-xl">
+        <div class="absolute inset-4 flex flex-col rounded-lg bg-popover shadow-xl">
           <div class="flex items-center justify-between border-b px-4 py-2.5">
             <span class="text-sm font-medium truncate">{{ previewDoc.title }}</span>
             <div class="flex items-center gap-2">
@@ -1144,7 +926,7 @@ onBeforeUnmount(() => {
     <Teleport to="body">
       <div v-if="mobileConversations" class="fixed inset-0 z-50 md:hidden">
         <div class="absolute inset-0 bg-black/60" @click="mobileConversations = false" />
-        <div class="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-background shadow-xl">
+        <div class="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-card shadow-xl">
           <div class="flex h-12 shrink-0 items-center justify-between border-b px-3">
             <span class="text-sm font-semibold">Conversations</span>
             <Button variant="ghost" size="icon" class="size-8" aria-label="Close conversations" @click="mobileConversations = false">
@@ -1157,7 +939,7 @@ onBeforeUnmount(() => {
               class="h-full w-full border-r-0"
               :conversations="conversations"
               :active-id="activeId"
-              :busy="busy"
+              :streaming-ids="chatStream.streamingIds"
               @new="startNewChat"
               @select="(id: string) => { switchConversation(id); mobileConversations = false }"
               @delete="deleteConversation"

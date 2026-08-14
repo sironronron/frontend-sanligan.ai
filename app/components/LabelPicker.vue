@@ -199,7 +199,7 @@ onMounted(() => {
         :disabled="props.disabled"
         :aria-label="props.ariaLabel"
         :class="cn(
-          'inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:border-solid hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50',
+          'inline-flex items-center gap-1 rounded-md border border-dashed bg-muted/45 px-2 py-0.5 text-xs text-muted-foreground hover:border-solid hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50',
           props.triggerClass,
         )"
         @click="openPanel"

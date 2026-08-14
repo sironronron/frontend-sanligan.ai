@@ -16,7 +16,7 @@ const emit = defineEmits<{
     v-for="starter in starters"
     :key="starter.label"
     variant="outline"
-    class="w-full justify-start gap-2 text-left"
+    class="max-w-full gap-2 text-left"
     :title="starter.prompt"
     @click="emit('select', starter.prompt)"
   >

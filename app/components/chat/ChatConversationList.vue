@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquareIcon, PlusIcon, TrashIcon } from '@lucide/vue'
+import { Loader2Icon, MessageSquareIcon, PlusIcon, TrashIcon } from '@lucide/vue'
 import { cn } from '~/lib/utils'
 import LabelPicker from '~/components/LabelPicker.vue'
 import type { AppliedLabel } from '~/stores/labels'
@@ -17,11 +17,16 @@ export interface ConversationItem {
 const props = withDefaults(defineProps<{
   conversations: ConversationItem[]
   activeId: string | null
-  busy?: boolean
   /** Tag ids the list is currently filtered by. */
   filterTagIds?: string[]
+  /**
+   * Threads whose answer is still being generated. A thread stays live when the
+   * user leaves it, so the list is where they see it is still working — and
+   * where they get back to it.
+   */
+  streamingIds?: string[]
   class?: string
-}>(), { class: '', filterTagIds: () => [] })
+}>(), { class: '', filterTagIds: () => [], streamingIds: () => [] })
 
 defineEmits<{
   new: []
@@ -29,6 +34,10 @@ defineEmits<{
   delete: [id: string]
   'update:filterTagIds': [ids: string[]]
 }>()
+
+function isStreaming(id: string): boolean {
+  return props.streamingIds.includes(id)
+}
 
 function timeLabel(conversation: ConversationItem): string {
   const date = conversation.last_message_at ?? conversation.updated_at
@@ -53,7 +62,7 @@ function timeLabel(conversation: ConversationItem): string {
 <template>
     <aside :class="cn('flex w-72 shrink-0 flex-col border-r bg-muted/30', props.class)">
     <div class="space-y-2 border-b p-3">
-      <Button class="w-full gap-1.5" :disabled="busy" @click="$emit('new')">
+      <Button class="w-full gap-1.5" @click="$emit('new')">
         <PlusIcon class="size-4" />
         New chat
       </Button>
@@ -80,12 +89,23 @@ function timeLabel(conversation: ConversationItem): string {
             @click="$emit('select', c.id)"
           >
             <span class="flex w-full items-center gap-2">
-              <MessageSquareIcon class="size-3.5 shrink-0 text-muted-foreground" />
+              <Loader2Icon v-if="isStreaming(c.id)" class="size-3.5 shrink-0 animate-spin text-primary" />
+              <MessageSquareIcon v-else class="size-3.5 shrink-0 text-muted-foreground" />
               <span class="truncate text-sm font-medium" :class="c.id === activeId ? 'text-primary' : ''">
                 {{ c.title || 'New conversation' }}
               </span>
             </span>
-            <span class="ml-[22px] text-[11px] text-muted-foreground/80">
+            <span
+              v-if="isStreaming(c.id)"
+              class="ml-[22px] flex items-center gap-1 text-[11px] font-medium text-primary"
+            >
+              <span class="relative flex size-1.5">
+                <span class="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                <span class="relative inline-flex size-1.5 rounded-full bg-primary" />
+              </span>
+              Batayan is replying…
+            </span>
+            <span v-else class="ml-[22px] text-[11px] text-muted-foreground/80">
               {{ timeLabel(c) }}
             </span>
             <span v-if="c.tags?.length" class="ml-[22px] flex flex-wrap gap-1">
@@ -118,6 +138,7 @@ function timeLabel(conversation: ConversationItem): string {
             </span>
           </button>
           <button
+            v-if="!isStreaming(c.id)"
             class="mr-1 shrink-0 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 max-lg:opacity-100"
             title="Delete conversation"
             @click="$emit('delete', c.id)"

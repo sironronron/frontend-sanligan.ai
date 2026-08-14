@@ -20,7 +20,7 @@ const lookingUp = ref(false)
 // Set when the email has been submitted and we've moved to the password step.
 const emailConfirmed = ref(false)
 // When the account was last used, shown on the password step. Null hides the
-// greeting (never-used account or unknown email — the API does not tell which).
+// greeting for an account that exists but has never used the app.
 const lastUsedAt = ref<string | null>(null)
 
 // The form is novalidate so errors render in the page rather than in native
@@ -46,9 +46,9 @@ function validatePasswordStep(): boolean {
 }
 
 /**
- * Look up when the email was last used, then move on to the password step.
- * The greeting is a nicety, so a failed lookup never blocks sign-in — the
- * user just proceeds without it.
+ * Look up the email, then either refuse to continue (no account) or move on
+ * to the password step. The greeting is a nicety, so a failed lookup never
+ * blocks sign-in — the user just proceeds without it.
  */
 async function continueWithEmail() {
   if (lookingUp.value || submitting.value) return
@@ -61,11 +61,19 @@ async function continueWithEmail() {
   lookingUp.value = true
 
   try {
-    const { last_used_at } = await api<{ last_used_at: string | null }>(
+    const { exists, last_used_at } = await api<{ exists: boolean; last_used_at: string | null }>(
       `/auth/last-used?email=${encodeURIComponent(email.value.trim())}`,
     )
+
+    if (!exists) {
+      error.value = `No account found for ${email.value.trim()}. Check the address or create an account instead.`
+      return
+    }
+
     lastUsedAt.value = last_used_at
   } catch {
+    // The lookup is a nicety: if it fails, proceed to the password step and
+    // let the actual sign-in be the source of truth.
     lastUsedAt.value = null
   } finally {
     lookingUp.value = false
@@ -176,7 +184,7 @@ async function handleSubmit() {
         <span class="h-px flex-1 bg-border" />
       </div>
 
-      <GoogleAuthButton label="Sign in with Google" @error="error = $event" />
+      <GoogleAuthButton label="Sign in with Google" :last-used="timeAgo(lastUsedAt)" @error="error = $event" />
     </template>
 
     <template v-else>
@@ -186,25 +194,15 @@ async function handleSubmit() {
       </Button>
 
       <div
-        v-if="lastUsedAt"
-        class="flex items-start gap-2.5 rounded-lg border border-forest/25 bg-forest/10 px-3.5 py-3 text-sm"
+        v-if="error"
+        role="alert"
+        class="flex items-start gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
       >
-        <MailIcon class="mt-px size-4 shrink-0 text-forest" />
-        <span>
-          Welcome back. This account was last used
-          <span class="font-medium">{{ timeAgo(lastUsedAt) }}</span>.
-        </span>
+        <CircleAlertIcon class="mt-px size-4 shrink-0" />
+        <span>{{ error }}</span>
       </div>
 
       <form class="space-y-5" novalidate @submit.prevent="handleSubmit">
-        <div
-          v-if="error"
-          role="alert"
-          class="flex items-start gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-3.5 py-3 text-sm text-destructive"
-        >
-          <CircleAlertIcon class="mt-px size-4 shrink-0" />
-          <span>{{ error }}</span>
-        </div>
 
         <div class="space-y-2">
           <Label for="email">Email</Label>
@@ -258,7 +256,7 @@ async function handleSubmit() {
         <span class="h-px flex-1 bg-border" />
       </div>
 
-      <GoogleAuthButton label="Sign in with Google" @error="error = $event" />
+      <GoogleAuthButton label="Sign in with Google" :last-used="timeAgo(lastUsedAt)" @error="error = $event" />
     </template>
 
     <template #footer>

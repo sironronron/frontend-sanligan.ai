@@ -10,7 +10,7 @@ import {
 } from '@lucide/vue'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'subscription'],
+  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
 })
 
 interface Template {
@@ -252,7 +252,7 @@ onMounted(loadTemplates)
 
           <div>
             <div
-              class="flex items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center text-xs text-muted-foreground transition-colors"
+              class="flex items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-xs text-muted-foreground transition-colors"
               :class="fileDrop.dragging.value ? 'border-primary bg-primary/5' : ''"
               @click="fileInput?.click()"
               @keydown.enter="fileInput?.click()"

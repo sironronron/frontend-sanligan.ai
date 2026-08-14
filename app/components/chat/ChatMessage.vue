@@ -4,9 +4,7 @@ import {
   ClipboardCheckIcon,
   CopyIcon,
   DownloadIcon,
-  ExternalLinkIcon,
   FileTextIcon,
-  GlobeIcon,
   Loader2Icon,
   ThumbsDownIcon,
   ThumbsUpIcon,
@@ -15,8 +13,7 @@ import { toast } from '~/components/ui/sonner'
 import { renderMarkdown } from '~/utils/markdown'
 import { vHighlight } from '~/directives/highlight'
 import ActivityTimeline from '~/components/ActivityTimeline.vue'
-import CitedText from '~/components/CitedText.vue'
-import type { ChatActivityStep, ChatMessage, ChatMessageAttachment, ChatSource } from '~/types/chat'
+import type { ChatActivityStep, ChatMessage, ChatMessageAttachment } from '~/types/chat'
 
 const props = defineProps<{
   message: ChatMessage
@@ -79,32 +76,6 @@ function intakePairs(content: string): IntakePair[] | null {
     })
   }
   return pairs.length > 0 ? pairs : null
-}
-
-function webSourcesFor(m: ChatMessage): ChatSource[] {
-  return m.sources.filter((s) => s.type === 'web')
-}
-
-function nonWebSources(m: ChatMessage): ChatSource[] {
-  return m.sources.filter((s) => s.type !== 'web')
-}
-
-function parseUrl(url: string): { hostname: string; pathname: string } {
-  try {
-    const parsed = new URL(url)
-    return { hostname: parsed.hostname, pathname: parsed.pathname }
-  } catch {
-    return { hostname: url, pathname: '' }
-  }
-}
-
-function faviconUrl(url?: string | null): string | undefined {
-  if (!url) return undefined
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(parseUrl(url).hostname)}&sz=64`
-}
-
-function openUrl(url?: string | null) {
-  if (url) window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 async function copyContent() {
@@ -318,64 +289,8 @@ const highlightValue = computed(() => ({
         </template>
       </div>
 
-      <!-- Web sources -->
-      <div v-if="message.role === 'assistant' && webSourcesFor(message).length > 0" class="mt-2 w-full max-w-[85%] space-y-2">
-        <p class="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Web sources</p>
-        <div
-          v-for="(source, index) in webSourcesFor(message)"
-          :key="`web-${index}`"
-          class="rounded-xl border bg-card p-3 transition-colors hover:border-primary/40"
-        >
-          <div class="flex items-start gap-2.5">
-            <img
-              v-if="faviconUrl(source.url)"
-              :src="faviconUrl(source.url)"
-              alt=""
-              class="mt-0.5 size-4 shrink-0 rounded-sm"
-              loading="lazy"
-            />
-            <GlobeIcon v-else class="mt-0.5 size-4 shrink-0 text-primary" />
-            <p class="min-w-0 flex-1 break-words text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
-            <Button v-if="source.url" variant="ghost" size="icon" class="-mr-1 -mt-1 size-7 text-muted-foreground" title="Open source" @click="openUrl(source.url)">
-              <ExternalLinkIcon class="size-3.5" />
-            </Button>
-          </div>
-          <CitedText v-if="source.excerpt" :text="source.excerpt" :clamp="3" />
-        </div>
-      </div>
-
-      <!-- Non-web sources (inline on small screens only) -->
-      <div v-if="message.role === 'assistant' && nonWebSources(message).length > 0" class="mt-2 w-full max-w-[85%] space-y-1.5 lg:hidden">
-        <p class="text-xs font-medium text-muted-foreground">Sources</p>
-        <div
-          v-for="(source, index) in nonWebSources(message)"
-          :key="`${source.label}-${index}`"
-          class="rounded-xl border bg-card p-3"
-        >
-          <div class="flex items-start gap-2">
-            <Badge variant="secondary" class="mt-0.5 h-5 shrink-0 text-[10px]">
-              {{ source.type === 'legal' ? 'LEGAL' : 'DOCUMENT' }}
-            </Badge>
-            <div class="min-w-0 flex-1">
-              <p class="text-sm font-medium leading-tight">{{ source.title || source.label }}</p>
-              <p v-if="source.title && source.label && source.title !== source.label" class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                {{ source.label }}
-              </p>
-              <a
-                v-if="source.url"
-                :href="source.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-              >
-                <ExternalLinkIcon class="size-3" />
-                {{ parseUrl(source.url).hostname }}{{ parseUrl(source.url).pathname.length > 1 ? parseUrl(source.url).pathname : '' }}
-              </a>
-            </div>
-          </div>
-          <CitedText v-if="source.excerpt" :text="source.excerpt" :clamp="2" />
-        </div>
-      </div>
+      <!-- Cited sources: the inline numbers in the answer text are the only
+           citation affordance now — no cards, panels, or popovers. -->
     </div>
   </div>
 </template>

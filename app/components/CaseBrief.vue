@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { ChevronDownIcon, PencilIcon, TagIcon, XIcon } from '@lucide/vue'
-import type { LegalCase } from '~/stores/cases'
+import { CheckIcon, ChevronDownIcon, TagIcon, XIcon } from '@lucide/vue'
+import { CASE_STATUSES, type LegalCase } from '~/stores/cases'
 
 /**
- * The facts of the matter, pinned above the first message.
+ * The facts of the matter, pinned at the top of the case sidebar.
  *
- * This used to be a third row of the page header, which meant it cost vertical
- * space on every screen for the entire session — and the header was already
- * two rows deep before a single message was visible. It now sits pinned above
- * the scroller, full width with the header's padding, and collapses to a slim
+ * This used to sit above the thread scroller, where it cost vertical space on
+ * the conversation for the entire session. It now anchors the left rail, so
+ * the chat owns the full height of the center column, and collapses to a slim
  * bar once the detail is no longer needed.
  */
 const props = defineProps<{
@@ -16,7 +15,7 @@ const props = defineProps<{
   editable: boolean
 }>()
 
-const emit = defineEmits<{ edit: []; 'update-tags': [tags: string[]] }>()
+const emit = defineEmits<{ 'update-tags': [tags: string[]]; changeStatus: [status: LegalCase['status']] }>()
 
 const { typeLabel, formatDate, dueState } = useCasePresentation()
 
@@ -53,8 +52,8 @@ const hasBody = computed(
 const rows = computed(() => {
   const c = props.case
   const out: Array<{ label: string; value: string; class?: string }> = []
-  out.push({ label: 'Type', value: typeLabel(c.case_type) })
-  if (c.reference) out.push({ label: 'Reference', value: c.reference })
+  out.push({ label: 'Category', value: typeLabel(c.case_type) })
+  if (c.reference) out.push({ label: 'Case reference', value: c.reference })
   if (c.due_date) {
     out.push({ label: 'Deadline', value: `${formatDate(c.due_date)} — ${due.value?.label}`, class: due.value?.class })
   }
@@ -65,90 +64,114 @@ const rows = computed(() => {
 </script>
 
 <template>
-  <section v-if="hasBody || rows.length > 1" class="shrink-0 px-3 py-2.5">
-    <div class="rounded-xl border bg-card">
-      <button
-        type="button"
-        class="flex w-full items-center gap-2 px-4 py-2.5 text-left"
-        :aria-expanded="open"
-        @click="open = !open"
-      >
-        <span class="text-sm font-medium">Case brief</span>
-        <span v-if="!open" class="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-          {{ props.case.description || rows.map((r) => r.value).join(' · ') }}
-        </span>
-        <span v-else class="flex-1" />
-        <ChevronDownIcon
-          class="size-4 shrink-0 text-muted-foreground transition-transform"
-          :class="open ? '' : '-rotate-90'"
-        />
-      </button>
+  <section v-if="hasBody || rows.length > 1" class="shrink-0 border-b bg-card">
+    <button
+      type="button"
+      class="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      :aria-expanded="open"
+      @click="open = !open"
+    >
+      <span class="text-sm font-medium">Case brief</span>
+      <span v-if="!open" class="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        {{ props.case.description || rows.map((r) => r.value).join(' · ') }}
+      </span>
+      <span v-else class="flex-1" />
+      <ChevronDownIcon
+        class="size-4 shrink-0 text-muted-foreground transition-transform"
+        :class="open ? '' : '-rotate-90'"
+      />
+    </button>
 
-      <div v-if="open" class="space-y-3 border-t px-4 py-3">
-        <p v-if="props.case.description" class="text-sm leading-relaxed text-muted-foreground">
-          {{ props.case.description }}
-        </p>
-
-        <!--
-          A label column, so the eye can find "Deadline" without reading the
-          whole line. The old dot-separated run made every fact equally hard
-          to locate.
-        -->
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-          <template v-for="row in rows" :key="row.label">
-            <dt class="text-muted-foreground">{{ row.label }}</dt>
-            <dd :class="row.class ?? ''">{{ row.value }}</dd>
-          </template>
-        </dl>
-
-        <div v-if="props.case.tags?.length || props.editable" class="space-y-1.5">
-          <div v-if="props.case.tags?.length" class="flex flex-wrap items-center gap-1">
-            <span
-              v-for="tag in props.case.tags"
-              :key="tag"
-              class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
+    <div v-if="open" class="max-h-72 space-y-3 overflow-y-auto border-t px-3 py-3">
+      <div>
+        <p class="font-heading text-lg font-semibold leading-snug tracking-tight">{{ props.case.title }}</p>
+        <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <DropdownMenu v-if="props.editable">
+            <DropdownMenuTrigger
+              class="shrink-0 rounded-4xl"
+              :aria-label="`Case status: ${props.case.status}`"
             >
-              {{ tag }}
-              <button
-                v-if="props.editable"
-                type="button"
-                :aria-label="`Remove tag ${tag}`"
-                class="rounded text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                @click="removeTag(tag)"
+              <CaseStatusBadge :status="props.case.status" interactive>
+                <ChevronDownIcon class="size-3 opacity-60" />
+              </CaseStatusBadge>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" class="w-40">
+              <DropdownMenuLabel class="text-xs text-muted-foreground">Move case to</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                v-for="option in CASE_STATUSES"
+                :key="option.value"
+                @click="emit('changeStatus', option.value as LegalCase['status'])"
               >
-                <XIcon class="size-3" />
-              </button>
-            </span>
-          </div>
+                <CheckIcon v-if="props.case.status === option.value" class="size-4 text-primary" />
+                <span v-else class="size-4" aria-hidden="true" />
+                {{ option.label }}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <CaseStatusBadge v-else :status="props.case.status" />
+          <CasePriorityBadge :priority="props.case.priority" show-quiet />
+        </div>
+      </div>
 
-          <div v-if="props.editable">
+      <p v-if="props.case.description" class="text-[13px] leading-relaxed text-muted-foreground">
+        {{ props.case.description }}
+      </p>
+
+      <!--
+        A label column, so the eye can find "Deadline" without reading the
+        whole line. The old dot-separated run made every fact equally hard
+        to locate.
+      -->
+      <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+        <template v-for="row in rows" :key="row.label">
+          <dt class="text-muted-foreground">{{ row.label }}</dt>
+          <dd :class="row.class ?? ''">{{ row.value }}</dd>
+        </template>
+      </dl>
+
+      <div v-if="props.case.tags?.length || props.editable" class="space-y-1.5">
+        <div v-if="props.case.tags?.length" class="flex flex-wrap items-center gap-1">
+          <span
+            v-for="tag in props.case.tags"
+            :key="tag"
+            class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
+          >
+            {{ tag }}
             <button
-              v-if="!tagAdding"
+              v-if="props.editable"
               type="button"
-              class="inline-flex items-center gap-1 rounded-md border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:border-solid hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              @click="tagAdding = true"
+              :aria-label="`Remove tag ${tag}`"
+              class="rounded text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              @click="removeTag(tag)"
             >
-              <TagIcon class="size-3" />
-              Add tag
+              <XIcon class="size-3" />
             </button>
-            <div v-else class="flex items-center gap-1.5">
-              <Input
-                v-model="tagInput"
-                class="h-7 w-40 text-xs"
-                placeholder="Tag name…"
-                autofocus
-                @keydown.enter.prevent="addTag"
-                @keydown.esc="tagAdding = false"
-              />
-              <Button size="sm" class="h-7 px-2.5 text-xs" :disabled="!tagInput.trim()" @click="addTag">Add</Button>
-            </div>
-          </div>
+          </span>
         </div>
 
-        <Button v-if="props.editable" variant="ghost" size="xs" class="-ml-2 text-muted-foreground" @click="$emit('edit')">
-          <PencilIcon />
-          Edit case details
-        </Button>
+        <div v-if="props.editable">
+          <button
+            v-if="!tagAdding"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-md border border-dashed bg-muted/45 px-2 py-0.5 text-xs text-muted-foreground hover:border-solid hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            @click="tagAdding = true"
+          >
+            <TagIcon class="size-3" />
+            Add tag
+          </button>
+          <div v-else class="flex items-center gap-1.5">
+            <Input
+              v-model="tagInput"
+              class="h-7 w-40 text-xs"
+              placeholder="Tag name…"
+              autofocus
+              @keydown.enter.prevent="addTag"
+              @keydown.esc="tagAdding = false"
+            />
+            <Button size="sm" class="h-7 px-2.5 text-xs" :disabled="!tagInput.trim()" @click="addTag">Add</Button>
+          </div>
+        </div>
       </div>
     </div>
   </section>

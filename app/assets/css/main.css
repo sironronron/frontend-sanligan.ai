@@ -12,6 +12,7 @@
   --cream: #F7EAE0;
   --peach: #F9D2BA;
   --espresso: #5E3122;
+  --pine: #0F2A1E;
 }
 
 @theme inline {
@@ -57,42 +58,67 @@
   --color-cream: var(--cream);
   --color-peach: var(--peach);
   --color-espresso: var(--espresso);
+  --color-pine: var(--pine);
+  /* Exposed as shadow-raised / shadow-float utilities. */
+  --shadow-raised: var(--elevation-raised);
+  --shadow-float: var(--elevation-float);
 }
 
+/*
+ * Elevation ladder. The page is the *recessed* plane and raised surfaces step
+ * up towards white — so a card, panel, or section never renders in the same
+ * colour as the page behind it. Three rungs, each a visible step apart:
+ *
+ *   --muted       inset  — wells, table headers, secondary fills
+ *   --background  page   — the plane everything else sits on
+ *   --card        raised — cards, sections, panels
+ *   --popover     float  — menus and dialogs, above everything
+ *
+ * Previously --background (#F7EAE0) and --card (#FCEADE) were the same colour
+ * to the eye, so every card relied on its 1px ring to exist at all.
+ */
 :root {
-  --background: #F7EAE0;
-  --foreground: #5E3122;
-  --card: #FCEADE;
-  --card-foreground: #5E3122;
-  --popover: #FCEADE;
-  --popover-foreground: #5E3122;
+  --background: #EFE1D4;
+  --foreground: #4A2317;
+  --card: #FDF7F2;
+  --card-foreground: #4A2317;
+  --popover: #FFFCF9;
+  --popover-foreground: #4A2317;
   --primary: #1D4533;
-  --primary-foreground: #F7EAE0;
+  --primary-foreground: #FBF3EC;
   --secondary: #F9D2BA;
-  --secondary-foreground: #5E3122;
-  --muted: #EFE0D2;
-  --muted-foreground: #8A6A58;
+  --secondary-foreground: #4A2317;
+  --muted: #E4D2C1;
+  --muted-foreground: #7C5A47;
   --accent: #F9D2BA;
-  --accent-foreground: #5E3122;
-  --destructive: #B4482E;
-  --destructive-foreground: #FCEADE;
-  --border: #E5BA9A;
-  --input: #E5BA9A;
+  --accent-foreground: #4A2317;
+  --destructive: #A93F26;
+  --destructive-foreground: #FDF7F2;
+  --border: #D9BCA0;
+  --input: #D9BCA0;
   --ring: #2F6650;
-  --radius: 0.625rem;
-  --sidebar: #F2E2D3;
-  --sidebar-foreground: #5E3122;
+  --radius: 0.75rem;
+  --sidebar: #E8D8C9;
+  --sidebar-foreground: #4A2317;
   --sidebar-accent: #F9D2BA;
-  --sidebar-accent-foreground: #5E3122;
-  --sidebar-border: #E5BA9A;
+  --sidebar-accent-foreground: #4A2317;
+  --sidebar-border: #D9BCA0;
   --sidebar-ring: #2F6650;
   --sidebar-primary: #1D4533;
-  --sidebar-primary-foreground: #F7EAE0;
+  --sidebar-primary-foreground: #FBF3EC;
   --chart-1: #1D4533;
-  --chart-2: #5E3122;
-  --chart-3: #F9D2BA;
-  --chart-4: #8A6A58;
-  --chart-5: #B4482E;
+  --chart-2: #4A2317;
+  --chart-3: #E0A57E;
+  --chart-4: #7C5A47;
+  --chart-5: #A93F26;
+
+  /*
+   * Warm-tinted shadows. Neutral grey shadows read as dirt on a cream page,
+   * so these are espresso-hued and kept shallow — the colour step does the
+   * separating, the shadow only seats the surface.
+   */
+  --elevation-raised: 0 1px 2px rgb(74 35 23 / 0.04), 0 2px 8px rgb(74 35 23 / 0.05);
+  --elevation-float: 0 4px 12px rgb(74 35 23 / 0.08), 0 12px 32px rgb(74 35 23 / 0.10);
 }
 
 /*
@@ -103,39 +129,50 @@ body {
   font-feature-settings: 'rlig' 1, 'calt' 1;
 }
 
+/*
+ * Dark mode runs the same ladder inverted: the page is the darkest plane and
+ * each rung lightens. --secondary/--muted/--card were all #1D2E25 before, so
+ * a card, a muted well, and a secondary button were one flat mass.
+ */
 .dark {
-  --background: #14231C;
+  --background: #0E1A15;
   --foreground: #F2E4D8;
-  --card: #1D2E25;
+  --card: #1B2C24;
   --card-foreground: #F2E4D8;
-  --popover: #1D2E25;
+  /* Must out-lift --muted (#26382F): a menu floats above the fills inside a card. */
+  --popover: #2B4036;
   --popover-foreground: #F2E4D8;
-  --primary: #4E9B77;
-  --primary-foreground: #14231C;
-  --secondary: #1D2E25;
+  --primary: #5CAC86;
+  --primary-foreground: #0B1610;
+  --secondary: #26382F;
   --secondary-foreground: #F2E4D8;
-  --muted: #1D2E25;
-  --muted-foreground: #C9A98F;
+  --muted: #26382F;
+  --muted-foreground: #BFA189;
   --accent: #F9D2BA;
-  --accent-foreground: #14231C;
+  --accent-foreground: #0E1A15;
   --destructive: #E0705A;
-  --destructive-foreground: #14231C;
-  --border: #33473C;
-  --input: #33473C;
-  --ring: #4E9B77;
-  --chart-1: #4E9B77;
+  --destructive-foreground: #0E1A15;
+  --border: #35493E;
+  --input: #35493E;
+  --ring: #5CAC86;
+  --chart-1: #5CAC86;
   --chart-2: #F2E4D8;
   --chart-3: #C9A98F;
-  --chart-4: #33473C;
+  --chart-4: #35493E;
   --chart-5: #E0705A;
-  --sidebar: #18261F;
+  --sidebar: #13211B;
   --sidebar-foreground: #F2E4D8;
-  --sidebar-primary: #4E9B77;
-  --sidebar-primary-foreground: #14231C;
-  --sidebar-accent: #1D2E25;
+  --sidebar-primary: #5CAC86;
+  --sidebar-primary-foreground: #0B1610;
+  --sidebar-accent: #26382F;
   --sidebar-accent-foreground: #F2E4D8;
-  --sidebar-border: #33473C;
-  --sidebar-ring: #4E9B77;
+  --sidebar-border: #35493E;
+  --sidebar-ring: #5CAC86;
+
+  /* Dark surfaces separate by lightness, not shadow — so these stay near-black
+     and shallow, present only to anchor floating layers. */
+  --elevation-raised: 0 1px 2px rgb(0 0 0 / 0.24), 0 2px 8px rgb(0 0 0 / 0.20);
+  --elevation-float: 0 4px 12px rgb(0 0 0 / 0.36), 0 12px 32px rgb(0 0 0 / 0.44);
 }
 
 @layer base {
@@ -151,6 +188,107 @@ body {
   }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+/*
+ * Section surfaces. The house rule is that a section never renders in the page
+ * colour — it steps up onto --card (or down into --muted for a well). These
+ * three classes are the sanctioned ways to do that, so a page never hand-rolls
+ * its own bg/border/radius combination and drifts.
+ */
+@layer components {
+  /* The default: a raised panel holding a block of page content. */
+  .surface {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--elevation-raised);
+  }
+
+  /* A recessed well *inside* a surface — code, previews, empty states. */
+  .surface-inset {
+    background-color: var(--muted);
+    color: var(--foreground);
+    border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    border-radius: var(--radius-lg);
+  }
+
+  /*
+   * A surface that responds to pointer — list rows, template tiles. Lifts on
+   * hover so the whole tile reads as one target rather than just its title.
+   */
+  .surface-interactive {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--elevation-raised);
+    transition: box-shadow 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  }
+
+  .surface-interactive:hover {
+    border-color: color-mix(in srgb, var(--ring) 45%, var(--border));
+    box-shadow: var(--elevation-float);
+    transform: translateY(-1px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .surface-interactive {
+      transition: none;
+    }
+    .surface-interactive:hover {
+      transform: none;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * First-run entrance. Nothing here loops: the dialog animates once on open
+   * and then holds still, so the reading surface is never competing with
+   * motion. Everything collapses under prefers-reduced-motion (end of block).
+   */
+  @keyframes dialog-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(14px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .dialog-panel-in {
+    animation: dialog-panel-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) 0.06s both;
+  }
+
+  /*
+   * Staggered children. Each sets its own --reveal-delay; `both` holds the
+   * from-state so nothing flashes before its turn comes.
+   */
+  @keyframes dialog-reveal-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .dialog-reveal {
+    animation: dialog-reveal-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0s) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dialog-panel-in,
+    .dialog-reveal {
+      animation: none;
+    }
   }
 }
 
@@ -236,5 +374,63 @@ body {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
   border-radius: 3px;
+}
+
+/*
+ * The inline citation marks inside an answer. Styled here rather than in the
+ * component because they are produced as raw HTML by the markdown renderer,
+ * which scoped component styles do not reach — and a global rule is what lets
+ * them carry hover and focus states, now that pressing one opens the source.
+ */
+.saligan-citation {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15em;
+  height: 1.15em;
+  padding: 0 0.35em;
+  font-size: 0.68em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  border-radius: 9999px;
+  vertical-align: super;
+  margin: 0 0.12em;
+  cursor: pointer;
+  user-select: none;
+  color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--primary) 35%, transparent);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.saligan-citation:hover {
+  background: color-mix(in oklab, var(--primary) 24%, transparent);
+  border-color: color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.saligan-citation:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/*
+ * The card the reader arrived at from an inline mark. It fades out on its own
+ * so the panel does not keep a stale selection lit after the reader has moved
+ * on to reading it.
+ */
+.saligan-citation-target {
+  animation: saligan-citation-flash 2s ease-out;
+}
+
+@keyframes saligan-citation-flash {
+  0%,
+  55% {
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
 }
 

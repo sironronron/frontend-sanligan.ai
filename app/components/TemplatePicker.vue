@@ -61,7 +61,7 @@ function humanizeSubtype(subtype: string | null) {
   <Teleport to="body">
     <div class="fixed inset-0 z-50">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-[2px]" @click="emit('cancel')" />
-      <div class="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-t bg-background shadow-2xl lg:inset-x-auto lg:right-0 lg:top-0 lg:bottom-0 lg:max-h-none lg:w-[440px] lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-xl">
+      <div class="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-t bg-card shadow-2xl lg:inset-x-auto lg:right-0 lg:top-0 lg:bottom-0 lg:max-h-none lg:w-[440px] lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-xl">
         <div class="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/25 lg:hidden" />
         <div class="flex items-center justify-between border-b px-4 py-3">
           <div class="flex items-center gap-2">

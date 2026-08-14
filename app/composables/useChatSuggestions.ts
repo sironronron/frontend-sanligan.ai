@@ -10,11 +10,14 @@ export type SuggestionIcon =
   | 'landmark'
   | 'calculator'
   | 'help'
+  | 'upload'
 
 export interface Suggestion {
   label: string
   prompt: string
   icon?: SuggestionIcon
+  /** Runs in the app instead of sending the prompt — the prompt is the tooltip. */
+  action?: 'upload'
 }
 
 /** A task already tracked for the thread, used to keep suggestions on the real plan. */
@@ -44,8 +47,8 @@ export interface SuggestionContext {
   templateName?: string | null
   openTasks?: SuggestionTask[]
   recentThreadTitles?: string[]
-  role?: string | null
-  useCase?: string | null
+  roles?: string[]
+  useCases?: string[]
   documentTypes?: string[]
   experienceLevel?: string | null
 }
@@ -94,6 +97,7 @@ interface Action {
   label: string
   prompt: string
   icon?: SuggestionIcon
+  action?: 'upload'
   /** Offer only when the thread mentions one of these terms. */
   needs?: string[]
   /** Skip once the thread has produced this document. */
@@ -893,6 +897,23 @@ const AFTER_DRAFT_ACTIONS: Action[] = [
   },
 ]
 
+/** Signs the thread is waiting on paper the user is already holding. */
+const UPLOAD_CUES = [
+  'upload',
+  'attach',
+  'a copy of',
+  'copy of the',
+  'send the document',
+  'supporting document',
+  'documentary',
+  'evidence',
+  'receipt',
+  'contract',
+  'notice',
+  'do you have',
+  'if you have',
+]
+
 function usable(action: Action, signals: Signals): boolean {
   if (action.unless && signals.produced.has(action.unless)) return false
   if (action.needs && !mentions(action.needs, signals.corpus)) return false
@@ -901,7 +922,7 @@ function usable(action: Action, signals: Signals): boolean {
 }
 
 function toCandidate(action: Action, score: number): Candidate {
-  return { id: action.id, label: action.label, prompt: action.prompt, icon: action.icon, score }
+  return { id: action.id, label: action.label, prompt: action.prompt, icon: action.icon, action: action.action, score }
 }
 
 function buildCandidates(signals: Signals): Candidate[] {
@@ -941,6 +962,18 @@ function buildCandidates(signals: Signals): Candidate[] {
           },
     )
   }
+
+  // The user's own paperwork is the fastest way to make the next answer
+  // specific, whether the matter lives in a case or a plain chat thread.
+  // Ranked high once the thread is asking for it.
+  candidates.push({
+    id: 'upload-documents',
+    label: 'Upload documents',
+    prompt: 'Attach the documents for this matter so the answers can rely on them.',
+    icon: 'upload',
+    action: 'upload',
+    score: mentions(UPLOAD_CUES, signals.thread) ? 87 : 55,
+  })
 
   // A question left hanging deserves an answer, not a menu of new topics, so
   // this replaces the usual playbooks instead of merely outranking them.
@@ -1005,7 +1038,7 @@ function rank(candidates: Candidate[], asks: string[], limit: number): Suggestio
 
     seen.add(candidate.id)
     seen.add(key)
-    picked.push({ label: candidate.label, prompt: candidate.prompt, icon: candidate.icon })
+    picked.push({ label: candidate.label, prompt: candidate.prompt, icon: candidate.icon, action: candidate.action })
 
     if (picked.length === limit) break
   }
@@ -1241,15 +1274,19 @@ const DOCUMENT_STARTERS: Record<string, Action> = {
 function chatStarters(context: SuggestionContext): Candidate[] {
   const candidates: Candidate[] = []
 
-  const useCase = USE_CASE_STARTERS[context.useCase ?? '']
-  if (useCase) candidates.push(toCandidate(useCase, 90))
+  // One starter per selected use case, in the order the user picked them, so a
+  // second answer adds a suggestion instead of replacing the first one.
+  ;(context.useCases ?? []).forEach((useCase, index) => {
+    const action = USE_CASE_STARTERS[useCase]
+    if (action) candidates.push(toCandidate(action, 90 - index))
+  })
 
   ;(context.documentTypes ?? []).slice(0, 2).forEach((type, index) => {
     const action = DOCUMENT_STARTERS[type]
     if (action) candidates.push(toCandidate(action, 80 - index))
   })
 
-  if (context.role === 'law_student') {
+  if ((context.roles ?? []).includes('law_student')) {
     candidates.push({
       id: 'role-student',
       label: 'Summarize a ruling',

@@ -30,7 +30,7 @@ function priorityBadge(priority: Todo['priority']) {
 </script>
 
 <template>
-  <aside class="hidden lg:flex w-[350px] shrink-0 flex-col border-l bg-background">
+  <aside class="hidden lg:flex w-[350px] shrink-0 flex-col border-l bg-card">
     <div class="flex items-center border-b px-4 py-2.5">
       <h3 class="text-sm font-semibold">Next Steps</h3>
       <Badge variant="secondary" class="ml-2">{{ pendingTodos.length }} pending</Badge>

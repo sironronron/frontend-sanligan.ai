@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
         role="dialog"
         aria-modal="true"
         aria-labelledby="case-intake-heading"
-        class="case-panel absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col overflow-hidden rounded-t-2xl border-t bg-background shadow-2xl lg:inset-x-auto lg:top-0 lg:right-0 lg:bottom-0 lg:max-h-none lg:w-[480px] lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-xl"
+        class="case-panel absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col overflow-hidden rounded-t-2xl border-t bg-card shadow-2xl lg:inset-x-auto lg:top-0 lg:right-0 lg:bottom-0 lg:max-h-none lg:w-[480px] lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-xl"
       >
         <div class="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/25 lg:hidden" />
 
@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
                     class="inline-flex h-7 flex-1 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium transition-colors"
                     :class="
                       form.status === s.value
-                        ? 'bg-background text-foreground shadow-sm'
+                        ? 'bg-card text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     "
                     :aria-pressed="form.status === s.value"
@@ -435,7 +435,7 @@ onBeforeUnmount(() => {
                     class="inline-flex h-7 flex-1 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium transition-colors"
                     :class="
                       form.priority === p.value
-                        ? 'bg-background text-foreground shadow-sm'
+                        ? 'bg-card text-foreground shadow-sm'
                         : 'text-muted-foreground hover:text-foreground'
                     "
                     :aria-pressed="form.priority === p.value"
@@ -553,7 +553,7 @@ onBeforeUnmount(() => {
 
               <div class="space-y-1.5">
                 <Label for="case-tags" class="text-xs">Tags</Label>
-                <div class="flex flex-wrap items-center gap-1.5 rounded-md border bg-background px-2 py-1.5">
+                <div class="flex flex-wrap items-center gap-1.5 rounded-md border bg-card px-2 py-1.5">
                   <span
                     v-for="tag in form.tags"
                     :key="tag"
@@ -649,7 +649,7 @@ onBeforeUnmount(() => {
             </p>
           </div>
 
-          <div class="sticky bottom-0 flex items-center gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur">
+          <div class="sticky bottom-0 flex items-center gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
             <Button
               v-if="!isEdit && step > 0"
               type="button"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, CircleIcon, ClockIcon, GripVerticalIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/vue'
+import { CheckIcon, CircleIcon, ClipboardListIcon, ClockIcon, GripVerticalIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
 import { useTodoStore, type Todo } from '~/stores/todos'
 import { cn } from '~/lib/utils'
@@ -31,6 +31,11 @@ const tasks = computed(() =>
 
 const pendingTasks = computed(() => tasks.value.filter((t) => t.status !== 'completed'))
 const completedTasks = computed(() => tasks.value.filter((t) => t.status === 'completed'))
+
+const progress = computed(() => {
+  if (tasks.value.length === 0) return 0
+  return Math.round((completedTasks.value.length / tasks.value.length) * 100)
+})
 
 function statusIcon(status: Todo['status']) {
   return status === 'completed' ? CheckIcon : status === 'on-going' ? ClockIcon : CircleIcon
@@ -157,15 +162,17 @@ function formatDueDate(date: string | null) {
         props.class,
       )"
     >
-    <div class="flex items-center justify-between border-b border-sidebar-border px-4 py-2.5">
-      <div class="flex items-center gap-2">
+    <div class="flex items-center justify-between px-4 pb-2 pt-3">
+      <div class="flex items-baseline gap-2">
         <h3 class="text-sm font-semibold">Tasks</h3>
-        <Badge variant="secondary" class="text-[10px]">{{ pendingTasks.length }} open</Badge>
+        <span v-if="tasks.length > 0" class="text-xs tabular-nums text-muted-foreground">
+          {{ completedTasks.length }} of {{ tasks.length }} done
+        </span>
       </div>
       <div class="flex items-center gap-1">
-        <Button v-if="!props.readonly" variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" @click="adding = !adding">
+        <Button v-if="!props.readonly" variant="outline" size="sm" class="h-7 gap-1 px-2 text-xs" @click="adding = !adding">
           <PlusIcon class="size-3.5" />
-          Add
+          {{ adding ? 'Cancel' : 'Add' }}
         </Button>
         <Button variant="ghost" size="icon" class="size-7 lg:hidden" aria-label="Close tasks" @click="$emit('close')">
           <XIcon class="size-4" />
@@ -173,12 +180,19 @@ function formatDueDate(date: string | null) {
       </div>
     </div>
 
+    <div v-if="tasks.length > 0" class="mx-4 mb-1 h-0.5 overflow-hidden rounded-full bg-border" aria-hidden="true">
+      <div class="h-full rounded-full bg-primary transition-all duration-300" :style="{ width: `${progress}%` }" />
+    </div>
+
     <ScrollArea class="min-h-0 flex-1">
-      <div class="space-y-1.5 p-3">
+      <div class="space-y-0.5 p-2">
         <div
           v-if="tasks.length === 0 && !adding"
           class="flex flex-col items-center gap-2 py-10 text-center"
         >
+          <span class="flex size-10 items-center justify-center rounded-full bg-muted">
+            <ClipboardListIcon class="size-5 text-muted-foreground" />
+          </span>
           <p class="text-xs text-muted-foreground">{{ props.readonly ? 'No tasks on this case' : 'No tasks yet' }}</p>
           <Button v-if="!props.readonly" variant="outline" size="sm" class="gap-1 text-xs" @click="adding = true">
             <PlusIcon class="size-3.5" />
@@ -188,11 +202,11 @@ function formatDueDate(date: string | null) {
 
         <div
           v-if="adding"
-          class="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-2"
+          class="flex items-center gap-2 rounded-lg bg-muted/50 p-2"
         >
           <Input
             v-model="newTaskTitle"
-            class="h-8 text-sm"
+            class="h-8 bg-card text-sm"
             placeholder="Task title…"
             autofocus
             @keydown.enter.prevent="addTask"
@@ -205,8 +219,12 @@ function formatDueDate(date: string | null) {
 
         <template v-for="todo in pendingTasks" :key="todo.id">
           <div
-            class="group flex items-start gap-2 rounded-lg border bg-card p-2.5 transition-colors hover:border-primary/30 hover:bg-muted"
-            :class="{ 'opacity-50': dragId === todo.id, 'border-primary': dragOverId === todo.id }"
+            class="group flex items-start gap-2 rounded-lg px-2 py-1.5 transition-colors"
+            :class="{
+              'opacity-50': dragId === todo.id,
+              'bg-primary/10': dragOverId === todo.id,
+              'hover:bg-muted': dragOverId !== todo.id,
+            }"
             :draggable="!props.readonly"
             @dragstart="onDragStart(todo)"
             @dragover="onDragOver($event, todo)"
@@ -214,7 +232,7 @@ function formatDueDate(date: string | null) {
             @dragend="dragId = null; dragOverId = null"
           >
             <GripVerticalIcon
-              class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/40"
+              class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/30"
               :class="props.readonly ? '' : 'cursor-grab'"
             />
             <button
@@ -252,7 +270,7 @@ function formatDueDate(date: string | null) {
                 {{ todo.description }}
               </div>
 
-              <div class="mt-1 flex flex-wrap items-center gap-1.5">
+              <div v-if="todo.priority || todo.due_date || todo.due_hint || todo.assignee" class="mt-1 flex flex-wrap items-center gap-1.5">
                 <Badge v-if="todo.priority" :class="priorityBadge(todo.priority)" class="px-1.5 py-0 text-[10px]">
                   {{ todo.priority }}
                 </Badge>
@@ -280,16 +298,16 @@ function formatDueDate(date: string | null) {
           </div>
         </template>
 
-        <template v-if="completedTasks.length > 0">
-          <p class="pb-1 pt-3 text-xs font-medium text-muted-foreground">
-            Completed
+        <div v-if="completedTasks.length > 0" class="mt-2 border-t border-sidebar-border pt-2">
+          <p class="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Completed · {{ completedTasks.length }}
           </p>
           <div
             v-for="todo in completedTasks"
             :key="todo.id"
-            class="group flex items-start gap-2 rounded-lg border bg-card p-2.5 opacity-60 transition-opacity hover:bg-muted"
+            class="group flex items-start gap-2 rounded-lg px-2 py-1.5 opacity-60 transition-opacity hover:bg-muted"
           >
-            <GripVerticalIcon class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/40" />
+            <GripVerticalIcon class="mt-0.5 size-3.5 shrink-0 text-muted-foreground/30" />
             <button
               type="button"
               :aria-label="`Mark “${todo.title}” as not done`"
@@ -312,7 +330,7 @@ function formatDueDate(date: string | null) {
               <TrashIcon class="size-3.5" />
             </button>
           </div>
-        </template>
+        </div>
       </div>
     </ScrollArea>
     </aside>

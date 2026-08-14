@@ -4,6 +4,7 @@ import {
   BrainIcon,
   CalendarClockIcon,
   CheckIcon,
+  ChevronDownIcon,
   CircleIcon,
   ClockIcon,
   FileTextIcon,
@@ -26,6 +27,10 @@ const progress = ref<CaseProgress | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const error = ref('')
+
+/** Whether the "The matter" details are expanded; collapsed so the long
+ * description doesn't push the actionable progress below the fold. */
+const matterOpen = ref(false)
 
 async function load(silent = false) {
   if (silent) refreshing.value = true
@@ -169,7 +174,7 @@ function deadlineText(deadline: NonNullable<CaseProgress['deadline']>) {
       <Skeleton class="h-64 w-full rounded-xl" />
     </div>
 
-    <div v-else-if="error" class="mx-auto w-full max-w-4xl rounded-xl border border-dashed py-16 text-center">
+    <div v-else-if="error" class="mx-auto w-full max-w-4xl rounded-xl border border-dashed bg-muted/45 py-16 text-center">
       <AlertTriangleIcon class="mx-auto size-8 text-muted-foreground" />
       <p class="mt-3 text-sm font-medium">{{ error }}</p>
       <Button variant="outline" size="sm" class="mt-4 gap-1.5" @click="load()">
@@ -282,18 +287,35 @@ function deadlineText(deadline: NonNullable<CaseProgress['deadline']>) {
 
       <!-- What the case is about -->
       <section v-if="progress.case.description || progress.case.related_parties.length || progress.case.tags.length" class="rounded-xl border bg-card p-4">
-        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">The matter</p>
-        <p v-if="progress.case.description" class="mt-2 whitespace-pre-line text-sm leading-relaxed">
-          {{ progress.case.description }}
-        </p>
-        <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <p v-if="progress.case.related_parties.length" class="text-xs text-muted-foreground">
-            <span class="font-medium">Parties:</span> {{ progress.case.related_parties.join(' · ') }}
+        <button
+          type="button"
+          class="flex w-full items-center gap-2 text-left"
+          :aria-expanded="matterOpen"
+          @click="matterOpen = !matterOpen"
+        >
+          <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">The matter</p>
+          <span v-if="!matterOpen && progress.case.description" class="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+            {{ progress.case.description }}
+          </span>
+          <span v-else class="flex-1" />
+          <ChevronDownIcon
+            class="size-4 shrink-0 text-muted-foreground transition-transform"
+            :class="matterOpen ? '' : '-rotate-90'"
+          />
+        </button>
+        <template v-if="matterOpen">
+          <p v-if="progress.case.description" class="mt-2 whitespace-pre-line text-sm leading-relaxed">
+            {{ progress.case.description }}
           </p>
-          <div v-if="progress.case.tags.length" class="flex flex-wrap items-center gap-1">
-            <Badge v-for="tag in progress.case.tags" :key="tag" variant="secondary">{{ tag }}</Badge>
+          <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p v-if="progress.case.related_parties.length" class="text-xs text-muted-foreground">
+              <span class="font-medium">Parties:</span> {{ progress.case.related_parties.join(' · ') }}
+            </p>
+            <div v-if="progress.case.tags.length" class="flex flex-wrap items-center gap-1">
+              <Badge v-for="tag in progress.case.tags" :key="tag" variant="secondary">{{ tag }}</Badge>
+            </div>
           </div>
-        </div>
+        </template>
       </section>
 
       <!-- Next steps -->

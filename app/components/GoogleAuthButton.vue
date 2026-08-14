@@ -4,9 +4,17 @@
  * line between signing in and signing up — the first consent creates the
  * account, every later one signs into it.
  */
-withDefaults(defineProps<{ label?: string }>(), {
-  label: 'Continue with Google',
-})
+withDefaults(
+  defineProps<{
+    label?: string
+    /** Human "X ago" label shown as a pill when the account was last used. */
+    lastUsed?: string
+  }>(),
+  {
+    label: 'Continue with Google',
+    lastUsed: '',
+  },
+)
 
 const emit = defineEmits<{ error: [message: string] }>()
 
@@ -59,5 +67,11 @@ async function handleClick() {
       />
     </svg>
     {{ pending ? 'Redirecting to Google…' : label }}
+    <span
+      v-if="lastUsed && !pending"
+      class="ml-auto flex h-5 shrink-0 items-center rounded-full bg-muted px-2 text-[10px] font-medium text-muted-foreground"
+    >
+      Last used {{ lastUsed }}
+    </span>
   </Button>
 </template>

@@ -9,7 +9,7 @@ import {
 import { useDocumentExport } from '~/composables/useDocumentExport'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'subscription'],
+  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
 })
 
 interface GeneratedDocument {
@@ -131,7 +131,7 @@ onMounted(loadDocuments)
     <!-- Document Preview Panel (Large Screens) -->
     <aside
       v-if="previewDoc"
-      class="fixed inset-y-0 right-0 z-40 hidden w-[28rem] max-w-[calc(100vw-2rem)] flex-col border-l bg-background shadow-2xl lg:flex"
+      class="fixed inset-y-0 right-0 z-40 hidden w-[28rem] max-w-[calc(100vw-2rem)] flex-col border-l bg-card shadow-2xl lg:flex"
     >
       <div class="flex items-center justify-between border-b px-4 py-2.5">
         <span class="truncate text-sm font-medium">{{ previewDoc.title }}</span>
@@ -184,7 +184,7 @@ onMounted(loadDocuments)
     <Teleport to="body">
       <div v-if="previewDoc" class="fixed inset-0 z-50 lg:hidden">
         <div class="absolute inset-0 bg-black/60" @click="closePreview" />
-        <div class="absolute inset-4 flex flex-col rounded-lg bg-background shadow-xl">
+        <div class="absolute inset-4 flex flex-col rounded-lg bg-popover shadow-xl">
           <div class="flex items-center justify-between border-b px-4 py-2.5">
             <span class="truncate text-sm font-medium">{{ previewDoc.title }}</span>
             <div class="flex items-center gap-2">

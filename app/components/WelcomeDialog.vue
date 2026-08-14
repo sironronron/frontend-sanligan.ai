@@ -61,22 +61,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           role="dialog"
           aria-modal="true"
           aria-labelledby="welcome-title"
-          class="w-full max-w-md rounded-2xl border bg-background p-7 text-center shadow-2xl"
+          class="dialog-panel-in w-full max-w-md rounded-2xl border bg-popover p-7 text-center shadow-2xl"
         >
-          <div class="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
+          <div
+            class="dialog-reveal mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10"
+            style="--reveal-delay: 0.16s"
+          >
             <span class="size-3 rounded-full bg-primary" />
           </div>
 
-          <h2 id="welcome-title" class="mt-4 font-heading text-2xl font-bold tracking-tight">
+          <h2
+            id="welcome-title"
+            class="dialog-reveal mt-4 font-heading text-2xl font-bold tracking-tight"
+            style="--reveal-delay: 0.22s"
+          >
             Welcome to Batayan<span v-if="firstName">, {{ firstName }}</span>!
           </h2>
 
-          <p class="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+          <p
+            class="dialog-reveal mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground"
+            style="--reveal-delay: 0.28s"
+          >
             Ask a question about Philippine law, or open a case and let Batayan work from your own
             documents. Every answer comes with the sources it relied on.
           </p>
 
-          <div class="mt-6 grid gap-2 sm:grid-cols-2">
+          <div class="dialog-reveal mt-6 grid gap-2 sm:grid-cols-2" style="--reveal-delay: 0.35s">
             <Button class="w-full gap-1.5" @click="go('/chat')">
               <MessagesSquareIcon class="size-4" />
               Ask a question
@@ -89,13 +99,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
           <button
             type="button"
-            class="mt-4 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            class="dialog-reveal mt-4 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            style="--reveal-delay: 0.42s"
             @click="tour.dismissWelcome()"
           >
             I'll explore on my own
           </button>
 
-          <p class="mt-4 text-[11px] text-muted-foreground/80">
+          <p
+            class="dialog-reveal mt-4 text-[11px] text-muted-foreground/80"
+            style="--reveal-delay: 0.48s"
+          >
             You can replay the tour any time from the account menu.
           </p>
         </div>

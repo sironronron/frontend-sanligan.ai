@@ -1,6 +1,14 @@
+/** A case-file category an uploaded document is filed under. */
+export interface ChatSourceTag {
+  id: string
+  name: string
+  color?: string | null
+}
+
 export interface ChatSource {
   type: 'legal' | 'document' | 'web'
   index?: number
+  token?: string
   id?: string
   chunk_index?: number
   document_id?: string
@@ -13,6 +21,15 @@ export interface ChatSource {
   title?: string | null
   excerpt?: string
   domain?: string | null
+  /** Set when the authority is in the knowledge base and can be read in-app. */
+  page_id?: string | null
+  has_digest?: boolean
+  /** Chunk indices of that page the answer cited, for highlighting. */
+  cited_chunk_indexes?: number[]
+  /** Uploaded documents only — what kind of file it is, and how it is filed. */
+  mime_type?: string | null
+  uploaded_at?: string | null
+  tags?: ChatSourceTag[]
 }
 
 /** A document the user attached to the message they sent. */

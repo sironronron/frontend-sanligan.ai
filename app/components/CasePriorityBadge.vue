@@ -22,7 +22,7 @@ const visible = computed(() => {
 </script>
 
 <template>
-  <Badge v-if="visible" variant="outline" class="mt-1" :class="priorityClass(props.priority!)">
+  <Badge v-if="visible" variant="outline" :class="priorityClass(props.priority!)">
     {{ priorityLabel(props.priority!) }}
   </Badge>
 </template>

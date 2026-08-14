@@ -85,6 +85,8 @@ export function useProductTour() {
 
   const active = useState('tour-active', () => false)
   const index = useState('tour-index', () => 0)
+  /** Opens first-run: what Batayan is, then take the tour or skip it. */
+  const introducing = useState('tour-introducing', () => false)
   /** Shown once, the first time the tour is finished or skipped. */
   const welcoming = useState('tour-welcoming', () => false)
 
@@ -98,7 +100,26 @@ export function useProductTour() {
 
   function start(): void {
     index.value = 0
+    introducing.value = false
     active.value = true
+  }
+
+  /** "Show me around" on the intro. */
+  function beginTour(): void {
+    start()
+  }
+
+  /**
+   * "Skip for now" on the intro. The tour is marked seen rather than deferred:
+   * the intro already covered what the app does, and re-opening it on every
+   * sign-in would nag someone who has said no once. The account menu keeps it
+   * reachable.
+   */
+  function skipIntro(): void {
+    introducing.value = false
+
+    // Fire-and-forget, as in finish() — dismissing must not wait on the network.
+    void auth.completeTour()
   }
 
   /**
@@ -143,17 +164,21 @@ export function useProductTour() {
   }
 
   /**
-   * Show the tour once, after onboarding is done. It waits for the profile so
+   * Offer the tour once, after onboarding is done. It waits for the profile so
    * a user who is still choosing a role is not interrupted mid-form, and it
    * never runs for someone who has already seen it.
+   *
+   * First-run opens on the intro rather than the first spotlight: a tooltip
+   * pointing at the composer means little to someone who does not yet know
+   * what Batayan is for.
    */
   function maybeStart(): void {
-    // Never restart a tour already in progress — this is called from a watcher
-    // that can fire again while the user is midway through it.
-    if (active.value || !auth.user || !auth.kycCompleted || hasCompleted()) return
+    // Never reopen over a tour already in progress — this is called from a
+    // watcher that can fire again while the user is midway through it.
+    if (introducing.value || active.value || !auth.user || !auth.kycCompleted || hasCompleted()) return
 
-    start()
+    introducing.value = true
   }
 
-  return { active, index, step, isLast, total, welcoming, start, restart, finish, next, back, maybeStart, hasCompleted, dismissWelcome }
+  return { active, index, step, isLast, total, introducing, welcoming, start, beginTour, skipIntro, restart, finish, next, back, maybeStart, hasCompleted, dismissWelcome }
 }

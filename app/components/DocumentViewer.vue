@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
         role="dialog"
         aria-modal="true"
         :aria-label="`Preview ${document.title}`"
-        class="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-background shadow-xl"
+        class="relative flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-popover shadow-xl"
       >
         <div class="flex items-center justify-between gap-3 border-b px-4 py-2.5">
           <div class="flex min-w-0 items-center gap-2">
@@ -185,14 +185,14 @@ onBeforeUnmount(() => {
           <div ref="docxContainer" class="p-4" />
           <div
             v-if="docxLoading"
-            class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-background text-sm text-muted-foreground"
+            class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-card text-sm text-muted-foreground"
           >
             <Loader2Icon class="size-4 animate-spin" />
             Loading…
           </div>
           <div
             v-else-if="docxError"
-            class="absolute inset-0 z-10 flex items-center justify-center bg-background p-6 text-center text-sm text-destructive"
+            class="absolute inset-0 z-10 flex items-center justify-center bg-card p-6 text-center text-sm text-destructive"
           >
             {{ docxError }}
           </div>

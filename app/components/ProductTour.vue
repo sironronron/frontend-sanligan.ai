@@ -139,7 +139,7 @@ onBeforeUnmount(() => {
       <div v-else class="pointer-events-auto absolute inset-0 bg-black/55" @click="tour.finish()" />
 
       <div
-        class="pointer-events-auto absolute rounded-xl border bg-background p-4 shadow-xl transition-all duration-200"
+        class="pointer-events-auto absolute rounded-xl border bg-popover p-4 shadow-xl transition-all duration-200"
         :style="tooltipStyle"
         role="dialog"
         aria-live="polite"

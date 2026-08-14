@@ -156,7 +156,7 @@ function handleSubmit() {
   <Teleport to="body">
     <div class="fixed inset-0 z-50">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-[2px]" @click="emit('cancel')" />
-      <div class="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-t bg-background shadow-2xl lg:inset-x-auto lg:right-0 lg:top-14 lg:bottom-0 lg:max-h-none lg:w-[400px] lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-xl lg:bg-background">
+      <div class="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col overflow-hidden rounded-t-2xl border-t bg-card shadow-2xl lg:inset-x-auto lg:right-0 lg:top-14 lg:bottom-0 lg:max-h-none lg:w-[400px] lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-xl lg:bg-card">
         <div class="mx-auto mt-2 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/25 lg:hidden" />
         <div class="flex items-center justify-between border-b px-4 py-3">
           <div class="flex items-center gap-2">
@@ -265,7 +265,7 @@ function handleSubmit() {
             {{ validationError }}
           </p>
 
-          <div class="sticky bottom-0 -mx-4 mt-1 flex gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur">
+          <div class="sticky bottom-0 -mx-4 mt-1 flex gap-2 border-t bg-card/95 px-4 py-3 backdrop-blur">
             <Button type="button" variant="outline" class="flex-1" @click="emit('cancel')">
               Cancel
             </Button>

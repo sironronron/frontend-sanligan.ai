@@ -9,6 +9,7 @@ import {
   ScaleIcon,
   SearchIcon,
   SparklesIcon,
+  UploadIcon,
 } from '@lucide/vue'
 import type { SuggestionIcon } from '~/composables/useChatSuggestions'
 
@@ -26,6 +27,7 @@ const icons: Record<SuggestionIcon, Component> = {
   landmark: LandmarkIcon,
   calculator: CalculatorIcon,
   help: HelpCircleIcon,
+  upload: UploadIcon,
 }
 
 export function suggestionIcon(name: SuggestionIcon | undefined): Component {

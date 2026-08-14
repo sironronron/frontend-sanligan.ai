@@ -52,14 +52,14 @@ watch(
     <div ref="container" class="p-4" />
     <div
       v-if="loading"
-      class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-background text-sm text-muted-foreground"
+      class="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-card text-sm text-muted-foreground"
     >
       <Loader2Icon class="size-4 animate-spin" />
       Loading…
     </div>
     <div
       v-else-if="error"
-      class="absolute inset-0 z-10 flex items-center justify-center bg-background p-6 text-center text-sm text-destructive"
+      class="absolute inset-0 z-10 flex items-center justify-center bg-card p-6 text-center text-sm text-destructive"
     >
       {{ error }}
     </div>

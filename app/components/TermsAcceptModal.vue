@@ -80,7 +80,7 @@ async function handleLogout() {
       aria-modal="true"
       aria-labelledby="terms-modal-title"
     >
-      <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col rounded-lg border bg-background shadow-xl">
+      <div class="flex max-h-[90dvh] w-full max-w-2xl flex-col rounded-lg border bg-popover shadow-xl">
         <div class="border-b px-6 py-4">
           <h2 id="terms-modal-title" class="text-lg font-semibold text-foreground">
             {{ auth.needsTermsReacceptance ? 'We’ve updated our terms' : 'Terms of Service and Privacy Policy' }}

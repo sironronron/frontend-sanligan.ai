@@ -12,10 +12,10 @@ const props = defineProps<{
 </script>
 
 <template>
-  <div :class="cn('flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-14 text-center', props.class)">
+  <div :class="cn('flex flex-col items-center justify-center rounded-xl border border-dashed bg-muted/45 px-6 py-14 text-center', props.class)">
     <span
       v-if="icon"
-      class="mb-4 flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground"
+      class="mb-4 flex size-11 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-raised"
     >
       <component :is="icon" class="size-5" />
     </span>

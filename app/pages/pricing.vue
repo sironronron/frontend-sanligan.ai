@@ -117,6 +117,10 @@ function annualSavingsLabel(plan: Plan) {
   return peso(plan.price * 12 - annualPrice(plan))
 }
 
+function isPro(plan: Plan) {
+  return plan.slug === 'pro'
+}
+
 function isCurrent(plan: Plan) {
   return currentPlanId.value === plan.id
 }
@@ -221,7 +225,7 @@ onMounted(async () => {
           <button
             type="button"
             class="rounded-full px-4 py-1.5 transition-colors"
-            :class="billingInterval === 'monthly' ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'"
+            :class="billingInterval === 'monthly' ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground'"
             @click="billingInterval = 'monthly'"
           >
             Monthly
@@ -229,7 +233,7 @@ onMounted(async () => {
           <button
             type="button"
             class="rounded-full px-4 py-1.5 transition-colors"
-            :class="billingInterval === 'annual' ? 'bg-background font-medium shadow-sm' : 'text-muted-foreground'"
+            :class="billingInterval === 'annual' ? 'bg-card font-medium shadow-sm' : 'text-muted-foreground'"
             @click="billingInterval = 'annual'"
           >
             Annual
@@ -247,32 +251,35 @@ onMounted(async () => {
           v-for="plan in plans"
           :key="plan.id"
           class="relative flex flex-col"
-          :class="plan.slug === 'pro'
-            ? 'overflow-visible ring-2 ring-primary shadow-lg'
+          :class="isPro(plan)
+            ? 'overflow-visible border-pine/60 bg-pine text-cream shadow-[0_28px_60px_-32px_rgba(15,42,30,0.7)] dark:border-primary'
             : ''"
         >
           <!--
             The badge straddles the top edge, so the card has to opt out of the
             `overflow-hidden` it carries by default or the upper half is clipped
-            away. Highlighting is a ring rather than a border because the card
-            outlines itself with `ring-1` and sets no border width — a border
-            colour alone would have nothing to paint.
+            away. The popular card leans on its pine fill, so its border is
+            softened to forest at 60% rather than painted in the default one.
           -->
           <Badge
-            v-if="plan.slug === 'pro'"
-            class="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 bg-primary text-primary-foreground shadow-sm"
+            v-if="isPro(plan)"
+            class="absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 bg-forest text-cream shadow-sm"
           >
             Most popular
           </Badge>
           <CardHeader>
             <CardTitle>{{ plan.name }}</CardTitle>
-            <CardDescription>{{ activeInterval === 'annual' ? 'per month, billed yearly' : 'per month' }}</CardDescription>
+            <CardDescription :class="isPro(plan) ? 'text-cream/70' : ''">
+              {{ activeInterval === 'annual' ? 'per month, billed yearly' : 'per month' }}
+            </CardDescription>
           </CardHeader>
           <CardContent class="flex flex-1 flex-col gap-6">
             <div>
               <span class="text-4xl font-bold tracking-tight">{{ priceFor(plan) }}</span>
-              <span class="text-sm text-muted-foreground"> /month</span>
-              <p v-if="activeInterval === 'annual'" class="mt-1 text-xs text-muted-foreground">
+              <span :class="isPro(plan) ? 'text-sm text-cream/60' : 'text-sm text-muted-foreground'">
+                /month
+              </span>
+              <p v-if="activeInterval === 'annual'" :class="isPro(plan) ? 'mt-1 text-xs text-cream/60' : 'mt-1 text-xs text-muted-foreground'">
                 <span class="line-through">{{ plan.price_label }}/month</span>
                 · save {{ annualSavingsLabel(plan) }} a year
               </p>
@@ -280,11 +287,11 @@ onMounted(async () => {
 
             <ul class="space-y-2 text-sm">
               <li v-for="feature in plan.features" :key="feature" class="flex items-start gap-2">
-                <CheckIcon class="mt-0.5 size-4 shrink-0 text-primary" />
+                <CheckIcon :class="isPro(plan) ? 'mt-0.5 size-4 shrink-0 text-peach' : 'mt-0.5 size-4 shrink-0 text-primary'" />
                 <span class="capitalize">{{ featureLabel(feature) }}</span>
               </li>
-              <li v-for="limit in planLimits(plan)" :key="limit" class="flex items-start gap-2 text-muted-foreground">
-                <CheckIcon class="mt-0.5 size-4 shrink-0 text-primary" />
+              <li v-for="limit in planLimits(plan)" :key="limit" class="flex items-start gap-2" :class="isPro(plan) ? 'text-cream/70' : 'text-muted-foreground'">
+                <CheckIcon :class="isPro(plan) ? 'mt-0.5 size-4 shrink-0 text-peach' : 'mt-0.5 size-4 shrink-0 text-primary'" />
                 <span>{{ limit }}</span>
               </li>
             </ul>
@@ -292,7 +299,8 @@ onMounted(async () => {
             <div class="mt-auto pt-2">
               <Button
                 class="w-full"
-                :variant="plan.slug === 'pro' ? 'default' : 'outline'"
+                :variant="isPro(plan) ? 'default' : 'outline'"
+                :class="isPro(plan) ? 'bg-cream text-forest hover:bg-cream/90' : ''"
                 :disabled="isCurrent(plan)"
                 @click="handleChoose(plan)"
               >
@@ -301,7 +309,7 @@ onMounted(async () => {
               <p v-if="hasActiveSubscription && !isCurrent(plan)" class="mt-2 text-center text-xs text-muted-foreground">
                 Switch takes effect immediately
               </p>
-              <p v-else-if="!isCurrent(plan)" class="mt-2 text-center text-xs text-muted-foreground">
+              <p v-else-if="!isCurrent(plan)" :class="isPro(plan) ? 'mt-2 text-center text-xs text-cream/60' : 'mt-2 text-center text-xs text-muted-foreground'">
                 {{ billedLabel(plan) }} billed today, then
                 {{ activeInterval === 'annual' ? 'every year' : 'every month' }}
               </p>

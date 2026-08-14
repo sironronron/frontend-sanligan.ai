@@ -3,7 +3,7 @@ import { CheckIcon, CircleIcon, ClockIcon, TrashIcon } from '@lucide/vue'
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'subscription'],
+  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
 })
 
 const todoStore = useTodoStore()
@@ -123,7 +123,7 @@ onMounted(async () => {
       <div
         v-for="todo in filteredTodos"
         :key="todo.id"
-        class="group flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
+        class="surface-interactive group flex items-start gap-3 p-4"
       >
         <button
           type="button"

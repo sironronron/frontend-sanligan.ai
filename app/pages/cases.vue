@@ -6,7 +6,7 @@ import { upgradeMessage } from '~/stores/billing'
 import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'subscription'],
+  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
 })
 
 const caseStore = useCaseStore()
@@ -232,8 +232,8 @@ onMounted(async () => {
         permanent segmented control instead of hiding inside a select next to
         two it is used far less often than.
       -->
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center overflow-x-auto rounded-lg border bg-muted/40 p-0.5" role="tablist" aria-label="Filter by status">
+      <div class="surface flex flex-wrap items-center gap-2 p-2.5">
+        <div class="surface-inset flex items-center overflow-x-auto p-0.5" role="tablist" aria-label="Filter by status">
           <button
             v-for="option in [{ value: 'all', label: 'All' }, ...CASE_STATUSES]"
             :key="option.value"
@@ -241,7 +241,7 @@ onMounted(async () => {
             role="tab"
             :aria-selected="statusFilter === option.value"
             class="inline-flex h-7 shrink-0 items-center rounded-md px-3 text-xs font-medium transition-colors"
-            :class="statusFilter === option.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+            :class="statusFilter === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
             @click="statusFilter = option.value"
           >
             {{ option.label }}
@@ -315,14 +315,14 @@ onMounted(async () => {
           A filtered-to-nothing list and a genuinely empty workspace need
           different offers: one wants its filters back, the other wants a case.
         -->
-        <div v-else-if="sortedCases.length === 0 && isFiltered" class="rounded-xl border border-dashed py-14 text-center">
+        <div v-else-if="sortedCases.length === 0 && isFiltered" class="rounded-xl border border-dashed bg-muted/45 py-14 text-center">
           <SearchIcon class="mx-auto size-7 text-muted-foreground" />
           <p class="mt-3 text-sm font-medium">No cases match these filters</p>
           <p class="mt-1 text-xs text-muted-foreground">Try a broader search, or clear the filters to see everything.</p>
           <Button variant="outline" size="sm" class="mt-4" @click="clearFilters">Clear filters</Button>
         </div>
 
-        <div v-else-if="sortedCases.length === 0" class="rounded-xl border border-dashed py-14 text-center">
+        <div v-else-if="sortedCases.length === 0" class="rounded-xl border border-dashed bg-muted/45 py-14 text-center">
           <FolderOpenIcon class="mx-auto size-7 text-muted-foreground" />
           <p class="mt-3 text-sm font-medium">{{ archived ? 'No archived cases' : 'No cases yet' }}</p>
           <p class="mt-1 text-xs text-muted-foreground">

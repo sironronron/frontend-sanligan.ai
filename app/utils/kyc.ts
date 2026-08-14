@@ -1,18 +1,40 @@
 export const KYC_ROLE_OTHER = 'other'
 export const KYC_USE_CASE_OTHER = 'other'
 
+/**
+ * Role and primary use are multi-select but capped: every selection injects a
+ * full calibration fragment into every prompt, and past three those fragments
+ * start pulling against each other — the profile stops narrowing anything and
+ * becomes noise the model has to reconcile. Three still covers the real
+ * combinations people have (lawyer + notary + business owner, research that is
+ * also client work), which is the point of allowing more than one at all.
+ *
+ * Must stay in sync with UserProfile::MAX_ROLES / MAX_USE_CASES on the API.
+ */
+export const KYC_MAX_ROLES = 3
+export const KYC_MAX_USE_CASES = 3
+
 export interface KycOption {
   value: string
   label: string
 }
 
 export interface KycProfilePayload {
-  kyc_role: string
+  kyc_role: string[]
   kyc_role_other?: string | null
-  kyc_use_case: string
+  kyc_use_case: string[]
   kyc_use_case_other?: string | null
   kyc_document_types?: string[] | null
   kyc_experience_level?: string | null
+}
+
+/**
+ * Role, primary use, and document types all come back as a comma-separated
+ * list of keys. Splitting here keeps every caller off the string form.
+ */
+export function kycKeys(value: string | null | undefined): string[] {
+  if (!value) return []
+  return value.split(',').map(key => key.trim()).filter(Boolean)
 }
 
 export const kycRoleOptions: KycOption[] = [
@@ -66,13 +88,27 @@ export function kycUseCaseLabel(value: string | null | undefined): string {
   return kycUseCaseOptions.find((option) => option.value === value)?.label ?? 'Unspecified'
 }
 
+/** Labels for every selected role, e.g. "Notary Public, Business Owner". */
+export function kycRolesLabel(values: string | null | undefined): string {
+  const keys = kycKeys(values)
+  if (keys.length === 0) return 'Unspecified'
+  return keys.map(kycRoleLabel).join(', ')
+}
+
+export function kycUseCasesLabel(values: string | null | undefined): string {
+  const keys = kycKeys(values)
+  if (keys.length === 0) return 'Unspecified'
+  return keys.map(kycUseCaseLabel).join(', ')
+}
+
 export function kycDocumentTypeLabel(value: string): string {
   return kycDocumentTypeOptions.find((option) => option.value === value)?.label ?? value
 }
 
 export function kycDocumentTypesLabel(values: string | null | undefined): string {
-  if (!values) return 'Unspecified'
-  return values.split(',').map((v) => kycDocumentTypeLabel(v.trim())).join(', ')
+  const keys = kycKeys(values)
+  if (keys.length === 0) return 'Unspecified'
+  return keys.map(kycDocumentTypeLabel).join(', ')
 }
 
 export function kycExperienceLevelLabel(value: string | null | undefined): string {

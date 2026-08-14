@@ -13,10 +13,12 @@ import {
   TrashIcon,
   XIcon,
 } from '@lucide/vue'
-import type { CaseConversation } from '~/stores/cases'
+import type { CaseConversation, LegalCase } from '~/stores/cases'
 import { useLabelStore } from '~/stores/labels'
 import { DOCUMENT_STATUS_LABEL, type CaseDocument, type GeneratedDocument } from '~/types/case'
 import LabelPicker from '~/components/LabelPicker.vue'
+import CaseMiniCalendar, { type ScheduleEvent } from '~/components/CaseMiniCalendar.vue'
+import CaseBrief from '~/components/CaseBrief.vue'
 import { THREAD_ICONS, THREAD_TILES, threadPurposeKind } from '~/lib/threads'
 
 /**
@@ -39,9 +41,25 @@ const props = withDefaults(defineProps<{
   generated: GeneratedDocument[]
   generatedLoading: boolean
   exporting: string | null
+  /** Schedule items pinned to days: the case deadline plus due-dated tasks. */
+  calendarEvents: ScheduleEvent[]
+  /**
+   * Threads whose answer is still being generated. A thread keeps working after
+   * the user leaves it, so this rail is where they see it is still going — and
+   * where they get back to it.
+   */
+  streamingThreadIds?: string[]
   /** Closed and archived cases keep their materials readable but add nothing. */
   readonly?: boolean
-}>(), { readonly: false })
+  /** The case record, whose brief anchors the top of the rail. */
+  case: LegalCase
+  /** Whether the case is still editable; gates the brief's tag and edit controls. */
+  editable: boolean
+}>(), { readonly: false, streamingThreadIds: () => [] })
+
+function isStreaming(id: string): boolean {
+  return props.streamingThreadIds.includes(id)
+}
 
 const emit = defineEmits<{
   selectThread: [id: string]
@@ -54,6 +72,8 @@ const emit = defineEmits<{
   updateDocumentCategories: [doc: CaseDocument, ids: string[]]
   downloadGenerated: [doc: GeneratedDocument, type: 'word' | 'pdf']
   updateThreadTags: [threadId: string, ids: string[]]
+  updateTags: [tags: string[]]
+  changeStatus: [status: LegalCase['status']]
 }>()
 
 const { formatShortDate, relativeTime } = useCasePresentation()
@@ -138,6 +158,22 @@ function docMeta(doc: CaseDocument) {
  */
 function alsoFiledUnder(doc: CaseDocument, group: string) {
   return (doc.categories ?? []).filter((category) => category.id !== group)
+}
+
+/**
+ * The single line under a thread's name: how much work it holds and when it
+ * was last touched. Message count and activity share the line so the list
+ * reads as rows rather than cards.
+ */
+function threadMeta(thread: CaseConversation) {
+  const parts: string[] = []
+  if (thread.messages_count > 0) {
+    parts.push(`${thread.messages_count} message${thread.messages_count === 1 ? '' : 's'}`)
+  }
+  if (thread.last_message_at) {
+    parts.push(`last ${relativeTime(thread.last_message_at)}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'No messages yet'
 }
 
 function submitThread(purpose?: string) {
@@ -315,7 +351,7 @@ function toggleGroup(key: string) {
 
 <template>
   <aside
-    class="relative hidden w-64 shrink-0 flex-col overflow-hidden border-r bg-sidebar md:flex"
+    class="relative hidden max-h-full w-80 shrink-0 flex-col overflow-y-auto border-r bg-sidebar md:flex"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -328,6 +364,15 @@ function toggleGroup(key: string) {
       Drop to attach
     </div>
 
+    <CaseBrief
+      :case="props.case"
+      :editable="props.editable"
+      @update-tags="(tags) => emit('updateTags', tags)"
+      @change-status="(status) => emit('changeStatus', status)"
+    />
+
+    <CaseMiniCalendar :events="props.calendarEvents" />
+
     <div class="flex shrink-0 items-center gap-0.5 border-b p-1.5" role="tablist" aria-label="Case materials">
       <button
         v-for="entry in tabs"
@@ -335,8 +380,10 @@ function toggleGroup(key: string) {
         type="button"
         role="tab"
         :aria-selected="tab === entry.key"
-        class="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md px-1.5 text-xs font-medium transition-colors"
-        :class="tab === entry.key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+        class="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-md px-1.5 text-xs font-medium transition-colors"
+        :class="tab === entry.key
+          ? 'bg-muted text-foreground'
+          : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'"
         @click="tab = entry.key"
       >
         <component :is="entry.icon" class="size-3.5 shrink-0" />
@@ -360,7 +407,7 @@ function toggleGroup(key: string) {
           New thread
         </Button>
 
-        <div v-if="creatingThread && !props.readonly" class="mt-2 space-y-2 rounded-lg border bg-background p-2 shadow-sm">
+        <div v-if="creatingThread && !props.readonly" class="mt-2 space-y-2 rounded-lg border bg-card p-2 shadow-sm">
           <Input
             v-model="newThreadPurpose"
             class="h-8 text-sm"
@@ -393,7 +440,7 @@ function toggleGroup(key: string) {
       </div>
 
       <nav class="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-        <p v-if="props.threads.length === 0" class="rounded-xl border border-dashed px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+        <p v-if="props.threads.length === 0" class="rounded-xl border border-dashed bg-muted/45 px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
           No threads yet. Start one for each line of work on this case.
         </p>
         <template v-for="row in threadRows" :key="row.key">
@@ -413,54 +460,61 @@ function toggleGroup(key: string) {
 
           <div
             v-else
-            class="group relative rounded-xl border transition-colors"
+            class="group relative transition-colors"
             :class="row.thread.id === props.activeConversationId
-              ? 'border-primary/30 bg-primary/10'
-              : 'border-border/60 bg-background/60 hover:border-primary/30 hover:bg-muted/60'"
+              ? 'rounded-r-lg bg-primary/10'
+              : 'rounded-lg hover:bg-muted'"
           >
             <span
               v-if="row.thread.id === props.activeConversationId"
-              class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary"
+              class="absolute inset-y-0 left-0 w-0.5 bg-primary"
               aria-hidden="true"
             />
             <button
-              class="flex w-full items-start gap-2.5 px-3 pb-1 pt-2.5 text-left"
+              class="flex w-full items-start gap-2 px-2 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              :class="row.thread.id === props.activeConversationId ? 'rounded-r-lg' : 'rounded-lg'"
               @click="emit('selectThread', row.thread.id)"
             >
               <span
-                class="flex size-8 shrink-0 items-center justify-center rounded-lg"
+                class="mt-px flex size-7 shrink-0 items-center justify-center rounded-md"
                 :class="THREAD_TILES[threadPurposeKind(row.thread.purpose)]"
               >
-                <component :is="THREAD_ICONS[threadPurposeKind(row.thread.purpose)]" class="size-4" />
+                <component :is="THREAD_ICONS[threadPurposeKind(row.thread.purpose)]" class="size-3.5" />
               </span>
               <span class="min-w-0 flex-1">
-                <span class="flex items-center gap-2">
-                  <span
-                    class="min-w-0 flex-1 truncate text-[13px] font-medium"
-                    :class="row.thread.id === props.activeConversationId ? 'text-primary' : 'text-foreground'"
-                  >
-                    {{ row.thread.purpose || row.thread.title || 'Untitled' }}
+                <span
+                  class="block truncate text-sm leading-5 max-lg:pr-10"
+                  :class="row.thread.id === props.activeConversationId ? 'font-medium text-primary' : 'text-foreground'"
+                >
+                  {{ row.thread.purpose || row.thread.title || 'Untitled' }}
+                </span>
+                <span
+                  v-if="isStreaming(row.thread.id)"
+                  class="mt-0.5 flex items-center gap-1 truncate text-[11px] font-medium leading-4 text-primary"
+                >
+                  <span class="relative flex size-1.5 shrink-0">
+                    <span class="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+                    <span class="relative inline-flex size-1.5 rounded-full bg-primary" />
                   </span>
+                  Batayan is replying…
                 </span>
-                <span class="mt-0.5 block text-[11px] text-muted-foreground">
-                  {{ row.thread.last_message_at ? `Last activity ${relativeTime(row.thread.last_message_at)}` : 'No messages yet' }}
+                <span v-else class="mt-0.5 block truncate text-[11px] leading-4 text-muted-foreground">
+                  {{ threadMeta(row.thread) }}
                 </span>
-              </span>
-              <span
-                v-if="row.thread.messages_count > 0"
-                class="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums"
-                :class="row.thread.id === props.activeConversationId ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'"
-              >
-                {{ row.thread.messages_count }}
               </span>
             </button>
-            <div class="px-3 pb-2">
+
+            <div
+              class="absolute right-1 top-1 flex items-center gap-0.5 rounded-md border bg-card/95 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100"
+            >
               <LabelPicker
-                class="mt-0.5"
+                v-if="!props.readonly"
                 kind="thread_tag"
-                trigger-label="Tag"
+                trigger-label=""
+                :aria-label="`Tag ${row.thread.purpose || row.thread.title || 'thread'}`"
+                trigger-class="size-6 justify-center rounded-md border-transparent p-0 hover:bg-muted hover:text-foreground"
+                :show-chips="false"
                 :max="10"
-                :disabled="props.readonly"
                 :model-value="(row.thread.tags ?? []).map((tag) => tag.id)"
                 @update:model-value="(ids) => emit('updateThreadTags', row.thread.id, ids)"
               />
@@ -485,7 +539,7 @@ function toggleGroup(key: string) {
           :class="drop.dragging.value ? 'border-primary bg-primary/5' : ''"
           @click="pickFile"
         >
-          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-background text-muted-foreground shadow-sm transition-colors group-hover/drop:border-primary/30 group-hover/drop:text-primary">
+          <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border bg-card text-muted-foreground shadow-sm transition-colors group-hover/drop:border-primary/30 group-hover/drop:text-primary">
             <FileUpIcon class="size-4" />
           </span>
           <span class="min-w-0 flex-1">
@@ -505,7 +559,7 @@ function toggleGroup(key: string) {
           @change="onFileSelected"
         />
 
-        <div v-if="selectedFiles.length > 0" class="space-y-1 rounded-lg border bg-background p-1.5">
+        <div v-if="selectedFiles.length > 0" class="space-y-1 rounded-lg border bg-card p-1.5">
           <div
             v-for="(file, index) in selectedFiles"
             :key="`${file.name}-${index}`"
@@ -539,7 +593,7 @@ function toggleGroup(key: string) {
         -->
         <div
           v-else-if="props.uploading"
-          class="flex items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-xs text-muted-foreground"
+          class="flex items-center gap-2 rounded-lg border bg-card px-2 py-1.5 text-xs text-muted-foreground"
         >
           <Loader2Icon class="size-3.5 shrink-0 animate-spin" />
           Uploading…
@@ -643,7 +697,7 @@ function toggleGroup(key: string) {
             </button>
 
             <div
-              class="absolute right-1 top-1 flex items-center gap-0.5 rounded-md border bg-background/95 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100"
+              class="absolute right-1 top-1 flex items-center gap-0.5 rounded-md border bg-card/95 p-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100"
             >
               <LabelPicker
                 v-if="!props.readonly"
@@ -720,32 +774,34 @@ function toggleGroup(key: string) {
           No drafts yet. Draft a letter, then export it from the conversation.
         </p>
 
-        <div v-for="doc in props.generated" :key="doc.id" class="rounded-lg border bg-background px-2 py-1.5">
-          <p class="truncate text-sm">{{ doc.title }}</p>
-          <p class="mt-0.5 text-xs text-muted-foreground">{{ formatShortDate(doc.created_at) }}</p>
-          <div class="mt-1.5 flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="xs"
-              class="flex-1"
-              :disabled="props.exporting !== null"
-              @click="emit('downloadGenerated', doc, 'word')"
-            >
-              <Loader2Icon v-if="props.exporting === `${doc.id}:word`" class="animate-spin" />
-              <DownloadIcon v-else />
-              Word
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              class="flex-1"
-              :disabled="props.exporting !== null"
-              @click="emit('downloadGenerated', doc, 'pdf')"
-            >
-              <Loader2Icon v-if="props.exporting === `${doc.id}:pdf`" class="animate-spin" />
-              <DownloadIcon v-else />
-              PDF
-            </Button>
+        <div v-for="doc in props.generated" :key="doc.id" class="rounded-lg px-2 py-1.5 transition-colors hover:bg-muted">
+          <p class="truncate text-sm leading-5">{{ doc.title }}</p>
+          <div class="mt-0.5 flex items-center justify-between gap-1">
+            <p class="truncate text-[11px] text-muted-foreground">{{ formatShortDate(doc.created_at) }}</p>
+            <div class="flex shrink-0 items-center gap-1">
+              <Button
+                variant="outline"
+                size="xs"
+                :disabled="props.exporting !== null"
+                :aria-label="`Download ${doc.title} as Word`"
+                @click="emit('downloadGenerated', doc, 'word')"
+              >
+                <Loader2Icon v-if="props.exporting === `${doc.id}:word`" class="animate-spin" />
+                <DownloadIcon v-else />
+                Word
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                :disabled="props.exporting !== null"
+                :aria-label="`Download ${doc.title} as PDF`"
+                @click="emit('downloadGenerated', doc, 'pdf')"
+              >
+                <Loader2Icon v-if="props.exporting === `${doc.id}:pdf`" class="animate-spin" />
+                <DownloadIcon v-else />
+                PDF
+              </Button>
+            </div>
           </div>
         </div>
       </div>

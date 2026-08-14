@@ -4,7 +4,7 @@ import { Toaster } from '~/components/ui/sonner'
 
 <template>
   <div>
-    <NuxtLoadingIndicator />
+    <NuxtLoadingIndicator color="var(--primary)" />
     <NuxtRouteAnnouncer />
     <NuxtLayout>
       <NuxtPage />

@@ -163,7 +163,7 @@ const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transpare
         <li
           v-for="attachment in attachments"
           :key="attachment.localId"
-          class="flex max-w-full items-center gap-1.5 rounded-lg border bg-background px-2 py-1 text-xs"
+          class="flex max-w-full items-center gap-1.5 rounded-lg border bg-card px-2 py-1 text-xs"
           :class="attachment.status === 'failed' ? 'border-destructive/40 text-destructive' : ''"
         >
           <Loader2Icon
@@ -185,7 +185,7 @@ const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transpare
         </li>
       </ul>
 
-      <div class="flex items-end">
+      <div class="flex items-center">
         <Button
           v-if="canAttach"
           type="button"

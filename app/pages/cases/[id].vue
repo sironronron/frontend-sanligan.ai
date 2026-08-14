@@ -3,38 +3,40 @@ import { toast } from '~/components/ui/sonner'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
-  BookOpenIcon,
   DownloadIcon,
   FileTextIcon,
   ListChecksIcon,
   Loader2Icon,
   PlusIcon,
+  QuoteIcon,
   SearchIcon,
   XIcon,
 } from '@lucide/vue'
-import { authHeaders } from '~/lib/http'
 import { useCaseStore, type LegalCase, type CaseConversation } from '~/stores/cases'
 import { useTodoStore } from '~/stores/todos'
+import { extractTodoItems } from '~/utils/todos'
 import { useLabelStore } from '~/stores/labels'
 import { useAuthStore } from '~/stores/auth'
-import { upgradeMessage } from '~/stores/billing'
 import { useDocumentExport } from '~/composables/useDocumentExport'
 import DocumentViewer from '~/components/DocumentViewer.vue'
 import CaseIntakeForm, { type CaseIntakePayload } from '~/components/CaseIntakeForm.vue'
 import TemplatePicker, { type TemplateOption } from '~/components/TemplatePicker.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
-import CitationPanel from '~/components/CitationPanel.vue'
-import IntakeFormSheet, { type IntakeField } from '~/components/IntakeFormSheet.vue'
+import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import ChatThread from '~/components/chat/ChatThread.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
-import ChatPromptSuggestions from '~/components/chat/ChatPromptSuggestions.vue'
+import ChatStarters from '~/components/chat/ChatStarters.vue'
 import { useStarterSuggestions, type SuggestionContext } from '~/composables/useChatSuggestions'
 import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
 import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
+import CitationsPanel from '~/components/chat/CitationsPanel.vue'
 import CaseProgressView from '~/components/CaseProgressView.vue'
 import type { PanelToggle } from '~/components/CaseDetailHeader.vue'
-import type { ChatMessageAttachment } from '~/types/chat'
+import type { ScheduleEvent } from '~/components/CaseMiniCalendar.vue'
+import type { ChatMessage, ChatMessageAttachment } from '~/types/chat'
+import { citationMarkFrom, collectCitations, findCitation, type CitationMark } from '~/utils/citations'
+import type { CitationTarget } from '~/types/citations'
 import type { CaseDocument, GeneratedDocument } from '~/types/case'
 import { THREAD_ICONS, threadPurposeKind } from '~/lib/threads'
 
@@ -45,6 +47,7 @@ definePageMeta({
 interface Source {
   type: 'legal' | 'document' | 'web'
   index?: number
+  token?: string
   id?: string
   chunk_index?: number
   document_id?: string
@@ -58,6 +61,9 @@ interface Source {
   excerpt?: string
   content?: string
   domain?: string | null
+  page_id?: string | null
+  has_digest?: boolean
+  cited_chunk_indexes?: number[]
 }
 
 interface Message {
@@ -75,9 +81,6 @@ interface Message {
 const api = useApi()
 const route = useRoute()
 const router = useRouter()
-const {
-  public: { apiBase },
-} = useRuntimeConfig()
 
 const caseStore = useCaseStore()
 const todoStore = useTodoStore()
@@ -94,19 +97,85 @@ const notFound = ref(false)
 const editOpen = ref(false)
 const pickerOpen = ref(false)
 const templates = ref<TemplateOption[]>([])
+
+/**
+ * Everything with a day on it, gathered for the sidebar's mini calendar: the
+ * case's own deadline plus every task carrying a due date. The case record's
+ * task list covers every thread, and the in-session todo store overlays it so
+ * tasks added or edited in the tasks panel show up without a refetch.
+ */
+const scheduleEvents = computed<ScheduleEvent[]>(() => {
+  const c = caseDetail.value
+  if (!c) return []
+  const events = new Map<string, ScheduleEvent>()
+  if (c.due_date) {
+    events.set('case-deadline', {
+      id: 'case-deadline',
+      title: 'Case deadline',
+      date: c.due_date.slice(0, 10),
+      kind: 'deadline',
+    })
+  }
+  for (const task of c.tasks ?? []) {
+    if (!task.due_date) continue
+    events.set(`task-${task.id}`, {
+      id: `task-${task.id}`,
+      title: task.title,
+      date: task.due_date.slice(0, 10),
+      kind: 'task',
+      status: task.status,
+    })
+  }
+  const conversationIds = new Set((c.conversations ?? []).map((conversation) => conversation.id))
+  for (const todo of todoStore.todos) {
+    if (!conversationIds.has(todo.conversation_id) || !todo.due_date) continue
+    events.set(`task-${todo.id}`, {
+      id: `task-${todo.id}`,
+      title: todo.title,
+      date: todo.due_date.slice(0, 10),
+      kind: 'task',
+      status: todo.status,
+    })
+  }
+  return [...events.values()]
+})
+
 /**
  * One right-rail panel at a time. Tasks and citations both defaulted to open
  * and the resizable document preview opened alongside them, so on a laptop the
  * thread was squeezed between three columns.
  */
-type RightPanel = 'citations' | 'tasks'
+type RightPanel = 'tasks' | 'citations'
 
 const rightPanel = ref<RightPanel | null>('tasks')
 
 const showTasks = computed(() => rightPanel.value === 'tasks')
+const showCitations = computed(() => rightPanel.value === 'citations')
 
 function togglePanel(panel: RightPanel) {
   rightPanel.value = rightPanel.value === panel ? null : panel
+}
+
+/**
+ * Full-screen chat: hides the case sidebar, right rail, brief and document
+ * preview so the conversation fills the screen. Tied to the Fullscreen API so
+ * Esc (or the header toggle) exits cleanly; the `fullscreenchange` listener
+ * keeps the state in sync when the browser or the user leaves fullscreen.
+ */
+const fullscreen = ref(false)
+
+function toggleFullscreen() {
+  if (fullscreen.value) {
+    fullscreen.value = false
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
+  } else {
+    fullscreen.value = true
+    void document.documentElement.requestFullscreen().catch(() => {})
+  }
+}
+
+function onFullscreenChange() {
+  fullscreen.value = !!document.fullscreenElement
 }
 
 /**
@@ -131,28 +200,13 @@ const newThreadPurpose = ref('')
 const creating = ref(false)
 const quickPurposes = ['Draft a letter', 'Legal research', 'Summarize facts']
 
+/** What the server has for the open thread; the live turn is added on top. */
 const messages = ref<Message[]>([])
 const input = ref('')
 const composerRef = ref<InstanceType<typeof ChatComposer> | null>(null)
-const streaming = ref(false)
-const sending = ref(false)
-const streamError = ref('')
-const streamController = ref<AbortController | null>(null)
-// Reveals queued deltas character by character; rebuilt per send().
-let textStreamer: TextStreamer | null = null
-const currentStatus = ref<string | null>(null)
-const currentStatusLabel = ref<string | null>(null)
-const intakeFields = ref<IntakeField[] | null>(null)
-const intakeDefaults = ref<Record<string, string> | null>(null)
-const awaitingIntake = ref(false)
-const intakeDismissed = ref(false)
-const todoToolCalled = ref(false)
-const messagesContainer = ref<HTMLElement | null>(null)
-const lastQuestion = ref('')
-let messageStartIndex = -1
 
-const showCitations = computed(() => rightPanel.value === 'citations')
-const activeCitation = ref<{ kind: string; index?: number; token?: string } | null>(null)
+const messagesContainer = ref<HTMLElement | null>(null)
+
 const ratingBusy = ref<string | null>(null)
 
 const searchOpen = ref(false)
@@ -160,16 +214,6 @@ const searchQuery = ref('')
 const searchActiveId = ref<string | null>(null)
 const searchActiveOccurrence = ref(0)
 const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
-
-const activeAssistantMessage = computed<Message | null>(() => {
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const m = messages.value[i]
-    if (m && m.role === 'assistant' && m.sources.length > 0) return m
-  }
-  return null
-})
-
-const hasCitations = computed(() => activeAssistantMessage.value !== null)
 
 const caseDocuments = ref<CaseDocument[]>([])
 const documentsLoading = ref(false)
@@ -350,6 +394,40 @@ function previewMaxWidth(): number {
 }
 
 const conversationId = computed(() => activeConversationId.value ?? caseDetail.value?.conversation_id ?? null)
+
+/**
+ * The answer being generated does not belong to this page — it belongs to the
+ * thread. Keeping it in the store is what lets the user move to another thread,
+ * another case, or another page mid-answer, see that Batayan is still writing,
+ * and come back to a finished (or still arriving) reply.
+ */
+const chatStream = useChatStreamStore()
+
+const turn = computed(() => chatStream.turnFor(conversationId.value))
+const streaming = computed(() => turn.value?.streaming ?? false)
+const sending = computed(() => turn.value?.sending ?? false)
+const streamError = computed(() => turn.value?.error ?? '')
+const lastQuestion = computed(() => turn.value?.question ?? '')
+const currentStatus = computed(() => turn.value?.status ?? null)
+const currentTopic = computed(() => turn.value?.topic ?? null)
+const activitySteps = computed(() => turn.value?.steps ?? [])
+const intakeFields = computed(() => turn.value?.intakeFields ?? null)
+const intakeDefaults = computed(() => turn.value?.intakeDefaults ?? null)
+const awaitingIntake = computed(() => turn.value?.awaitingIntake ?? false)
+const intakeDismissed = computed(() => turn.value?.intakeDismissed ?? false)
+
+/** The open thread as the user sees it: saved messages plus the live turn. */
+const chatMessages = computed<Message[]>(
+  () => chatStream.threadFor(conversationId.value, messages.value) as Message[],
+)
+
+/** Drives the Sources toggle's count; the panel does the same grouping. */
+const citationCount = computed(() => collectCitations(chatMessages.value as ChatMessage[]).length)
+
+/** The card the panel should scroll to, set by pressing a badge in an answer. */
+const citationTarget = ref<CitationTarget | null>(null)
+
+/** Only ever about the thread on screen — another thread may also be busy. */
 const busy = computed(() => sending.value || streaming.value)
 
 /**
@@ -371,9 +449,9 @@ const suggestionContext = computed<SuggestionContext>(() => ({
   openTasks: todoStore.todos
     .filter((t) => t.conversation_id === conversationId.value && t.status !== 'completed')
     .map((t) => ({ title: t.title, status: t.status, priority: t.priority, due_hint: t.due_hint })),
-  role: auth.user?.kyc_role ?? null,
-  useCase: auth.user?.kyc_use_case ?? null,
-  documentTypes: (auth.user?.kyc_document_types ?? '').split(',').map((v) => v.trim()).filter(Boolean),
+  roles: kycKeys(auth.user?.kyc_role),
+  useCases: kycKeys(auth.user?.kyc_use_case),
+  documentTypes: kycKeys(auth.user?.kyc_document_types),
   experienceLevel: experienceLevel.value,
 }))
 
@@ -405,55 +483,6 @@ const emptyStateDescription = computed(() => {
   return `${opening}${lead} Pick a first step below, or ask anything.`
 })
 
-/** Subject of the current turn, sent by the server; shown once as a heading. */
-const currentTopic = ref<string | null>(null)
-
-const statusLabels: Record<string, string> = {
-  checking_sources: 'Checking legal sources',
-  searching_web: 'Searching the web',
-  composing: 'Composing response',
-  collecting_facts: 'Collecting the facts I need',
-  gathering_facts: 'Gathering the facts needed for your document',
-  drafting_document: 'Drafting your document',
-  preparing_next_steps: 'Preparing your next-steps checklist',
-}
-
-interface ActivityStep {
-  key: string
-  label: string
-  state: 'done' | 'active' | 'pending'
-}
-
-const activitySteps = ref<ActivityStep[]>([])
-
-function resetSteps() {
-  activitySteps.value = []
-}
-
-function markStepActive(key: string, label: string) {
-  const existing = activitySteps.value.find((step) => step.key === key)
-  if (existing) {
-    existing.state = 'active'
-    return
-  }
-  activitySteps.value.push({ key, label, state: 'active' })
-}
-
-function completeStep(key: string) {
-  const existing = activitySteps.value.find((step) => step.key === key)
-  if (existing) {
-    existing.state = 'done'
-  }
-}
-
-function completeActiveSteps() {
-  for (const step of activitySteps.value) {
-    if (step.state === 'active') {
-      step.state = 'done'
-    }
-  }
-}
-
 // Labels, badge styling and date formatting are shared with the case list via
 // useCasePresentation; the copies that used to live here had already drifted
 // from it.
@@ -481,10 +510,8 @@ const readOnly = computed(() => !!caseDetail.value?.archived_at || caseDetail.va
 async function load(conversationId?: string | null) {
   loading.value = true
   notFound.value = false
-  intakeFields.value = null
-  intakeDefaults.value = null
-  awaitingIntake.value = false
-  intakeDismissed.value = false
+  // Any pending intake or partial answer belongs to the thread's live turn,
+  // which the store still holds — nothing to reset here.
   try {
     const data = await caseStore.fetchCase(String(route.params.id), conversationId)
     caseDetail.value = data
@@ -497,13 +524,23 @@ async function load(conversationId?: string | null) {
     }
     await loadCaseDocuments()
     await loadGeneratedDocuments()
-    await nextTick()
-    scrollToBottom()
   } catch {
     notFound.value = true
   } finally {
     loading.value = false
   }
+
+  // The messages container is unmounted while the loading skeleton shows, so
+  // scrolling while `loading` is true silently no-ops and the thread mounts
+  // stranded at the top. Only now — after the skeleton has been swapped for
+  // the real thread — can the scroll land on the latest messages.
+  await nextTick()
+  scrollToBottom()
+
+  // The answer may have landed while the user was on another thread, another
+  // case, or another page; this is the moment to finish it off.
+  const opened = activeConversationId.value ?? caseDetail.value?.conversation_id ?? null
+  if (opened) await finalizeTurn(opened)
 }
 
 function cancelCreateThread() {
@@ -512,9 +549,8 @@ function cancelCreateThread() {
 }
 
 async function selectConversation(id: string) {
-  if (id === activeConversationId.value || busy.value) return
+  if (id === activeConversationId.value) return
   cancelCreateThread()
-  streamError.value = ''
   await load(id)
 }
 
@@ -549,130 +585,21 @@ async function loadTemplates() {
   }
 }
 
-function handleFrame(frame: string, target: Message) {
-  let event = 'message'
-  const dataLines: string[] = []
-
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim()
-    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
-  }
-
-  const data = dataLines.join('\n')
-  if (!data) return
-
-  let payload: Record<string, any>
-  try {
-    payload = JSON.parse(data)
-  } catch {
-    return
-  }
-
-  if (event === 'status' && typeof payload.status === 'string') {
-    completeActiveSteps()
-    currentStatus.value = payload.status
-    currentStatusLabel.value = typeof payload.label === 'string' && payload.label !== '' ? payload.label : null
-    if (typeof payload.topic === 'string' && payload.topic !== '') currentTopic.value = payload.topic
-    if (payload.status === 'collecting_facts') {
-      awaitingIntake.value = true
-      markStepActive('collecting_facts', 'Collecting the facts I need')
-    } else {
-      markStepActive(payload.status, currentStatusLabel.value ?? statusLabels[payload.status] ?? payload.status)
-    }
-  } else if (event === 'delta' && typeof payload.delta === 'string') {
-    if (textStreamer) textStreamer.push(payload.delta)
-    else target.content += payload.delta
-    awaitingIntake.value = false
-    completeStep('composing')
-  } else if (event === 'citation' && typeof payload.url === 'string') {
-    const existing = target.sources.find((s) => s.type === 'web' && s.url === payload.url)
-    if (!existing) {
-      target.sources.push({
-        type: 'web',
-        index: Number.isFinite(Number(payload.index)) ? Number(payload.index) : target.sources.filter((s) => s.type === 'web').length + 1,
-        label: typeof payload.title === 'string' ? payload.title : null,
-        title: typeof payload.title === 'string' ? payload.title : null,
-        url: payload.url,
-        domain: typeof payload.domain === 'string' ? payload.domain : null,
-        excerpt: typeof payload.excerpt === 'string' ? payload.excerpt : undefined,
-      })
-    }
-  } else if (event === 'tool_call') {
-    handleToolCall(payload, target)
-  } else if (event === 'tool_result' && payload.name === 'create_todo') {
-    todoToolCalled.value = true
-    refreshTodos()
-    completeStep('create_todo')
-  } else if (event === 'done') {
-    textStreamer?.flush()
-    completeActiveSteps()
-    if (intakeFields.value === null) {
-      awaitingIntake.value = false
-    }
-  } else if (event === 'error') {
-    textStreamer?.flush()
-    streamError.value = String(payload.message ?? 'The AI provider could not complete the response.')
-    awaitingIntake.value = false
-  }
+async function refreshTodos(conversation: string | null = conversationId.value) {
+  if (!conversation) return
+  await todoStore.fetchTodos(conversation)
 }
 
-function handleToolCall(payload: Record<string, any>, target: Message) {
-  if (payload.name === 'request_intake_form' && Array.isArray(payload.arguments?.fields)) {
-    intakeFields.value = payload.arguments.fields as IntakeField[]
-    intakeDefaults.value = payload.arguments.default_values ?? null
-    awaitingIntake.value = true
-    intakeDismissed.value = false
-    completeActiveSteps()
-    markStepActive('request_intake_form', 'Collecting facts from you')
-    // The document is drafted only after the intake form is submitted. Drop
-    // the streaming bubble so no partial draft appears before the form.
-    messages.value = messages.value.filter((m) => m.id !== target.id)
-  }
-}
-
-async function refreshTodos() {
-  if (conversationId.value) {
-    await todoStore.fetchTodos(conversationId.value)
-  }
-}
-
-function extractTodoItems(text: string): Array<{ title: string; status?: string }> {
-  const items: Array<{ title: string; status?: string }> = []
-  const cleaned = text
-    .replace(/^\s*\[\[TODO_START\]\]\s*$/gm, '')
-    .replace(/^\s*\[\[TODO_END\]\]\s*$/gm, '')
-
-  // Match various checkbox formats: "- [ ]", "- [x]", "[ ]", "[x]", "**[ ]**", "**_**"
-  const regex = /^\s*[-*]*\s*(?:\*{0,2}\[_?\]\*{0,2}|\[( |x|X)\])\s+(.+)$/gm
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(cleaned)) !== null) {
-    const rawTitle = (match[2] ?? '').trim()
-    const title = sanitizeTodoTitle(rawTitle)
-    if (title) {
-      items.push({
-        title,
-        status: match[1] && match[1] !== ' ' ? 'completed' : 'pending',
-      })
-    }
-  }
-  return items
-}
-
-function sanitizeTodoTitle(title: string): string {
-  // Strip bold/italic markdown wrapping
-  let cleaned = title.replace(/^\*{1,2}(.+?)\*{1,2}$/, '$1')
-  // Strip any remaining markdown artifacts
-  cleaned = cleaned.replace(/[_*`]/g, '')
-  return cleaned.trim()
-}
-
-async function maybeCreateTodosFromText(text: string) {
-  if (!conversationId.value || todoToolCalled.value || !text) return
+// The conversation is passed in rather than read from the page: an answer can
+// land after the user has moved to another thread, and its tasks belong to the
+// thread that produced them.
+async function maybeCreateTodosFromText(text: string, conversation: string | null) {
+  if (!conversation || !text) return
   const items = extractTodoItems(text)
   if (items.length === 0) return
   try {
-    await todoStore.addTodos(items, conversationId.value)
-    await todoStore.fetchTodos(conversationId.value)
+    await todoStore.addTodos(items, conversation)
+    await todoStore.fetchTodos(conversation)
   } catch {
     // Non-critical: todos are a convenience, never block the chat on failure.
   }
@@ -682,141 +609,104 @@ function getDisplayedContent(msg: Message): string {
   return msg.content
 }
 
+/**
+ * The plan ran out mid-send. The case view stays put and offers the upgrade,
+ * rather than redirecting away from the matter the user is working on, so the
+ * inline error is left in place too.
+ */
+function handleUpgradeRequired(message: string): boolean {
+  toast.error(`${message}. Upgrade your plan to continue.`, {
+    action: { label: 'Upgrade', onClick: () => navigateTo('/settings/billing') },
+  })
+
+  return false
+}
+
 async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
-  if (!question || sending.value || !conversationId.value || readOnly.value) return
+  const id = conversationId.value
+  if (!question || busy.value || !id || readOnly.value) return
 
-  messageStartIndex = messages.value.length
-  lastQuestion.value = question
-  sending.value = true
-  streamError.value = ''
-  currentStatus.value = null
-  currentStatusLabel.value = null
   input.value = ''
   // The files travel with this message; the uploads themselves stay attached
   // to the case and remain retrievable in its conversations.
   const attached = attachmentsState.take()
-  todoToolCalled.value = false
-  resetSteps()
-  currentTopic.value = null
 
-  if (question.startsWith('[Intake Form Submission]') || question.startsWith('[Template:')) {
-    markStepActive('drafting', 'Drafting your document')
-  }
+  // Deliberately not awaited: the answer belongs to the thread from here on,
+  // and this page is free to be left, or unmounted, while it arrives.
+  void chatStream.start({
+    conversationId: id,
+    question,
+    // The case view, not the progress view: the thread is what to come back to.
+    returnTo: `/cases/${route.params.id}`,
+    attachments: attached,
+    onUpgrade: handleUpgradeRequired,
+  })
 
-  let lastAssistantText = ''
+  await nextTick()
+  scrollToBottom()
+}
+
+/**
+ * Wrap a finished turn up: save what it produced, then hand the thread back to
+ * the server's copy.
+ *
+ * Called from the watcher below when the answer lands while the user is
+ * watching, and from `load` when it landed while they were on another thread,
+ * another case, or another page entirely.
+ */
+const finalizing = new Set<string>()
+
+async function finalizeTurn(id: string) {
+  const finished = chatStream.turnFor(id)
+  // Both the watcher and `load` can reach a finished turn, and running the
+  // follow-up twice would file the same tasks twice.
+  if (!finished?.finishedAt || finalizing.has(id)) return
+
+  finalizing.add(id)
+
+  // A pending intake form or a failed turn still has work left in it, so the
+  // turn stays until the user submits, abandons, or retries.
+  const keep = finished.intakeFields !== null || finished.error !== ''
 
   try {
-    messages.value.push({
-      id: `local-${crypto.randomUUID()}`,
-      role: 'user',
-      content: question,
-      sources: [],
-      attachments: attached,
-      created_at: new Date().toISOString(),
-    })
-
-    const assistant: Message = reactive({
-      id: `local-${crypto.randomUUID()}`,
-      role: 'assistant',
-      content: '',
-      sources: [],
-      created_at: new Date().toISOString(),
-    })
-    messages.value.push(assistant)
-    textStreamer = createTextStreamer((chunk) => {
-      assistant.content += chunk
-    })
-    streaming.value = true
-
-    await nextTick()
-    scrollToBottom()
-
-    streamController.value = new AbortController()
-    const response = await fetch(`${apiBase}/api/conversations/${conversationId.value}/messages`, {
-      method: 'POST',
-      headers: await authHeaders({
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-      }),
-      body: JSON.stringify({
-        message: question,
-        attachment_ids: attached.map((a) => a.id),
-      }),
-      signal: streamController.value.signal,
-    })
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => null)
-      const upgrade = upgradeMessage({ status: response.status, data: errBody })
-      if (upgrade) {
-        toast.error(`${upgrade}. Upgrade your plan to continue.`, {
-          action: { label: 'Upgrade', onClick: () => navigateTo('/settings/billing') },
-        })
-      }
-      throw new Error(upgrade ?? errBody?.message ?? 'The request failed')
-    }
-
-    if (!response.body) {
-      throw new Error('Streaming is not supported by this browser')
-    }
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      const frames = buffer.split('\n\n')
-      buffer = frames.pop() ?? ''
-
-      for (const frame of frames) {
-        handleFrame(frame, assistant)
-        await nextTick()
-        scrollToBottom()
-      }
-    }
-
-    if (buffer.trim()) {
-      handleFrame(buffer, assistant)
-    }
-
-    textStreamer.flush()
-    lastAssistantText = assistant.content
-  } catch (err: any) {
-    textStreamer?.flush()
-
-    if (err?.name === 'AbortError') {
-      streamError.value = ''
-    } else {
-      streamError.value = err?.message ?? 'Something went wrong while streaming the response.'
-    }
-  } finally {
-    textStreamer = null
-    streamController.value = null
-    streaming.value = false
-    sending.value = false
-    currentStatus.value = null
-    currentStatusLabel.value = null
-
-    if (conversationId.value && caseDetail.value) {
+    if (caseDetail.value) {
       const data = await caseStore.fetchCase(String(route.params.id), activeConversationId.value)
       caseDetail.value = data
       threads.value = data.conversations ?? []
-      if (!awaitingIntake.value) {
+      // The user may have moved to another thread while the answer was
+      // finishing; what they are reading now must not be overwritten by this.
+      if (!keep && conversationId.value === id) {
         messages.value = (data.messages ?? []) as Message[]
       }
       await loadGeneratedDocuments()
     }
-    await maybeCreateTodosFromText(lastAssistantText)
-    await refreshTodos()
-    await nextTick()
-    scrollToBottom()
+
+    if (!keep) chatStream.settle(id)
+
+    if (!finished.todoToolCalled) {
+      await maybeCreateTodosFromText(finished.assistantMessage?.content ?? '', id)
+    }
+    await refreshTodos(id)
+  } finally {
+    finalizing.delete(id)
   }
+
+  await nextTick()
+  scrollToBottom()
 }
+
+/**
+ * The watcher, rather than the send call, is what makes this survive leaving
+ * the page: it re-runs against whichever turn just completed.
+ */
+watch(
+  () => chatStream.turns[conversationId.value ?? '']?.finishedAt ?? null,
+  (finishedAt, previous) => {
+    if (!finishedAt || finishedAt === previous) return
+    if (conversationId.value) void finalizeTurn(conversationId.value)
+  },
+)
 
 function scrollToBottom() {
   if (messagesContainer.value) {
@@ -855,20 +745,12 @@ function searchNavigate(match: { id: string; occurrence: number }) {
 }
 
 function stopStreaming() {
-  textStreamer?.flush()
-  streamController.value?.abort()
-  streamController.value = null
-  currentStatus.value = null
-  currentStatusLabel.value = null
-  awaitingIntake.value = false
-  streamError.value = ''
+  if (conversationId.value) chatStream.stop(conversationId.value)
 }
 
 function handleIntakeSubmit(data: Record<string, string>) {
-  intakeFields.value = null
-  intakeDefaults.value = null
-  awaitingIntake.value = false
-  intakeDismissed.value = false
+  if (!conversationId.value) return
+  chatStream.clearIntake(conversationId.value)
   const formatted = Object.entries(data)
     .map(([key, value]) => `${key}: ${value}`)
     .join('\n')
@@ -876,44 +758,49 @@ function handleIntakeSubmit(data: Record<string, string>) {
 }
 
 function handleIntakeCancel() {
-  // Keep the pending intake fields so the user can reopen the form, but stop
-  // the "waiting" bubble and surface a dismiss/fill-requirement prompt instead.
-  intakeDismissed.value = true
-  awaitingIntake.value = false
+  if (conversationId.value) chatStream.dismissIntake(conversationId.value)
 }
 
 function reopenIntake() {
-  intakeDismissed.value = false
-  awaitingIntake.value = true
+  if (conversationId.value) chatStream.reopenIntake(conversationId.value)
 }
 
 function abandonIntake() {
-  intakeFields.value = null
-  intakeDefaults.value = null
-  awaitingIntake.value = false
-  intakeDismissed.value = false
+  if (conversationId.value) chatStream.clearIntake(conversationId.value)
 }
 
 async function handleMarkdownClick(event: MouseEvent, msg: Message) {
-  const target = event.target as HTMLElement
-  const badge = target.closest('button[data-cite-kind]')
-  if (badge) {
-    const kind = badge.getAttribute('data-cite-kind')
-    const token = badge.getAttribute('data-cite-token')
-    const index = Number(badge.getAttribute('data-cite-index'))
-    if (kind && (token !== null || Number.isFinite(index))) {
-      rightPanel.value = 'citations'
-      activeCitation.value = token ? { kind, token } : { kind, index }
-    }
+  const mark = citationMarkFrom(event.target)
+
+  if (mark !== null) {
+    event.preventDefault()
+    revealCitation(mark, msg as ChatMessage)
     return
   }
 
-  const link = target.closest('a[data-export-url]')
+  const link = (event.target as HTMLElement).closest('a[data-export-url]')
   if (!link) return
   event.preventDefault()
   const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
   const title = caseDetail.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
   void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
+}
+
+/**
+ * A citation badge in the answer was pressed: open the sources panel on the
+ * card it refers to. The badge is the reader's shortest route from "this
+ * sentence is sourced" to what the source actually was.
+ */
+function revealCitation(mark: CitationMark, msg: ChatMessage) {
+  const entry = findCitation(collectCitations(chatMessages.value as ChatMessage[]), msg, mark)
+
+  if (entry === null) {
+    toast('That source is no longer available')
+    return
+  }
+
+  rightPanel.value = 'citations'
+  citationTarget.value = { key: entry.key, at: Date.now() }
 }
 
 async function rateMessage(m: Message, feedback: 'up' | 'down') {
@@ -937,12 +824,8 @@ async function rateMessage(m: Message, feedback: 'up' | 'down') {
 }
 
 function retryLast() {
-  if (!lastQuestion.value || busy.value) return
-  if (messageStartIndex >= 0) {
-    messages.value.splice(messageStartIndex)
-  }
-  streamError.value = ''
-  void send(lastQuestion.value)
+  if (!conversationId.value || !lastQuestion.value || busy.value) return
+  void chatStream.retry(conversationId.value, handleUpgradeRequired)
 }
 
 function handleExport(m: Message, type: 'word' | 'pdf') {
@@ -1083,10 +966,8 @@ async function restoreCase() {
   }
 }
 
-const statusLabelNow = computed(() => {
-  if (!currentStatus.value) return null
-  return currentStatusLabel.value ?? statusLabels[currentStatus.value] ?? currentStatus.value
-})
+/** Named apart from the case's own `statusLabel`, which reads the case record. */
+const statusLabelNow = computed(() => turn.value?.statusLabel ?? null)
 
 const openTaskCount = computed(() =>
   conversationId.value
@@ -1112,17 +993,6 @@ const panelToggles = computed(() => {
     },
   ]
 
-  if (activeAssistantMessage.value) {
-    toggles.push({
-      key: 'citations',
-      label: 'Citations',
-      icon: BookOpenIcon,
-      active: showCitations.value,
-      count: activeAssistantMessage.value.sources.length,
-      toggle: () => togglePanel('citations'),
-    })
-  }
-
   if (conversationId.value) {
     toggles.push({
       key: 'tasks',
@@ -1134,30 +1004,42 @@ const panelToggles = computed(() => {
     })
   }
 
+  if (citationCount.value > 0) {
+    toggles.push({
+      key: 'citations',
+      label: 'Sources',
+      icon: QuoteIcon,
+      active: showCitations.value,
+      count: citationCount.value,
+      toggle: () => togglePanel('citations'),
+    })
+  }
+
   return toggles
 })
 
-watch(messages, async () => {
-  if (messages.value.length === 0) return
+watch(chatMessages, async () => {
+  if (chatMessages.value.length === 0) return
   await nextTick()
   scrollToBottom()
 }, { deep: true })
 
 onMounted(async () => {
   window.addEventListener('keydown', onGlobalKeydown)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
   await Promise.all([load(), loadTemplates()])
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
   if (documentPollTimer !== null) {
     clearInterval(documentPollTimer)
     documentPollTimer = null
   }
-  textStreamer?.stop()
-  textStreamer = null
-  streamController.value?.abort()
-  streamController.value = null
+  // The turn itself is deliberately left running: it belongs to the store, and
+  // leaving this page is exactly the case it exists to survive.
 })
 
 watch(
@@ -1173,7 +1055,7 @@ watch(
 <template>
   <div class="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
     <CaseSidebar
-      v-if="caseDetail && !loading"
+      v-if="caseDetail && !loading && !fullscreen"
       :threads="threads"
       :active-conversation-id="activeConversationId"
       :creating="creating"
@@ -1184,7 +1066,11 @@ watch(
       :generated="generatedDocuments"
       :generated-loading="generatedLoading"
       :exporting="exporting"
+      :calendar-events="scheduleEvents"
+      :streaming-thread-ids="chatStream.streamingIds"
       :readonly="readOnly"
+      :case="caseDetail"
+      :editable="!readOnly"
       @select-thread="selectConversation"
       @create-thread="createThread"
       @upload="uploadCaseDocuments"
@@ -1195,6 +1081,8 @@ watch(
       @update-document-categories="updateDocumentCategories"
       @download-generated="downloadGenerated"
       @update-thread-tags="updateThreadTags"
+      @update-tags="saveCaseTags"
+      @change-status="changeStatus"
     />
 
     <section
@@ -1225,19 +1113,18 @@ watch(
         <CaseDetailHeader
           :case="caseDetail"
           :view="view"
-          :status-saving="statusSaving"
           :panel-toggles="panelToggles"
-          @back="router.push('/cases')"
+          :fullscreen="fullscreen"
           @set-view="setView"
-          @change-status="changeStatus"
           @draft="pickerOpen = true"
           @edit="openEdit"
           @archive="archiveCase"
           @restore="restoreCase"
+          @toggle-fullscreen="toggleFullscreen"
         />
 
         <div
-          v-if="autoArchiveDate"
+          v-if="autoArchiveDate && !fullscreen"
           class="flex shrink-0 items-start gap-2 border-b bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
         >
           <ArchiveIcon class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -1297,55 +1184,57 @@ watch(
         </div>
 
         <CaseBrief
-          v-if="caseDetail"
+          v-if="caseDetail && !fullscreen"
+          class="md:hidden"
           :case="caseDetail"
           :editable="!readOnly"
-          @edit="openEdit"
           @update-tags="saveCaseTags"
+          @change-status="changeStatus"
         />
 
         <div class="relative min-h-0 flex-1">
           <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto">
-          <ChatEmptyState
-            v-if="messages.length === 0"
-            title="Work on this case"
-            :description="emptyStateDescription"
-            eyebrow="Batayan AI"
-          >
-            <Button v-if="!readOnly" variant="outline" class="w-full justify-start gap-2 text-left" @click="pickerOpen = true">
-              <FileTextIcon class="size-4 shrink-0 text-primary" />
-              <span class="min-w-0 truncate text-sm">Draft a letter from a template</span>
-            </Button>
-          </ChatEmptyState>
+            <ChatEmptyState
+              v-if="chatMessages.length === 0"
+              title="Work on this case"
+              :description="emptyStateDescription"
+              eyebrow="Batayan AI"
+            >
+              <ChatStarters :starters="starters" @select="selectPrompt" />
+              <Button v-if="!readOnly" variant="outline" class="max-w-full gap-2 text-left" @click="pickerOpen = true">
+                <FileTextIcon class="size-4 shrink-0 text-primary" />
+                <span class="min-w-0 truncate text-sm">Draft a letter from a template</span>
+              </Button>
+            </ChatEmptyState>
 
-          <ChatThread
-            v-else
-            :messages="messages"
-            :streaming="streaming"
-            :status-label="statusLabelNow"
-            :topic="currentTopic"
-            :current-status="currentStatus"
-            :activity-steps="activitySteps"
-            :awaiting-intake="awaitingIntake"
-            :intake-dismissed="intakeDismissed"
-            :has-intake-fields="intakeFields !== null"
-            :last-question="lastQuestion"
-            :busy="busy"
-            :stream-error="streamError"
-            :display-content="getDisplayedContent"
-            :search-query="searchQuery"
-            :active-search-id="searchActiveId"
-            :active-search-occurrence="searchActiveOccurrence"
-            :experience-level="experienceLevel"
-            :suggestion-context="suggestionContext"
-            @markdown-click="handleMarkdownClick"
-            @rate="rateMessage"
-            @export="handleExport"
-            @retry="retryLast"
-            @abandon-intake="abandonIntake"
-            @reopen-intake="reopenIntake"
-            @select-suggestion="(prompt) => input = prompt"
-          />
+            <ChatThread
+              v-else
+              :messages="chatMessages"
+              :streaming="streaming"
+              :status-label="statusLabelNow"
+              :topic="currentTopic"
+              :current-status="currentStatus"
+              :activity-steps="activitySteps"
+              :awaiting-intake="awaitingIntake"
+              :intake-dismissed="intakeDismissed"
+              :has-intake-fields="intakeFields !== null"
+              :last-question="lastQuestion"
+              :busy="busy"
+              :stream-error="streamError"
+              :display-content="getDisplayedContent"
+              :search-query="searchQuery"
+              :active-search-id="searchActiveId"
+              :active-search-occurrence="searchActiveOccurrence"
+              :experience-level="experienceLevel"
+              :suggestion-context="suggestionContext"
+              @markdown-click="handleMarkdownClick"
+              @rate="rateMessage"
+              @export="handleExport"
+              @retry="retryLast"
+              @abandon-intake="abandonIntake"
+              @reopen-intake="reopenIntake"
+              @select-suggestion="(prompt) => input = prompt"
+            />
           </div>
 
           <ChatScrollToBottom :container="messagesContainer" />
@@ -1354,31 +1243,32 @@ watch(
         <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
           <ChatSearchBar
             ref="searchBarRef"
-            :messages="messages"
+            :messages="chatMessages"
             @query="searchQuery = $event"
             @navigate="searchNavigate"
             @close="toggleSearch"
           />
         </div>
 
-        <div class="border-t p-3">
-          <!-- <ChatPromptSuggestions :suggestions="starters" @select="selectPrompt" /> -->
-          <ChatComposer
-            ref="composerRef"
-            v-model="input"
-            :disabled="busy"
-            :readonly="readOnly"
-            :streaming="streaming"
-            :attachments="attachmentsState.attachments.value"
-            :can-send="conversationId !== null && !attachmentsState.pending.value"
-            :can-attach="caseDetail !== null && !readOnly"
-            :placeholder="readOnly ? 'This case is closed — you can read it but not message it.' : 'Ask about this case, draft a letter, or summarize the facts…'"
-            help-context="case"
-            @send="send()"
-            @stop="stopStreaming"
-            @attach="attachmentsState.add"
-            @remove-attachment="attachmentsState.remove"
-          />
+        <div class="border-t px-3 py-3">
+          <div class="mx-auto w-full max-w-3xl">
+            <ChatComposer
+              ref="composerRef"
+              v-model="input"
+              :disabled="busy"
+              :readonly="readOnly"
+              :streaming="streaming"
+              :attachments="attachmentsState.attachments.value"
+              :can-send="conversationId !== null && !attachmentsState.pending.value"
+              :can-attach="caseDetail !== null && !readOnly"
+              :placeholder="readOnly ? 'This case is closed — you can read it but not message it.' : 'Ask about this case, draft a letter, or summarize the facts…'"
+              help-context="case"
+              @send="send()"
+              @stop="stopStreaming"
+              @attach="attachmentsState.add"
+              @remove-attachment="attachmentsState.remove"
+            />
+          </div>
           <p v-if="!conversationId" class="mx-auto mt-1 max-w-3xl text-center text-xs text-muted-foreground">
             This case has no conversation thread yet.
           </p>
@@ -1389,8 +1279,8 @@ watch(
 
     <!-- Floating Document Preview Panel (Large Screens) -->
     <aside
-      v-if="previewDoc"
-      class="relative hidden lg:flex shrink-0 flex-col border-l bg-background"
+      v-if="previewDoc && !fullscreen"
+      class="relative hidden lg:flex shrink-0 flex-col border-l bg-card"
       :style="{ width: `${previewWidth}px` }"
     >
       <div
@@ -1448,6 +1338,7 @@ watch(
     </aside>
 
     <div
+      v-if="!fullscreen"
       class="grid h-full transition-[grid-template-columns] duration-200 ease-out"
       :style="{ gridTemplateColumns: showTasks && conversationId && view === 'chat' ? '1fr' : '0fr' }"
     >
@@ -1462,21 +1353,22 @@ watch(
       </div>
     </div>
 
-    <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
-
     <div
+      v-if="!fullscreen"
       class="grid h-full transition-[grid-template-columns] duration-200 ease-out"
-      :style="{ gridTemplateColumns: hasCitations && showCitations && view === 'chat' ? '1fr' : '0fr' }"
+      :style="{ gridTemplateColumns: showCitations && view === 'chat' ? '1fr' : '0fr' }"
     >
       <div class="h-full min-w-0 overflow-hidden">
-        <CitationPanel
-          v-if="view === 'chat'"
-          :message="activeAssistantMessage"
-          :active-citation="activeCitation"
+        <CitationsPanel
+          :visible="showCitations && view === 'chat'"
+          :messages="(chatMessages as ChatMessage[])"
+          :target="citationTarget"
           @close="rightPanel = null"
         />
       </div>
     </div>
+
+    <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
 
     <CaseIntakeForm
       v-if="editOpen"
@@ -1510,7 +1402,7 @@ watch(
         class="fixed inset-0 z-50 lg:hidden"
       >
         <div class="absolute inset-0 bg-black/60" @click="closePreview" />
-        <div class="absolute inset-4 flex flex-col rounded-lg bg-background shadow-xl">
+        <div class="absolute inset-4 flex flex-col rounded-lg bg-popover shadow-xl">
           <div class="flex items-center justify-between border-b px-4 py-2.5">
             <span class="text-sm font-medium truncate">{{ previewDoc.title }}</span>
             <div class="flex items-center gap-2">

@@ -49,7 +49,7 @@ onMounted(() => {
       <div
         v-for="n in notificationStore.notifications"
         :key="n.id"
-        class="group flex items-start gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
+        class="surface-interactive group flex items-start gap-3 p-4"
         :class="n.read ? 'opacity-70' : ''"
       >
         <NuxtLink :to="n.url" class="min-w-0 flex-1" @click="notificationStore.markRead(n.id)">

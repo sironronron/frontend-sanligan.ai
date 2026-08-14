@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
             @click="!selectedFile && pickFile()"
           >
             <div v-if="!selectedFile" class="flex flex-col items-center gap-2 text-center">
-              <div class="flex size-10 items-center justify-center rounded-full bg-background shadow-sm">
+              <div class="flex size-10 items-center justify-center rounded-full bg-card shadow-sm">
                 <FileUpIcon class="size-4 text-muted-foreground" />
               </div>
               <p class="text-sm font-medium">PDF, DOCX, TXT, or MD</p>

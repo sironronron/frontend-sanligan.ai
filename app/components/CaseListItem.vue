@@ -53,7 +53,7 @@ const meta = computed(() => {
   <article
     role="button"
     tabindex="0"
-    class="group relative flex cursor-pointer items-center gap-4 overflow-hidden rounded-xl border bg-card py-3 pr-3 pl-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+    class="surface-interactive group relative flex w-full cursor-pointer items-center gap-4 overflow-hidden py-3 pr-3 pl-4 text-left focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
     @click="emit('open', props.case.id)"
     @keydown.enter.self="emit('open', props.case.id)"
     @keydown.space.self.prevent="emit('open', props.case.id)"

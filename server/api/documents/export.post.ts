@@ -21,11 +21,24 @@ const LOCAL_HOST_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$
 
 const RATE_WINDOW_MS = 60_000
 const RATE_MAX = 20
+
+/**
+ * Ceiling for a single TCP peer, which no header can change. `x-forwarded-for`
+ * is caller-supplied, so limiting on it alone lets one client mint a fresh
+ * quota per request just by varying the header; this is the backstop that
+ * makes the per-client limit above mean something.
+ */
+const SOCKET_RATE_MAX = 200
+
 const buckets = new Map<string, { count: number; resetAt: number }>()
 
 function isAllowedOrigin(origin: string | null | undefined, allowedOrigins: string): boolean {
   if (!origin) return false
-  if (LOCAL_HOST_PATTERN.test(origin)) return true
+  // Dev convenience only. In production this must not be a standing exemption:
+  // Origin is only unforgeable when a browser sets it, and any non-browser
+  // caller can send `Origin: http://localhost`, which would turn the
+  // allow-list into a formality and leave the endpoint open to everyone.
+  if (import.meta.dev && LOCAL_HOST_PATTERN.test(origin)) return true
   return allowedOrigins
     .split(',')
     .map((candidate) => candidate.trim())
@@ -33,21 +46,49 @@ function isAllowedOrigin(origin: string | null | undefined, allowedOrigins: stri
     .includes(origin)
 }
 
+function socketIp(event: H3Event): string {
+  return event.node.req.socket?.remoteAddress ?? 'unknown'
+}
+
 function clientIp(event: H3Event): string {
   const headers = getRequestHeaders(event)
   const forwarded = headers['x-forwarded-for']?.split(',')[0]?.trim()
-  return forwarded || headers['cf-connecting-ip'] || (event.node.req.socket?.remoteAddress ?? 'unknown')
+  return forwarded || headers['cf-connecting-ip'] || socketIp(event)
 }
 
-function rateLimited(ip: string): boolean {
-  const now = Date.now()
-  const bucket = buckets.get(ip)
+function consume(key: string, max: number, now: number): boolean {
+  const bucket = buckets.get(key)
   if (!bucket || bucket.resetAt <= now) {
-    buckets.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    buckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
     return false
   }
   bucket.count += 1
-  return bucket.count > RATE_MAX
+  return bucket.count > max
+}
+
+/**
+ * Drop windows that have already elapsed. Without this the map grows one entry
+ * per distinct `x-forwarded-for` value seen and is never pruned, so a caller
+ * rotating that header turns the rate limiter itself into the memory leak it
+ * was added to prevent.
+ */
+function evictExpired(now: number): void {
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key)
+  }
+}
+
+function rateLimited(event: H3Event): boolean {
+  const now = Date.now()
+
+  evictExpired(now)
+
+  // Both are consumed on every request: the claimed client identity carries
+  // the tight per-user limit, the socket the un-spoofable ceiling.
+  const perClient = consume(`c:${clientIp(event)}`, RATE_MAX, now)
+  const perSocket = consume(`s:${socketIp(event)}`, SOCKET_RATE_MAX, now)
+
+  return perClient || perSocket
 }
 
 export default defineEventHandler(async (event) => {
@@ -58,7 +99,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
   }
 
-  if (rateLimited(clientIp(event))) {
+  if (rateLimited(event)) {
     throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
   }
 
