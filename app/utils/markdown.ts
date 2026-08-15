@@ -187,6 +187,32 @@ function renderMarkdownInternal(text: string): string {
   let paragraph: string[] = []
   let openList: 'ul' | 'ol' | null = null
 
+  const UNORDERED_ITEM = /^[-*] .+/
+  const ORDERED_ITEM = /^(\d+)[.)]\s+.+/
+
+  const listKindOf = (line: string): 'ul' | 'ol' | null => {
+    if (UNORDERED_ITEM.test(line)) return 'ul'
+    if (ORDERED_ITEM.test(line)) return 'ol'
+    return null
+  }
+
+  /**
+   * The kind of list item that resumes after a run of blank lines, or null if
+   * the list really has ended. Models differ on whether they separate list
+   * items with a blank line — Claude usually does, local models usually do
+   * not — and closing the list on the blank line restarted the numbering at 1
+   * on every item.
+   */
+  const listKindAfterBlankLines = (from: number): 'ul' | 'ol' | null => {
+    for (let j = from; j < lines.length; j++) {
+      const next = lines[j]
+      if (next === undefined) return null
+      if (next.trim() === '') continue
+      return listKindOf(next)
+    }
+    return null
+  }
+
   const flushParagraph = () => {
     if (paragraph.length) {
       out.push(`<p>${paragraph.join('<br>')}</p>`)
@@ -262,7 +288,7 @@ function renderMarkdownInternal(text: string): string {
       continue
     }
 
-    if (/^[-*] .+/.test(line)) {
+    if (UNORDERED_ITEM.test(line)) {
       flushParagraph()
       if (openList !== 'ul') {
         closeList()
@@ -273,11 +299,17 @@ function renderMarkdownInternal(text: string): string {
       continue
     }
 
-    if (/^\d+[.)]\s+.+/.test(line)) {
+    const ordered = ORDERED_ITEM.exec(line)
+    if (ordered) {
       flushParagraph()
       if (openList !== 'ol') {
         closeList()
-        out.push('<ol class="my-2 ml-4 list-decimal space-y-1">')
+        // A list that does not start at 1 keeps its own numbering — a reply
+        // that continues "4." after an interrupting paragraph should not
+        // restart the count.
+        const start = Number(ordered[1])
+        const startAttr = Number.isFinite(start) && start !== 1 ? ` start="${start}"` : ''
+        out.push(`<ol class="my-2 ml-4 list-decimal space-y-1"${startAttr}>`)
         openList = 'ol'
       }
       out.push(`<li>${line.replace(/^\d+[.)]\s+/, '')}</li>`)
@@ -286,6 +318,12 @@ function renderMarkdownInternal(text: string): string {
 
     if (line.trim() === '') {
       flushParagraph()
+      // Blank lines inside a list are spacing between items, not the end of
+      // the list; only close it if what follows is not another item of the
+      // same kind.
+      if (openList !== null && listKindAfterBlankLines(i + 1) === openList) {
+        continue
+      }
       closeList()
       continue
     }

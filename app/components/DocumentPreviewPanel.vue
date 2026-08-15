@@ -25,6 +25,12 @@ const props = defineProps<{
   resizable?: boolean
   /** Render as a fixed right-side overlay instead of a flex sibling. */
   fixed?: boolean
+  /**
+   * Render as a centered modal at every breakpoint, like WordPreviewDialog.
+   * Pages without a document workspace beside the panel (drafts) have nothing
+   * for a side rail to sit against, so the preview belongs in the middle.
+   */
+  dialog?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -36,9 +42,38 @@ const typeIcon = computed(() => (props.preview.type === 'word' ? FileTypeIcon : 
 const typeLabel = computed(() =>
   props.preview.type === 'word' ? 'Word document' : 'PDF document',
 )
+
+function onKeydown(event: KeyboardEvent) {
+  if (props.dialog && event.key === 'Escape') emit('close')
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
+  <Teleport v-if="dialog" to="body">
+    <div
+      class="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6"
+      style="background: rgb(0 0 0 / 0.45)"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="`Preview ${preview.title}`"
+      @click.self="emit('close')"
+    >
+      <div class="flex h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl">
+        <DocumentPreviewHeader
+          :preview="preview"
+          :type-icon="typeIcon"
+          :type-label="typeLabel"
+          @close="emit('close')"
+        />
+        <DocumentPreviewBody :preview="preview" :type-label="typeLabel" @close="emit('close')" />
+      </div>
+    </div>
+  </Teleport>
+
+  <template v-else>
   <!--
     Floated clear of the edges in fixed mode rather than pinned flush to them:
     the panel is a detached surface like every other section, so its radius has
@@ -82,4 +117,5 @@ const typeLabel = computed(() =>
       </div>
     </div>
   </Teleport>
+  </template>
 </template>

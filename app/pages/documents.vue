@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import { FileUpIcon, Loader2Icon, FileIcon, LinkIcon, FilterIcon, SparklesIcon } from '@lucide/vue'
+import { useAuthStore } from '~/stores/auth'
 import { useCaseStore } from '~/stores/cases'
 import { useLabelStore, type AppliedLabel } from '~/stores/labels'
 import { upgradeMessage } from '~/stores/billing'
@@ -14,6 +15,9 @@ definePageMeta({
 
 interface Document {
   id: string
+  /** Whose upload it is. A case shelf carries colleagues' files too. */
+  user_id: string
+  uploaded_by?: string
   title: string
   original_filename: string
   mime_type: string
@@ -26,7 +30,18 @@ interface Document {
 }
 
 const api = useApi()
+const auth = useAuthStore()
 const caseStore = useCaseStore()
+
+/**
+ * The library lists the shelves of every case the reader is on, so a row may
+ * be a colleague's upload. Naming them only when it is not the reader's own
+ * file keeps the common row uncluttered.
+ */
+function uploaderLabel(doc: Document) {
+  if (!doc.uploaded_by || doc.user_id === auth.user?.id) return null
+  return doc.uploaded_by
+}
 const labelStore = useLabelStore()
 const fileDrop = useFileDrop()
 const { download: downloadDocument } = useDocumentFile()
@@ -523,6 +538,7 @@ async function retryDocument(doc: Document) {
                 <span v-if="doc.status === 'ready'"> · {{ doc.chunk_count }} chunks</span>
                 <span v-else-if="doc.status === 'failed' && doc.error_message"> · {{ doc.error_message }}</span>
                 <span> · {{ formatDate(doc.created_at) }}</span>
+                <span v-if="uploaderLabel(doc)"> · Uploaded by {{ uploaderLabel(doc) }}</span>
               </p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="sm" class="h-6 px-2 text-xs" @click="tagOpen = true">
@@ -605,6 +621,7 @@ async function retryDocument(doc: Document) {
               <span v-if="doc.status === 'ready'">{{ doc.chunk_count }} chunks · </span>
               <span v-else-if="doc.status === 'failed' && doc.error_message">{{ doc.error_message }} · </span>
               {{ formatDate(doc.created_at) }}
+              <span v-if="uploaderLabel(doc)"> · Uploaded by {{ uploaderLabel(doc) }}</span>
             </p>
 
             <div class="mt-auto flex items-center gap-2 border-t pt-3">
@@ -661,7 +678,10 @@ async function retryDocument(doc: Document) {
                     <component :is="fileIcon(doc.original_filename, doc.mime_type)" class="size-3.5 shrink-0 text-muted-foreground" />
                     <div class="min-w-0">
                       <p class="truncate text-sm font-medium">{{ doc.title }}</p>
-                      <p class="truncate text-[11px] text-muted-foreground">{{ doc.original_filename }}</p>
+                      <p class="truncate text-[11px] text-muted-foreground">
+                        {{ doc.original_filename }}
+                        <span v-if="uploaderLabel(doc)"> · {{ uploaderLabel(doc) }}</span>
+                      </p>
                     </div>
                   </div>
                 </TableCell>

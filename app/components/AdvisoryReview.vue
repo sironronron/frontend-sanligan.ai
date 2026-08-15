@@ -235,7 +235,7 @@ watch(() => props.conversationId, () => {
           </Button>
         </div>
 
-        <ScrollArea class="min-h-0 flex-1">
+        <div class="min-h-0 flex-1 overflow-y-auto">
           <ul class="space-y-2.5 p-4">
             <li
               v-for="advisory in items"
@@ -270,12 +270,12 @@ watch(() => props.conversationId, () => {
                 </span>
               </div>
 
-              <p class="mt-1.5 text-sm font-medium leading-snug">{{ advisory.title }}</p>
-              <p v-if="advisory.detail" class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+              <p class="mt-1.5 text-sm font-medium leading-snug break-words">{{ advisory.title }}</p>
+              <p v-if="advisory.detail" class="mt-1 text-[13px] leading-relaxed text-muted-foreground break-words">
                 {{ advisory.detail }}
               </p>
 
-              <p v-if="advisory.note" class="mt-2 rounded-lg bg-muted/60 px-2.5 py-1.5 text-xs italic text-muted-foreground">
+              <p v-if="advisory.note" class="mt-2 rounded-lg bg-muted/60 px-2.5 py-1.5 text-xs italic text-muted-foreground break-words">
                 “{{ advisory.note }}”
               </p>
 
@@ -331,7 +331,7 @@ watch(() => props.conversationId, () => {
               </div>
             </li>
           </ul>
-        </ScrollArea>
+        </div>
 
         <div class="flex items-center justify-between gap-3 border-t px-5 py-3">
           <p class="text-[11px] leading-snug text-muted-foreground">

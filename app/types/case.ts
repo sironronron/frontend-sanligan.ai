@@ -4,6 +4,9 @@ import type { AppliedLabel } from '~/stores/labels'
 
 export interface CaseDocument {
   id: string
+  /** Whose upload it is, and their name — a case shelf is shared. */
+  user_id: string
+  uploaded_by?: string
   case_id: string | null
   title: string
   original_filename: string

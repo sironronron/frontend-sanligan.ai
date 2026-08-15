@@ -23,6 +23,7 @@ import {
 } from '@lucide/vue'
 import { CASE_STATUSES, type CaseConversation, type LegalCase } from '~/stores/cases'
 import type { DueTone } from '~/composables/useCasePresentation'
+import { useAuthStore } from '~/stores/auth'
 import { useLabelStore } from '~/stores/labels'
 import { DOCUMENT_STATUS_LABEL, type CaseDocument, type GeneratedDocument } from '~/types/case'
 import LabelPicker from '~/components/LabelPicker.vue'
@@ -97,6 +98,7 @@ const emit = defineEmits<{
 
 const { formatShortDate, relativeTime, dueState } = useCasePresentation()
 const { fileIcon } = useFileTypeIcon()
+const auth = useAuthStore()
 const labelStore = useLabelStore()
 
 function isStreaming(id: string): boolean {
@@ -293,6 +295,11 @@ function docMeta(doc: CaseDocument) {
   const parts = [formatShortDate(doc.created_at)]
   if (doc.chunk_count > 0) {
     parts.push(`${doc.chunk_count} passage${doc.chunk_count === 1 ? '' : 's'}`)
+  }
+  // A shared shelf: say whose file it is, but only when it is not the
+  // reader's own — every row naming you reads as noise.
+  if (doc.uploaded_by && doc.user_id !== auth.user?.id) {
+    parts.push(doc.uploaded_by)
   }
 
   return parts.join(' · ')

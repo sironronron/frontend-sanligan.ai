@@ -258,7 +258,7 @@ onMounted(loadDocuments)
     <DocumentPreviewPanel
       v-if="previewDoc && previewDoc.type !== 'word'"
       :preview="previewDoc"
-      fixed
+      dialog
       @close="closePreview"
     />
 
