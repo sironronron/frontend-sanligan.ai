@@ -2,6 +2,7 @@
 import { Loader2Icon } from '@lucide/vue'
 import ChatMessage from '~/components/chat/ChatMessage.vue'
 import ChatSuggestions from '~/components/chat/ChatSuggestions.vue'
+import ChatChoicePrompt, { type ChoiceAnswer, type ChoiceQuestion } from '~/components/chat/ChatChoicePrompt.vue'
 import ActivityTimeline from '~/components/ActivityTimeline.vue'
 import { useChatSuggestions, type SuggestionContext } from '~/composables/useChatSuggestions'
 import type { ChatActivityStep, ChatMessage as ChatMessageType } from '~/types/chat'
@@ -16,6 +17,8 @@ const props = defineProps<{
   awaitingIntake: boolean
   intakeDismissed: boolean
   hasIntakeFields: boolean
+  /** The decision the model is waiting on, rendered inline under its reply. */
+  choiceQuestions?: ChoiceQuestion[] | null
   lastQuestion: string
   busy: boolean
   streamError: string
@@ -34,8 +37,13 @@ const emit = defineEmits<{
   retry: []
   'abandon-intake': []
   'reopen-intake': []
+  'answer-choice': [answers: ChoiceAnswer[]]
   'select-suggestion': [prompt: string]
 }>()
+
+const pendingChoice = computed<ChoiceQuestion[] | null>(() =>
+  props.choiceQuestions && props.choiceQuestions.length > 0 ? props.choiceQuestions : null,
+)
 
 const messagesRef = computed(() => props.messages)
 const streamingRef = computed(() => props.streaming)
@@ -66,8 +74,17 @@ const { suggestions } = useChatSuggestions(messagesRef, experienceLevelRef, stre
       @export="(message, type) => $emit('export', message, type)"
     />
 
+    <ChatChoicePrompt
+      v-if="pendingChoice"
+      :questions="pendingChoice"
+      :busy="busy"
+      @submit="(answers) => $emit('answer-choice', answers)"
+    />
+
+    <!-- Suggested next steps would compete with the decision actually being
+         asked for, so they stand down until it is answered. -->
     <ChatSuggestions
-      v-if="suggestions.length > 0"
+      v-if="suggestions.length > 0 && !pendingChoice"
       :suggestions="suggestions"
       @select="(prompt) => $emit('select-suggestion', prompt)"
     />

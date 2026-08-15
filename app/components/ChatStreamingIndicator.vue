@@ -35,6 +35,8 @@ function label(turn: ChatTurn): string {
   // Intake submissions are a wall of "field: value" pairs, never a readable title.
   if (question.startsWith('[Intake Form Submission]')) return 'Drafting your document'
   if (question.startsWith('[Template:')) return 'Filling in your template'
+  // A choice submission is the Q/A transport, not a question the user typed.
+  if (question.startsWith('[Choice Selection]')) return 'Acting on your choice'
 
   return question.length > 60 ? `${question.slice(0, 60)}…` : question
 }

@@ -49,7 +49,7 @@ import {
 } from '~/utils/kyc'
 
 definePageMeta({
-  middleware: ['auth', 'organization'],
+  middleware: ['auth'],
   layout: 'default',
 })
 
@@ -212,7 +212,7 @@ async function handleClear() {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-2xl flex-1 px-4 py-10">
+  <div class="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
     <PageHeader
       title="Personalization"
       description="Tell Batayan who you are and what you'll use it for so it can match its tone and drafting style. These answers are self-reported — they only calibrate responses and never grant access."
@@ -231,25 +231,25 @@ async function handleClear() {
       <CardContent>
         <template v-if="auth.kycCompleted">
           <div class="grid gap-3 sm:grid-cols-2">
-            <div class="rounded-lg border bg-muted/30 p-3">
+            <div class="surface-inset p-3">
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Roles</p>
               <p class="mt-1 text-sm font-medium">{{ kycRolesLabel(auth.user?.kyc_role) }}</p>
               <p v-if="kycKeys(auth.user?.kyc_role).includes(KYC_ROLE_OTHER) && auth.user?.kyc_role_other" class="mt-0.5 text-xs text-muted-foreground">
                 {{ auth.user.kyc_role_other }}
               </p>
             </div>
-            <div class="rounded-lg border bg-muted/30 p-3">
+            <div class="surface-inset p-3">
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Primary uses</p>
               <p class="mt-1 text-sm font-medium">{{ kycUseCasesLabel(auth.user?.kyc_use_case) }}</p>
               <p v-if="kycKeys(auth.user?.kyc_use_case).includes(KYC_USE_CASE_OTHER) && auth.user?.kyc_use_case_other" class="mt-0.5 text-xs text-muted-foreground">
                 {{ auth.user.kyc_use_case_other }}
               </p>
             </div>
-            <div class="rounded-lg border bg-muted/30 p-3">
+            <div class="surface-inset p-3">
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Document types</p>
               <p class="mt-1 text-sm font-medium">{{ kycDocumentTypesLabel(auth.user?.kyc_document_types) }}</p>
             </div>
-            <div class="rounded-lg border bg-muted/30 p-3">
+            <div class="surface-inset p-3">
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Experience level</p>
               <p class="mt-1 text-sm font-medium">{{ kycExperienceLevelLabel(auth.user?.kyc_experience_level) }}</p>
             </div>
@@ -258,7 +258,7 @@ async function handleClear() {
             Completed {{ formatDate(auth.user?.kyc_completed_at) }}
           </p>
         </template>
-        <div v-else class="rounded-lg border border-dashed bg-muted/45 p-4 text-sm text-muted-foreground">
+        <div v-else class="surface-inset border-dashed p-4 text-sm text-muted-foreground">
           You haven't set up a profile yet. Complete onboarding to personalize Batayan's responses.
         </div>
       </CardContent>

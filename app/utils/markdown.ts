@@ -234,6 +234,17 @@ function renderMarkdownInternal(text: string): string {
       continue
     }
 
+    // The model sometimes draws a section rule as a run of dashes framed by
+    // "x" characters (e.g. "x-----------------------------------------x").
+    // Treat those the same as a markdown "---" rule instead of leaving them
+    // as literal text.
+    if (/^x\s*[-=–—_*]{3,}\s*x$/i.test(line.trim())) {
+      flushParagraph()
+      closeList()
+      out.push('<hr class="my-4 border-border" />')
+      continue
+    }
+
     if (/^&gt;\s?/.test(line)) {
       flushParagraph()
       closeList()

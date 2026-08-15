@@ -3,16 +3,13 @@ import {
   Building2Icon,
   CreditCardIcon,
   LogOutIcon,
-  MenuIcon,
   MoonIcon,
   Settings2Icon,
   SparklesIcon,
   SunIcon,
-  XIcon,
 } from '@lucide/vue'
 
 const auth = useAuthStore()
-const route = useRoute()
 const { isDark, toggle: toggleTheme } = useTheme()
 const billing = useBillingStore()
 const tour = useProductTour()
@@ -28,30 +25,6 @@ watch(
     if (completed) tour.maybeStart()
   },
   { immediate: true },
-)
-
-const navItems = computed(() => [
-  { to: '/chat', label: 'Chat' },
-  { to: '/cases', label: 'Cases' },
-  { to: '/documents', label: 'Documents' },
-  { to: '/drafts', label: 'Drafts' },
-  { to: '/templates', label: 'Templates' },
-  ...(auth.user?.is_admin ? [{ to: '/admin/legal-sources', label: 'Admin' }] : []),
-])
-
-function isActive(to: string) {
-  return route.path === to || route.path.startsWith(`${to}/`)
-}
-
-const mobileOpen = ref(false)
-
-// Closing the drawer after navigating keeps the back button from resurrecting
-// a stale menu, and mirrors what the old dropdown did on select.
-watch(
-  () => route.path,
-  () => {
-    mobileOpen.value = false
-  },
 )
 
 async function handleLogout() {
@@ -76,164 +49,116 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex min-h-dvh flex-col bg-background text-foreground">
+  <div class="min-h-dvh bg-background text-foreground">
     <!--
-      A full-width band on --card so it stays a distinct plane from the page
-      scrolling beneath it. The active page is a tinted pill with a hairline
-      ring; on mobile the links fall into a slide-down drawer under the bar.
+      This wrapper is the layout's single root, so Nuxt's layout transition has
+      one element to animate — the sidebar provider alone renders through a
+      Fragment (TooltipProvider). The note lives inside it rather than above it
+      because a comment at template root counts as a second root node (E4002).
     -->
-    <header v-if="auth.user" class="sticky top-0 z-40 border-b border-border bg-card/85 backdrop-blur-md">
-      <div class="flex h-14 w-full items-center gap-2 px-4 sm:gap-4">
-        <button
-          type="button"
-          :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'"
-          :aria-expanded="mobileOpen"
-          class="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
-          @click="mobileOpen = !mobileOpen"
-        >
-          <XIcon v-if="mobileOpen" class="size-5" />
-          <MenuIcon v-else class="size-5" />
-        </button>
+    <SidebarProvider>
+    <!--
+      The floating sidebar is a detached panel with xl radius; on small screens
+      it becomes a slide-in sheet. Navigation, the organization, seats, and
+      usage all live here — the pill header above carries only session actions.
+    -->
+    <AppSidebar v-if="auth.user" />
 
-        <NuxtLink to="/chat" class="flex shrink-0 items-center gap-2.5" aria-label="Batayan">
-          <span class="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm">
-            <BatayanMark class="size-[1.1rem]" />
-          </span>
-          <span class="whitespace-nowrap font-heading text-lg font-semibold tracking-tight">
-            Batayan
-          </span>
-        </NuxtLink>
-
-        <nav class="hidden items-center gap-1 text-sm md:flex" aria-label="Primary">
-          <NuxtLink
-            v-for="item in navItems"
-            :key="item.to"
-            :to="item.to"
-            :data-tour="`nav-${item.to.replace('/', '')}`"
-            class="rounded-md px-3 py-1.5 transition-colors"
-            :class="isActive(item.to)
-              ? 'bg-muted font-medium text-foreground ring-1 ring-border'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
-          >
-            {{ item.label }}
-          </NuxtLink>
-        </nav>
-
-        <div class="ml-auto flex items-center gap-1">
-          <ChatStreamingIndicator class="mr-1" />
-          <TasksDropdown class="hidden md:block" />
-          <NotificationsDropdown />
-          <button
-            type="button"
-            aria-label="Toggle theme"
-            class="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            @click="toggleTheme"
-          >
-            <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              class="flex shrink-0 items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <Avatar class="size-7">
-                <AvatarFallback class="bg-primary text-primary-foreground text-xs">
-                  {{ initials }}
-                </AvatarFallback>
-              </Avatar>
-              <span class="hidden text-sm font-medium sm:block">{{ auth.user?.name }}</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-56">
-              <DropdownMenuLabel class="flex flex-col">
-                <span class="text-sm font-medium">{{ auth.user?.name }}</span>
-                <span class="text-muted-foreground text-xs">{{ auth.user?.email }}</span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuItem v-if="!auth.hasOrganization" @click="navigateTo('/organization/setup')">
-                  <Building2Icon />
-                  Set up organization
-                </DropdownMenuItem>
-                <DropdownMenuItem v-if="auth.hasOrganization" @click="navigateTo('/settings/organization')">
-                  <Building2Icon />
-                  Manage organization
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="navigateTo('/settings/billing')">
-                  <CreditCardIcon />
-                  Billing
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="navigateTo('/settings/personalization')">
-                  <Settings2Icon />
-                  Personalization
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuItem @click="tour.restart()">
-                  <SparklesIcon />
-                  Show me around
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" @click="handleLogout">
-                <LogOutIcon />
-                Log out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
+    <SidebarInset>
       <!--
-        Slide-down drawer for small screens. Kept in the DOM and collapsed with
-        grid-rows so the open/close animates; inert while shut so focus stays
-        on the bar.
+        A floating pill rather than a full-width bar: it sits detached over the
+        page, blurs what scrolls beneath, and stays put on scroll. The nav that
+        used to fill it now lives in the sidebar.
       -->
-      <div
-        class="grid overflow-hidden border-t border-border transition-[grid-template-rows] duration-300 ease-out md:hidden"
-        :class="mobileOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-        :inert="!mobileOpen"
-        aria-hidden="true"
-      >
-        <div class="min-h-0">
-          <nav class="flex flex-col gap-0.5 px-4 py-3" aria-label="Mobile">
-            <NuxtLink
-              v-for="item in navItems"
-              :key="item.to"
-              :to="item.to"
-              class="rounded-md px-3 py-2 text-sm transition-colors"
-              :class="isActive(item.to)
-                ? 'bg-muted font-medium text-foreground ring-1 ring-border'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
-              @click="mobileOpen = false"
-            >
-              {{ item.label }}
-            </NuxtLink>
-          </nav>
+      <header v-if="auth.user" class="sticky top-4 z-40 mt-4 px-4 md:px-6">
+        <div
+          class="flex h-14 items-center gap-1 rounded-full border border-border bg-card/90 px-2 shadow-float backdrop-blur-md sm:gap-2 sm:px-3"
+        >
+          <SidebarTrigger class="shrink-0 rounded-full" />
 
-          <div class="flex items-center justify-between gap-2 border-t border-border/70 px-4 py-3">
-            <div class="min-w-0">
-              <p class="truncate text-sm font-medium">{{ auth.user?.name }}</p>
-              <p class="truncate text-xs text-muted-foreground">{{ auth.user?.email }}</p>
-            </div>
+          <NuxtLink to="/chat" class="flex shrink-0 items-center gap-2.5 pl-1 pr-2" aria-label="Batayan">
+            <span class="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+              <BatayanMark class="size-[1.1rem]" />
+            </span>
+            <span class="whitespace-nowrap font-heading text-lg font-semibold tracking-tight">
+              Batayan
+            </span>
+          </NuxtLink>
+
+          <div class="ml-auto flex items-center gap-1">
+            <ChatStreamingIndicator class="mr-1" />
+            <NotificationsDropdown />
             <button
               type="button"
-              aria-label="Log out"
-              class="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-              @click="handleLogout"
+              aria-label="Toggle theme"
+              class="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              @click="toggleTheme"
             >
-              <LogOutIcon class="size-4" />
+              <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
             </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                class="flex shrink-0 items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <Avatar class="size-7">
+                  <AvatarFallback class="bg-primary text-primary-foreground text-xs">
+                    {{ initials }}
+                  </AvatarFallback>
+                </Avatar>
+                <span class="hidden text-sm font-medium sm:block">{{ auth.user?.name }}</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-56">
+                <DropdownMenuLabel class="flex flex-col">
+                  <span class="text-sm font-medium">{{ auth.user?.name }}</span>
+                  <span class="text-muted-foreground text-xs">{{ auth.user?.email }}</span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <!--
+                    One entry either way. The settings page answers for both the
+                    account that has a team and the one that could have: sending
+                    everyone there beats a menu item that offers to set up
+                    something the plan may not carry.
+                  -->
+                  <DropdownMenuItem @click="navigateTo('/settings/organization')">
+                    <Building2Icon />
+                    Organization
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @click="navigateTo('/settings/billing')">
+                    <CreditCardIcon />
+                    Billing
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @click="navigateTo('/settings/personalization')">
+                    <Settings2Icon />
+                    Personalization
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuItem @click="tour.restart()">
+                    <SparklesIcon />
+                    Show me around
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" @click="handleLogout">
+                  <LogOutIcon />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-      </div>
-    </header>
+      </header>
 
-    <main class="flex flex-1 flex-col">
-      <slot />
-    </main>
+      <main class="flex flex-1 flex-col">
+        <slot />
+      </main>
+    </SidebarInset>
 
     <TourIntro />
     <ProductTour />
     <WelcomeDialog />
+    </SidebarProvider>
   </div>
 </template>

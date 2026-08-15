@@ -164,10 +164,12 @@ export function stripExportLinks(text: string): string {
 
 /**
  * Derive a title from the message content, mirroring how the backend names
- * exported files: the first non-empty line with markdown markers removed.
+ * exported files: the first non-empty line of the extracted document body with
+ * markdown markers removed. Chat-only preamble and hidden markers never become
+ * the title.
  */
 export function deriveTitleFromContent(content: string, fallback = 'Batayan Response'): string {
-  for (const rawLine of content.split(/\r?\n/)) {
+  for (const rawLine of extractDocumentText(content).split(/\r?\n/)) {
     const line = rawLine.trim().replace(/^#+\s*/, '').replace(/\*\*/g, '').trim()
     if (line && !line.startsWith('[[')) {
       return line

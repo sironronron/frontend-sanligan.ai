@@ -92,10 +92,10 @@ onMounted(loadPrompts)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl px-4 py-8">
+  <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <AdminNav />
 
-    <div class="mb-6 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+    <div class="surface mb-4 px-4 py-3 text-sm">
       <span class="font-medium">Active prompt:</span>
       <span v-if="activePrompt">
         {{ activePrompt.name }} v{{ activePrompt.version }} · {{ activePrompt.name === 'saligan' ? 'Batayan assistant' : '' }}
@@ -103,7 +103,7 @@ onMounted(loadPrompts)
       <span v-else class="text-muted-foreground">none — chat is disabled until one is activated</span>
     </div>
 
-    <div class="mb-4 flex items-center justify-between">
+    <div class="surface mb-6 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
       <p class="text-sm text-muted-foreground">New versions are saved inactive until you activate them.</p>
       <Button @click="showForm = !showForm">
         <PlusIcon class="size-4" />
@@ -173,7 +173,7 @@ onMounted(loadPrompts)
                       Active
                     </Badge>
                   </div>
-                  <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">{{ prompt.content }}</pre>
+                  <pre class="surface-inset mt-2 max-h-40 overflow-auto whitespace-pre-wrap p-3 text-xs text-muted-foreground">{{ prompt.content }}</pre>
                   <p class="mt-1.5 text-xs text-muted-foreground">
                     Created {{ new Date(prompt.created_at).toLocaleString() }}
                   </p>

@@ -10,6 +10,7 @@ export interface User {
   organization_id: string | null
   org_role: 'owner' | 'admin' | 'member' | null
   org_status: 'active' | 'invited' | 'suspended' | null
+  organization_name: string | null
   kyc_role: string | null
   kyc_role_other: string | null
   kyc_use_case: string | null
@@ -36,6 +37,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   const hasOrganization = computed(() => user.value?.organization_id != null)
 
+  /**
+   * An admin has revoked this member's access. Their organization's plan is
+   * still paying for the seat, so nothing in billing reflects this — the flag
+   * on the account is the only signal, and every guard reads it from here.
+   */
+  const isSuspended = computed(() => user.value?.org_status === 'suspended')
+
   const kycCompleted = computed(() => user.value?.kyc_completed_at != null)
 
   const hasAcceptedTerms = computed(() => user.value?.terms_accepted === true)
@@ -45,8 +53,16 @@ export const useAuthStore = defineStore('auth', () => {
     () => user.value != null && user.value.terms_accepted_at != null && !user.value.terms_accepted,
   )
 
+  /**
+   * Where a signed-in user belongs once the guards have had their say.
+   *
+   * An organization is no longer part of getting started: teams are a paid
+   * capability, so asking every new account to name a workspace put a step
+   * about buying a team plan in front of people who had not yet bought
+   * anything — and in front of the solo practitioners who never will. Someone
+   * on a team plan creates one deliberately, from settings.
+   */
   function homePath() {
-    if (!hasOrganization.value) return '/organization/setup'
     return '/chat'
   }
 
@@ -147,6 +163,23 @@ export const useAuthStore = defineStore('auth', () => {
       busy.value = false
 
       throw error
+    }
+  }
+
+  /**
+   * Give up the seat in the current organization. The only action left to a
+   * suspended member, and the way out of the suspension screen: once the
+   * membership is gone the account is an ordinary unsubscribed one again, free
+   * to buy its own plan.
+   */
+  async function leaveOrganization() {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: User }>('/organizations/leave', { method: 'POST' })
+      user.value = data
+      return data
+    } finally {
+      busy.value = false
     }
   }
 
@@ -303,6 +336,7 @@ export const useAuthStore = defineStore('auth', () => {
     initialized,
     busy,
     hasOrganization,
+    isSuspended,
     kycCompleted,
     hasAcceptedTerms,
     needsTermsReacceptance,
@@ -313,6 +347,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     acceptInvite,
     createOrganization,
+    leaveOrganization,
     logout,
     saveKyc,
     clearKyc,

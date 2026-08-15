@@ -12,9 +12,30 @@ export interface CaseConversation {
   updated_at: string
 }
 
+/**
+ * A person shown against a case: its owner, an assignee, or a candidate in the
+ * assign picker. Deliberately thin — the API sends only what naming a
+ * colleague and drawing their avatar needs.
+ */
+export interface CaseMember {
+  id: string
+  name: string
+  email: string
+  org_role: string | null
+  org_status: string | null
+}
+
 export interface LegalCase {
   id: string
   title: string
+  owner_id: string
+  organization_id: string | null
+  owner?: CaseMember | null
+  assignees?: CaseMember[]
+  /** Whether the signed-in user owns this case, rather than being assigned to it. */
+  is_owner: boolean
+  /** Whether they may change who else is on it — the owner, or an org admin. */
+  can_manage_assignees: boolean
   case_type: string
   reference: string | null
   priority: 'low' | 'medium' | 'high' | 'urgent'
@@ -163,6 +184,8 @@ export interface CaseFilters {
   case_type?: string
   priority?: string
   tag?: string
+  /** A colleague's id, or 'me' — matches cases they own or are assigned to. */
+  assignee?: string
   archived?: boolean
 }
 
@@ -217,6 +240,7 @@ export const useCaseStore = defineStore('cases', () => {
       if (filters.case_type) params.append('case_type', filters.case_type)
       if (filters.priority) params.append('priority', filters.priority)
       if (filters.tag) params.append('tag', filters.tag)
+      if (filters.assignee) params.append('assignee', filters.assignee)
       if (filters.archived) params.append('archived', '1')
       const query = params.toString() ? `?${params.toString()}` : ''
       const { data } = await api<{ data: LegalCase[] }>(`/cases${query}`)
@@ -305,6 +329,54 @@ export const useCaseStore = defineStore('cases', () => {
     return data
   }
 
+  /**
+   * The people on a case. Kept off the case record itself because the picker
+   * refetches it after every change, and the case payload is heavy.
+   */
+  async function fetchAssignees(caseId: string) {
+    return await api<{ owner: CaseMember; assignees: CaseMember[]; can_manage: boolean }>(
+      `/cases/${caseId}/assignees`,
+    )
+  }
+
+  /** Colleagues who could be added: active org members not already on the case. */
+  async function fetchAssignableMembers(caseId: string) {
+    const { data } = await api<{ data: CaseMember[] }>(`/cases/${caseId}/assignees/candidates`)
+    return data
+  }
+
+  /**
+   * Add someone by id, or by email when they are not in the organization yet —
+   * the API decides whether that email is an existing colleague or an invite,
+   * so the caller does not have to know which.
+   */
+  async function assignMember(caseId: string, target: { user_id: string } | { email: string }) {
+    const response = await api<{ assignees: CaseMember[]; invitation?: { email: string } }>(
+      `/cases/${caseId}/assignees`,
+      { method: 'POST', body: target },
+    )
+    applyAssignees(caseId, response.assignees)
+    return response
+  }
+
+  async function unassignMember(caseId: string, userId: string) {
+    const response = await api<{ assignees: CaseMember[] }>(`/cases/${caseId}/assignees/${userId}`, {
+      method: 'DELETE',
+    })
+    applyAssignees(caseId, response.assignees)
+    return response
+  }
+
+  /** Keep the open case and the list row in step with a membership change. */
+  function applyAssignees(caseId: string, assignees: CaseMember[]) {
+    if (current.value?.id === caseId) {
+      current.value = { ...current.value, assignees }
+    }
+
+    const index = cases.value.findIndex((c) => c.id === caseId)
+    if (index !== -1) cases.value[index] = { ...cases.value[index]!, assignees }
+  }
+
   async function forceDeleteCase(id: string, confirmation: string) {
     await api(`/cases/${id}/force`, {
       method: 'DELETE',
@@ -327,5 +399,9 @@ export const useCaseStore = defineStore('cases', () => {
     archiveCase,
     restoreCase,
     forceDeleteCase,
+    fetchAssignees,
+    fetchAssignableMembers,
+    assignMember,
+    unassignMember,
   }
 })

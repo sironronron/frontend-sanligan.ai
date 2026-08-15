@@ -15,7 +15,9 @@ import {
   MessagesSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
+  RotateCcwIcon,
   SearchIcon,
+  TagIcon,
   TrashIcon,
   XIcon,
 } from '@lucide/vue'
@@ -24,6 +26,7 @@ import type { DueTone } from '~/composables/useCasePresentation'
 import { useLabelStore } from '~/stores/labels'
 import { DOCUMENT_STATUS_LABEL, type CaseDocument, type GeneratedDocument } from '~/types/case'
 import LabelPicker from '~/components/LabelPicker.vue'
+import FileTagDialog from '~/components/FileTagDialog.vue'
 import CaseMiniCalendar, { type ScheduleEvent } from '~/components/CaseMiniCalendar.vue'
 import CaseBrief from '~/components/CaseBrief.vue'
 import CaseSidebarSection from '~/components/CaseSidebarSection.vue'
@@ -84,6 +87,7 @@ const emit = defineEmits<{
   viewDocument: [doc: CaseDocument]
   downloadDocument: [doc: CaseDocument]
   deleteDocument: [doc: CaseDocument]
+  retryDocument: [doc: CaseDocument]
   updateDocumentCategories: [doc: CaseDocument, ids: string[]]
   downloadGenerated: [doc: GeneratedDocument, type: 'word' | 'pdf']
   updateThreadTags: [threadId: string, ids: string[]]
@@ -294,6 +298,11 @@ function docMeta(doc: CaseDocument) {
   return parts.join(' · ')
 }
 
+/** Files still being read; surfaces on the Files band's title as a badge. */
+const pendingDocumentCount = computed(
+  () => props.documents.filter((doc) => doc.status === 'queued' || doc.status === 'processing').length,
+)
+
 /**
  * The other groups a file also sits in. A document filed under three
  * categories is listed three times, and without this the copies are
@@ -388,8 +397,16 @@ const SECTION_ACTION = 'inline-flex size-7 shrink-0 items-center justify-center 
 
 /** A row in the files tree: either a tag group header or a document under it. */
 type FileRow =
-  | { type: 'header'; key: string; name: string; count: number }
+  | { type: 'header'; key: string; name: string; count: number; color: string | null }
   | { type: 'doc'; key: string; group: string; doc: CaseDocument }
+
+/**
+ * One filing dialog per sidebar, not per row. A row is keyed by its tag group,
+ * so removing a file's last category moves it to "Unfiled" and remounts the
+ * row — a dialog living inside it would close mid-edit. The dialog lives here
+ * instead, and any row's tag button just opens it.
+ */
+const fileTagOpen = ref(false)
 
 /** A row in the threads list: an accordion header or a thread card. */
 type ThreadRow =
@@ -496,12 +513,13 @@ const fileRows = computed<FileRow[]>(() => {
     .map(([labelId, documents]) => ({
       key: labelId,
       name: labelStore.byId.get(labelId)?.name ?? 'Uncategorized',
+      color: labelStore.byId.get(labelId)?.color ?? null,
       documents,
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   for (const group of groups) {
-    rows.push({ type: 'header', key: group.key, name: group.name, count: group.documents.length })
+    rows.push({ type: 'header', key: group.key, name: group.name, color: group.color, count: group.documents.length })
     if (!groupCollapsed(collapsedFileGroups.value, group.key)) {
       for (const doc of group.documents) {
         rows.push({ type: 'doc', key: `d-${group.key}-${doc.id}`, group: group.key, doc })
@@ -529,7 +547,7 @@ onMounted(() => {
 
 <template>
   <aside
-    class="relative hidden h-full w-[21rem] shrink-0 flex-col overflow-hidden border-r bg-sidebar md:flex"
+    class="surface relative hidden h-full w-[21rem] shrink-0 flex-col overflow-hidden bg-sidebar md:flex"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -814,6 +832,7 @@ onMounted(() => {
           label="Files"
           :count="props.documents.length"
           count-label="files"
+          :pending-count="pendingDocumentCount"
           :open="sectionOpen('files')"
           @toggle="toggleSection('files')"
         >
@@ -929,6 +948,7 @@ onMounted(() => {
               v-if="row.type === 'header'"
               :name="row.name"
               :count="row.count"
+              :color="row.color"
               :collapsed="groupCollapsed(collapsedFileGroups, row.key)"
               @click="toggleFileGroup(row.key)"
             />
@@ -970,9 +990,15 @@ onMounted(() => {
                       <span
                         v-for="category in alsoFiledUnder(row.doc, row.group)"
                         :key="category.id"
-                        class="max-w-[4.5rem] shrink-0 truncate rounded bg-muted px-1.5 text-[11px] leading-4 text-muted-foreground"
+                        class="flex max-w-[4.5rem] shrink-0 items-center gap-1 truncate rounded bg-muted px-1.5 text-[11px] leading-4 text-muted-foreground"
                         :title="`Also filed under ${category.name}`"
                       >
+                        <span
+                          class="size-1.5 shrink-0 rounded-full"
+                          :class="category.color ? '' : 'bg-muted-foreground/40'"
+                          :style="category.color ? { backgroundColor: category.color } : undefined"
+                          aria-hidden="true"
+                        />
                         {{ category.name }}
                       </span>
                     </span>
@@ -985,27 +1011,33 @@ onMounted(() => {
                   old toolbar over the filename in the first place.
                 -->
                 <div :class="ROW_ACTIONS">
-                  <LabelPicker
+                  <button
                     v-if="!props.readonly"
-                    kind="document_category"
-                    trigger-label=""
+                    type="button"
+                    :class="ROW_ACTION_BUTTON"
                     :aria-label="`Tag ${row.doc.title}`"
-                    :trigger-class="`${ROW_ACTION_BUTTON} border-transparent bg-transparent p-0`"
-                    :show-chips="false"
-                    :max="5"
-                    :model-value="(row.doc.categories ?? []).map((category) => category.id)"
-                    @update:model-value="(ids) => emit('updateDocumentCategories', row.doc, ids)"
-                  />
+                    title="File under a category"
+                    @click="fileTagOpen = true"
+                  >
+                    <TagIcon class="size-4" />
+                  </button>
                   <DropdownMenu>
                     <DropdownMenuTrigger :class="ROW_ACTION_BUTTON" :aria-label="`Actions for ${row.doc.title}`">
                       <MoreHorizontalIcon class="size-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" class="w-40">
-                      <DropdownMenuItem @click="emit('downloadDocument', row.doc)">
+                      <DropdownMenuItem
+                        v-if="row.doc.status === 'failed'"
+                        @click="emit('retryDocument', row.doc)"
+                      >
+                        <RotateCcwIcon class="size-4" />
+                        Retry
+                      </DropdownMenuItem>
+                      <DropdownMenuItem v-else @click="emit('downloadDocument', row.doc)">
                         <DownloadIcon class="size-4" />
                         Download
                       </DropdownMenuItem>
-                      <template v-if="!props.readonly">
+                      <template v-if="!props.readonly && row.doc.status !== 'failed'">
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" @click="emit('deleteDocument', row.doc)">
                           <TrashIcon class="size-4" />
@@ -1136,6 +1168,16 @@ onMounted(() => {
       </section>
     </div>
   </aside>
+
+  <FileTagDialog
+    v-if="!props.readonly"
+    v-model:open="fileTagOpen"
+    kind="document_category"
+    hide-trigger
+    :max="5"
+    :files="props.documents"
+    @update-file="(file, ids) => emit('updateDocumentCategories', file, ids)"
+  />
 </template>
 
 <style scoped>

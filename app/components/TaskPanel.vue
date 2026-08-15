@@ -158,7 +158,7 @@ function formatDueDate(date: string | null) {
         props.visible
           ? 'flex fixed inset-x-0 bottom-0 z-40 max-h-[75dvh] w-full rounded-t-2xl border shadow-2xl'
           : 'hidden',
-        'lg:static lg:z-auto lg:flex lg:h-full lg:max-h-none lg:w-80 lg:shrink-0 lg:rounded-none lg:border-l lg:shadow-none',
+        'lg:static lg:z-auto lg:flex lg:h-full lg:max-h-none lg:w-80 lg:shrink-0 lg:rounded-xl lg:border lg:shadow-raised',
         props.class,
       )"
     >

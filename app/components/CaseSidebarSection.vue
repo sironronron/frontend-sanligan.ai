@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronRightIcon } from '@lucide/vue'
+import { ChevronRightIcon, Loader2Icon } from '@lucide/vue'
 
 /**
  * One band of the case rail: details, threads, files, drafts.
@@ -17,6 +17,8 @@ defineProps<{
   open: boolean
   /** Reads out as the count's unit for screen readers, e.g. "3 threads". */
   countLabel?: string
+  /** Items still being processed; renders a pulsing badge on the title. */
+  pendingCount?: number
 }>()
 
 defineEmits<{ toggle: [] }>()
@@ -45,6 +47,17 @@ defineEmits<{ toggle: [] }>()
       <span v-if="count" class="shrink-0 text-xs tabular-nums">
         {{ count }}
         <span class="sr-only">{{ countLabel }}</span>
+      </span>
+      <span
+        v-if="pendingCount"
+        class="flex shrink-0 items-center gap-1 rounded-full bg-espresso/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-espresso dark:bg-peach/10 dark:text-peach"
+        :title="`${pendingCount} file${pendingCount === 1 ? '' : 's'} in queue or processing`"
+      >
+        <Loader2Icon class="size-2.5 animate-spin" />
+        {{ pendingCount }}
+        <span class="sr-only">
+          {{ pendingCount }} file{{ pendingCount === 1 ? '' : 's' }} in queue or processing
+        </span>
       </span>
     </button>
 

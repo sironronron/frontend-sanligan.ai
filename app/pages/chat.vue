@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import {
-  Loader2Icon,
   XIcon,
-  DownloadIcon,
   ListChecksIcon,
   QuoteIcon,
   SearchIcon,
   PanelLeftIcon,
 } from '@lucide/vue'
 import { useTodoStore } from '~/stores/todos'
+import { useAdvisoryStore } from '~/stores/advisories'
+import AdvisoryReview from '~/components/AdvisoryReview.vue'
 import { extractTodoItems } from '~/utils/todos'
 import { useBillingStore } from '~/stores/billing'
 import { useAuthStore } from '~/stores/auth'
 import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
 import ChatThread from '~/components/chat/ChatThread.vue'
+import { formatChoiceSubmission, type ChoiceAnswer } from '~/components/chat/ChatChoicePrompt.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
 import ChatEmptyState from '~/components/chat/ChatEmptyState.vue'
 import ChatStarters from '~/components/chat/ChatStarters.vue'
@@ -23,6 +24,7 @@ import { useStarterSuggestions, type SuggestionContext } from '~/composables/use
 import ChatConversationList from '~/components/chat/ChatConversationList.vue'
 import CitationsPanel from '~/components/chat/CitationsPanel.vue'
 import { citationMarkFrom, collectCitations, findCitation, type CitationMark } from '~/utils/citations'
+import { deriveDocumentTitle } from '~/utils/documentTitle'
 import type { ChatMessage } from '~/types/chat'
 import type { CitationTarget } from '~/types/citations'
 import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
@@ -32,7 +34,7 @@ import { useLabelStore, type AppliedLabel } from '~/stores/labels'
 import type { ChatMessageAttachment } from '~/types/chat'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
+  middleware: ['auth', 'onboarding', 'subscription'],
 })
 
 interface Source {
@@ -115,6 +117,7 @@ const intakeFields = computed(() => turn.value?.intakeFields ?? null)
 const intakeDefaults = computed(() => turn.value?.intakeDefaults ?? null)
 const awaitingIntake = computed(() => turn.value?.awaitingIntake ?? false)
 const intakeDismissed = computed(() => turn.value?.intakeDismissed ?? false)
+const choiceQuestions = computed(() => turn.value?.choiceQuestions ?? null)
 
 /** The open thread as the user sees it: saved messages plus the live turn. */
 const thread = computed<Message[]>(() => chatStream.threadFor(activeId.value, messages.value) as Message[])
@@ -159,6 +162,15 @@ const mobileConversations = ref(false)
 const busy = computed(() => sending.value || streaming.value)
 
 const messagesContainer = ref<HTMLElement | null>(null)
+const threadRef = ref<InstanceType<typeof ChatThread> | null>(null)
+const threadContent = computed<HTMLElement | null>(() => (threadRef.value?.$el as HTMLElement) ?? null)
+
+/**
+ * The thread stays on its newest message on its own, so sending, switching
+ * threads, and finishing a turn only have to say "go to the end" — the growing
+ * answer and the remount that follows it are the composable's problem.
+ */
+const { scrollToBottom } = useStickToBottom(messagesContainer, threadContent)
 
 const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
 
@@ -190,6 +202,7 @@ watch(previewDoc, (doc) => {
 })
 
 const todoStore = useTodoStore()
+const advisoryStore = useAdvisoryStore()
 const labelStore = useLabelStore()
 const billing = useBillingStore()
 const auth = useAuthStore()
@@ -349,6 +362,14 @@ async function handleIntakeSubmit(data: Record<string, string>) {
   await send(`[Intake Form Submission]\n${formatted}`)
 }
 
+async function handleChoiceAnswer(answers: ChoiceAnswer[]) {
+  if (!activeId.value) return
+  // Cleared before sending: the options were answered, and the answer itself is
+  // about to appear in the thread as an ordinary message.
+  chatStream.clearChoices(activeId.value)
+  await send(formatChoiceSubmission(answers))
+}
+
 function handleIntakeCancel() {
   if (activeId.value) chatStream.dismissIntake(activeId.value)
 }
@@ -378,7 +399,7 @@ function handleMarkdownClick(event: MouseEvent, msg: Message) {
   if (!link) return
   event.preventDefault()
   const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
-  const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
+  const title = deriveDocumentTitle(msg.content)
   void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
 }
 
@@ -438,7 +459,7 @@ async function rateMessage(m: Message, feedback: 'up' | 'down') {
 }
 
 function handleExport(m: Message, type: 'word' | 'pdf') {
-  const title = activeConversation.value?.title ?? (type === 'pdf' ? 'PDF Document' : 'Word Document')
+  const title = deriveDocumentTitle(m.content)
   void openExport(m.content, type, title, m.template_id ? m.id : undefined)
 }
 
@@ -499,16 +520,26 @@ async function finalizeTurn(id: string) {
 
   finalizing.add(id)
 
-  // A pending intake form or a failed turn still has work left in it, so the
-  // turn stays until the user submits, abandons, or retries.
-  const keep = finished.intakeFields !== null || finished.error !== ''
+  // A pending intake form, an unanswered decision, or a failed turn still has
+  // work left in it, so the turn stays until the user submits, answers,
+  // abandons, or retries.
+  const keep = finished.intakeFields !== null
+    || finished.choiceQuestions !== null
+    || finished.error !== ''
 
   try {
     await loadConversations()
 
-    if (!finished.todoToolCalled) {
+    // A turn waiting on a decision has no finished answer, so its partial text
+    // is not a source of next steps.
+    if (!finished.todoToolCalled && finished.choiceQuestions === null) {
       await maybeCreateTodosFromText(finished.assistantMessage?.content ?? '', id)
     }
+
+    // Also pulled here, not only on the tool_result frame: the answer can land
+    // while the user is on another page, and that frame is long gone by the
+    // time they come back to the thread.
+    await advisoryStore.fetchAdvisories(id)
 
     await refreshMessages(id, !keep)
   } finally {
@@ -538,12 +569,6 @@ watch(
     if (updatedAt) openPanel('tasks')
   },
 )
-
-function scrollToBottom() {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-  }
-}
 
 function toggleSearch() {
   searchOpen.value = !searchOpen.value
@@ -602,15 +627,9 @@ onMounted(async () => {
   }
 })
 
-watch(thread, async () => {
-  if (thread.value.length === 0) return
-  await nextTick()
-  scrollToBottom()
-}, { deep: true })
-
 watch(activeId, async (id) => {
   if (id) {
-    await todoStore.fetchTodos(id)
+    await Promise.all([todoStore.fetchTodos(id), advisoryStore.fetchAdvisories(id)])
     if (todoStore.todos.some((t) => t.conversation_id === id)) openPanel('tasks')
   } else if (rightPanel.value === 'tasks') {
     rightPanel.value = null
@@ -622,7 +641,7 @@ watch(activeId, async (id) => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-3.5rem)] overflow-hidden">
+  <div class="flex h-[calc(100dvh-4.5rem)] gap-3 overflow-hidden p-4 md:px-6 lg:gap-4 lg:p-6">
     <ChatConversationList
       v-model:filter-tag-ids="threadFilterTagIds"
       class="hidden md:flex"
@@ -636,7 +655,7 @@ watch(activeId, async (id) => {
 
     <section
       ref="mainChatEl"
-      class="flex min-w-0 flex-1 flex-col"
+      class="surface flex min-w-0 flex-1 flex-col overflow-hidden"
       :class="previewDoc ? 'lg:min-w-[400px]' : ''"
     >
       <div class="flex items-center justify-between border-b px-2 py-2.5 sm:px-4">
@@ -724,6 +743,7 @@ watch(activeId, async (id) => {
 
         <ChatThread
           v-else
+          ref="threadRef"
           :messages="thread"
           :streaming="streaming"
           :status-label="statusLabel"
@@ -733,6 +753,7 @@ watch(activeId, async (id) => {
           :awaiting-intake="awaitingIntake"
           :intake-dismissed="intakeDismissed"
           :has-intake-fields="intakeFields !== null"
+          :choice-questions="choiceQuestions"
           :last-question="lastQuestion"
           :busy="busy"
           :stream-error="streamError"
@@ -748,11 +769,18 @@ watch(activeId, async (id) => {
           @retry="retryLast"
           @abandon-intake="abandonIntake"
           @reopen-intake="reopenIntake"
+          @answer-choice="handleChoiceAnswer"
           @select-suggestion="(prompt) => input = prompt"
         />
         </div>
 
         <ChatScrollToBottom :container="messagesContainer" />
+
+        <!--
+          Anchored to the conversation column, not the viewport, so it stays
+          clear of whichever panel is open in the right rail.
+        -->
+        <AdvisoryReview :conversation-id="activeId" />
       </div>
 
       <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
@@ -798,122 +826,23 @@ watch(activeId, async (id) => {
       @close="rightPanel = null"
     />
 
-    <!-- Floating Document Preview Panel (Large Screens) -->
-    <aside
-      v-if="previewDoc"
-      class="relative hidden lg:flex shrink-0 flex-col border-l bg-card"
-      :style="{ width: `${previewWidth}px` }"
-    >
-      <div
-        class="group absolute inset-y-0 -left-1.5 z-10 w-3 cursor-col-resize touch-none select-none"
-        aria-hidden="true"
-        @pointerdown="startResize($event, previewMaxWidth)"
-      >
-        <div class="mx-auto h-full w-px bg-border transition-colors group-hover:bg-primary/60" />
-      </div>
-      <div class="flex items-center justify-between border-b px-4 py-2.5">
-        <span class="text-sm font-medium truncate">{{ previewDoc.title }}</span>
-        <div class="flex items-center gap-2">
-          <a
-            v-if="previewDoc.blobUrl"
-            :href="previewDoc.blobUrl"
-            target="_blank"
-            download
-            class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <DownloadIcon class="size-3.5" />
-            Download
-          </a>
-          <Button variant="ghost" size="icon" class="size-7" @click="closePreview">
-            <XIcon class="size-4" />
-          </Button>
-        </div>
-      </div>
-      <div v-if="previewDoc.loading" class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2Icon class="size-4 animate-spin" />
-        Preparing your document…
-      </div>
-      <div v-else-if="previewDoc.error" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-destructive">
-        {{ previewDoc.error }}
-      </div>
-      <iframe
-        v-else-if="previewDoc.type === 'pdf'"
-        :src="previewDoc.blobUrl ?? undefined"
-        class="flex-1 w-full border-0"
-      />
-      <DocxViewer
-        v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
-        :blob-url="previewDoc.blobUrl"
-      />
-      <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
-        <span>Word documents cannot be previewed inline.</span>
-        <a
-          :href="previewDoc.blobUrl ?? undefined"
-          download
-          class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          <DownloadIcon class="size-3.5" />
-          Download Word document
-        </a>
-      </div>
-    </aside>
+    <DocumentPreviewPanel
+      v-if="previewDoc && previewDoc.type !== 'word'"
+      :preview="previewDoc"
+      :width="previewWidth"
+      resizable
+      @start-resize="startResize($event, previewMaxWidth)"
+      @close="closePreview"
+    />
 
-    <!-- Mobile Preview Modal -->
-    <Teleport to="body">
-      <div
-        v-if="previewDoc"
-        class="fixed inset-0 z-50 lg:hidden"
-      >
-        <div class="absolute inset-0 bg-black/60" @click="closePreview" />
-        <div class="absolute inset-4 flex flex-col rounded-lg bg-popover shadow-xl">
-          <div class="flex items-center justify-between border-b px-4 py-2.5">
-            <span class="text-sm font-medium truncate">{{ previewDoc.title }}</span>
-            <div class="flex items-center gap-2">
-              <a
-                v-if="previewDoc.blobUrl"
-                :href="previewDoc.blobUrl"
-                target="_blank"
-                download
-                class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              >
-                <DownloadIcon class="size-3.5" />
-                Download
-              </a>
-              <Button variant="ghost" size="icon" class="size-7" @click="closePreview">
-                <XIcon class="size-4" />
-              </Button>
-            </div>
-          </div>
-          <div v-if="previewDoc.loading" class="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2Icon class="size-4 animate-spin" />
-            Preparing your document…
-          </div>
-          <div v-else-if="previewDoc.error" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-destructive">
-            {{ previewDoc.error }}
-          </div>
-          <iframe
-            v-else-if="previewDoc.type === 'pdf'"
-            :src="previewDoc.blobUrl ?? undefined"
-            class="flex-1 w-full border-0 rounded-b-lg"
-          />
-          <DocxViewer
-            v-else-if="previewDoc.type === 'word' && previewDoc.blobUrl"
-            :blob-url="previewDoc.blobUrl"
-          />
-          <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
-            <span>Word documents cannot be previewed inline.</span>
-            <a
-              :href="previewDoc.blobUrl ?? undefined"
-              download
-              class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <DownloadIcon class="size-3.5" />
-              Download Word document
-            </a>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <WordPreviewDialog
+      v-if="previewDoc?.type === 'word'"
+      :title="previewDoc.title"
+      :blob-url="previewDoc.blobUrl"
+      :loading="previewDoc.loading"
+      :error="previewDoc.error"
+      @close="closePreview"
+    />
 
     <IntakeFormSheet
       v-if="intakeFields && !intakeDismissed"
@@ -936,7 +865,7 @@ watch(activeId, async (id) => {
           <div class="min-h-0 flex-1">
             <ChatConversationList
               v-model:filter-tag-ids="threadFilterTagIds"
-              class="h-full w-full border-r-0"
+              class="h-full w-full rounded-none border-0 shadow-none"
               :conversations="conversations"
               :active-id="activeId"
               :streaming-ids="chatStream.streamingIds"

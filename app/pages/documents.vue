@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
-import { FileUpIcon, Loader2Icon, TrashIcon, FileIcon, LinkIcon, EyeIcon, DownloadIcon, FilterIcon, SparklesIcon } from '@lucide/vue'
+import { FileUpIcon, Loader2Icon, FileIcon, LinkIcon, FilterIcon, SparklesIcon } from '@lucide/vue'
 import { useCaseStore } from '~/stores/cases'
 import { useLabelStore, type AppliedLabel } from '~/stores/labels'
 import { upgradeMessage } from '~/stores/billing'
 import DocumentViewer from '~/components/DocumentViewer.vue'
 import LabelPicker from '~/components/LabelPicker.vue'
+import FileTagDialog from '~/components/FileTagDialog.vue'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
+  middleware: ['auth', 'onboarding', 'subscription'],
 })
 
 interface Document {
@@ -38,6 +39,15 @@ const attachCaseId = ref('')
 const attaching = ref(false)
 const viewing = ref<Document | null>(null)
 
+const view = useViewMode('documents', 'list')
+
+/**
+ * The filing dialog is a bulk view over every document, so one instance lives
+ * at the page root and each row merely opens it. Rendering one per row — as
+ * this page used to — meant three copies once the layouts multiplied.
+ */
+const tagOpen = ref(false)
+
 const documents = ref<Document[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFiles = ref<File[]>([])
@@ -45,6 +55,7 @@ const uploading = ref(false)
 const errorMessage = ref('')
 const loading = ref(false)
 const polling = ref(false)
+const retrying = ref<Set<string>>(new Set())
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const statusStyles: Record<Document['status'], string> = {
@@ -173,7 +184,12 @@ function isSuggested(doc: Document) {
  * File a document under a new set of categories. The picker sends the whole
  * set it is showing, so this replaces rather than merges.
  */
-async function updateCategories(doc: Document, ids: string[]) {
+async function updateCategories(file: { id: string }, ids: string[]) {
+  // The dialog emits its own narrower shape. Resolve it back to the row this
+  // page owns, so the optimistic write lands on the object being rendered.
+  const doc = documents.value.find((d) => d.id === file.id)
+  if (!doc) return
+
   const previous = doc.categories ?? []
 
   doc.categories = ids
@@ -319,11 +335,25 @@ async function removeDocument(doc: Document) {
     toast.error('Could not delete the document')
   }
 }
+
+async function retryDocument(doc: Document) {
+  if (retrying.value.has(doc.id)) return
+  retrying.value.add(doc.id)
+  try {
+    await api(`/documents/${doc.id}/retry`, { method: 'POST' })
+    toast.success(`"${doc.original_filename}" will be reprocessed`)
+    await loadDocuments()
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not retry the document')
+  } finally {
+    retrying.value.delete(doc.id)
+  }
+}
 </script>
 
 <template>
   <div>
-    <div class="mx-auto w-full max-w-4xl px-4 py-8">
+    <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <PageHeader
       title="My documents"
       description="Upload legal documents to ground your chat answers in your own files."
@@ -331,7 +361,7 @@ async function removeDocument(doc: Document) {
 
     <div
       data-tour="documents-upload"
-      class="rounded-xl border border-dashed bg-muted/30 p-6 transition-colors"
+      class="surface-inset border-dashed p-6 transition-colors"
       :class="fileDrop.dragging.value ? 'border-primary bg-primary/5' : ''"
       @dragenter="fileDrop.onDragEnter"
       @dragover="fileDrop.onDragOver"
@@ -396,7 +426,7 @@ async function removeDocument(doc: Document) {
     </div>
 
     <div class="mt-8 space-y-2">
-      <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2">
+      <div class="surface flex flex-wrap items-center gap-2 px-3 py-2.5">
         <FilterIcon class="size-3.5 shrink-0 text-muted-foreground" />
         <LabelPicker
           v-model="filterCategoryIds"
@@ -443,9 +473,12 @@ async function removeDocument(doc: Document) {
         </button>
       </div>
 
-      <h2 v-if="!loading && documents.length > 0" class="text-sm font-medium text-muted-foreground">
-        {{ documents.length }} document{{ documents.length === 1 ? '' : 's' }}
-      </h2>
+      <div v-if="!loading && documents.length > 0" class="flex items-center gap-3">
+        <h2 class="text-sm font-medium text-muted-foreground">
+          {{ documents.length }} document{{ documents.length === 1 ? '' : 's' }}
+        </h2>
+        <ViewModeToggle v-model="view" class="ml-auto" />
+      </div>
 
       <ListSkeleton v-if="loading" :rows="3" />
 
@@ -463,14 +496,90 @@ async function removeDocument(doc: Document) {
         description="Upload your first file above to ground the assistant's answers in your own material."
       />
 
-      <div v-for="doc in documents" :key="doc.id" class="rounded-xl border bg-card">
-        <div class="flex items-center gap-3 p-4">
-          <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <component :is="fileIcon(doc.original_filename, doc.mime_type)" class="size-4" />
+      <!-- List: one dense row each, the layout this page has always had. -->
+      <template v-if="view === 'list'">
+        <div v-for="doc in documents" :key="doc.id" class="surface overflow-hidden">
+          <div class="flex items-center gap-3 p-4">
+            <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <component :is="fileIcon(doc.original_filename, doc.mime_type)" class="size-4" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <p class="truncate text-sm font-medium">{{ doc.title }}</p>
+                <span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" :class="statusStyles[doc.status]">
+                  <Loader2Icon v-if="doc.status === 'queued' || doc.status === 'processing'" class="size-3 animate-spin" />
+                  {{ statusLabel[doc.status] }}
+                </span>
+                <span
+                  v-if="doc.case_id"
+                  class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                >
+                  <LinkIcon class="size-3" />
+                  In case
+                </span>
+              </div>
+              <p class="mt-0.5 truncate text-xs text-muted-foreground">
+                {{ doc.original_filename }}
+                <span v-if="doc.status === 'ready'"> · {{ doc.chunk_count }} chunks</span>
+                <span v-else-if="doc.status === 'failed' && doc.error_message"> · {{ doc.error_message }}</span>
+                <span> · {{ formatDate(doc.created_at) }}</span>
+              </p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" class="h-6 px-2 text-xs" @click="tagOpen = true">
+                  File under
+                </Button>
+                <span
+                  v-if="isSuggested(doc)"
+                  class="inline-flex items-center gap-1 rounded-md bg-peach/40 px-1.5 py-0.5 text-[10px] text-espresso dark:bg-cream/10 dark:text-peach"
+                  title="Filed automatically from the document's contents — confirm or change it."
+                >
+                  <SparklesIcon class="size-3" />
+                  Suggested
+                </span>
+              </div>
+            </div>
+            <DocumentActions
+              :document="doc"
+              :attaching="attachTarget?.id === doc.id"
+              :retrying="retrying.has(doc.id)"
+              @view="viewing = doc"
+              @download="downloadDocument(doc.id, doc.original_filename)"
+              @retry="retryDocument(doc)"
+              @toggle-attach="toggleAttach(doc)"
+              @remove="removeDocument(doc)"
+            />
           </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="truncate text-sm font-medium">{{ doc.title }}</p>
+
+          <DocumentAttachPanel
+            v-if="attachTarget?.id === doc.id"
+            v-model="attachCaseId"
+            :cases="cases"
+            :busy="attaching"
+            @attach="attachDocument"
+            @cancel="attachTarget = null"
+          />
+        </div>
+      </template>
+
+      <!--
+        Card: the filename and status get the room. The actions sit on their own
+        footer line so they align across the grid instead of landing wherever a
+        long title happens to push them.
+      -->
+      <div v-else-if="view === 'card'" class="grid gap-3 sm:grid-cols-2">
+        <div v-for="doc in documents" :key="doc.id" class="surface flex flex-col overflow-hidden">
+          <div class="flex flex-1 flex-col gap-3 p-4">
+            <div class="flex items-start gap-3">
+              <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <component :is="fileIcon(doc.original_filename, doc.mime_type)" class="size-4" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="line-clamp-2 text-sm font-medium">{{ doc.title }}</p>
+                <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ doc.original_filename }}</p>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
               <span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" :class="statusStyles[doc.status]">
                 <Loader2Icon v-if="doc.status === 'queued' || doc.status === 'processing'" class="size-3 animate-spin" />
                 {{ statusLabel[doc.status] }}
@@ -482,21 +591,6 @@ async function removeDocument(doc: Document) {
                 <LinkIcon class="size-3" />
                 In case
               </span>
-            </div>
-            <p class="mt-0.5 truncate text-xs text-muted-foreground">
-              {{ doc.original_filename }}
-              <span v-if="doc.status === 'ready'"> · {{ doc.chunk_count }} chunks</span>
-              <span v-else-if="doc.status === 'failed' && doc.error_message"> · {{ doc.error_message }}</span>
-              <span> · {{ formatDate(doc.created_at) }}</span>
-            </p>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-              <LabelPicker
-                kind="document_category"
-                trigger-label="File under"
-                :max="5"
-                :model-value="(doc.categories ?? []).map((category) => category.id)"
-                @update:model-value="(ids) => updateCategories(doc, ids)"
-              />
               <span
                 v-if="isSuggested(doc)"
                 class="inline-flex items-center gap-1 rounded-md bg-peach/40 px-1.5 py-0.5 text-[10px] text-espresso dark:bg-cream/10 dark:text-peach"
@@ -506,69 +600,146 @@ async function removeDocument(doc: Document) {
                 Suggested
               </span>
             </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="shrink-0 text-muted-foreground hover:text-foreground"
-            @click="viewing = doc"
-          >
-            <EyeIcon class="size-4" />
-            <span class="sr-only">View {{ doc.title }}</span>
-          </Button>
-          <button
-            type="button"
-            class="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :aria-label="`Download ${doc.title}`"
-            @click="downloadDocument(doc.id, doc.original_filename)"
-          >
-            <DownloadIcon class="size-4" />
-          </button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="shrink-0 text-muted-foreground hover:text-foreground"
-            :class="{ 'bg-accent text-foreground': attachTarget?.id === doc.id }"
-            @click="toggleAttach(doc)"
-          >
-            <LinkIcon class="size-4" />
-            <span class="sr-only">Attach {{ doc.title }} to a case</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="shrink-0 text-muted-foreground hover:text-destructive"
-            @click="removeDocument(doc)"
-          >
-            <TrashIcon class="size-4" />
-            <span class="sr-only">Delete {{ doc.title }}</span>
-          </Button>
-        </div>
 
-        <div v-if="attachTarget?.id === doc.id" class="flex flex-wrap items-center gap-2 border-t bg-muted/30 px-4 py-3">
-          <Select v-model="attachCaseId" class="w-64">
-            <SelectTrigger class="text-sm">
-              <SelectValue :placeholder="cases.length === 0 ? 'No cases yet' : 'Choose a case…'" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="c in cases" :key="c.id" :value="c.id">
-                {{ c.title }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <Button size="sm" :disabled="attaching || !attachCaseId" @click="attachDocument">
-            <Loader2Icon v-if="attaching" class="size-3 animate-spin" />
-            Attach
-          </Button>
-          <Button variant="ghost" size="sm" @click="attachTarget = null">
-            Cancel
-          </Button>
-          <p class="ml-auto text-[11px] text-muted-foreground">
-            This document becomes retrievable in that case's conversations.
-          </p>
+            <p class="text-xs text-muted-foreground">
+              <span v-if="doc.status === 'ready'">{{ doc.chunk_count }} chunks · </span>
+              <span v-else-if="doc.status === 'failed' && doc.error_message">{{ doc.error_message }} · </span>
+              {{ formatDate(doc.created_at) }}
+            </p>
+
+            <div class="mt-auto flex items-center gap-2 border-t pt-3">
+              <Button variant="outline" size="sm" class="h-7 px-2 text-xs" @click="tagOpen = true">
+                File under
+              </Button>
+              <DocumentActions
+                class="ml-auto"
+                compact
+                :document="doc"
+                :attaching="attachTarget?.id === doc.id"
+                :retrying="retrying.has(doc.id)"
+                @view="viewing = doc"
+                @download="downloadDocument(doc.id, doc.original_filename)"
+                @retry="retryDocument(doc)"
+                @toggle-attach="toggleAttach(doc)"
+                @remove="removeDocument(doc)"
+              />
+            </div>
+          </div>
+
+          <DocumentAttachPanel
+            v-if="attachTarget?.id === doc.id"
+            v-model="attachCaseId"
+            :cases="cases"
+            :busy="attaching"
+            @attach="attachDocument"
+            @cancel="attachTarget = null"
+          />
         </div>
       </div>
+
+      <!--
+        Table: columns are the point, so it scrolls sideways on a narrow screen
+        rather than reflowing into something that is no longer a table. The
+        attach strip becomes a full-width row under the document it belongs to.
+      -->
+      <div v-else class="surface overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Document</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead class="hidden md:table-cell">Filing</TableHead>
+              <TableHead class="hidden sm:table-cell">Added</TableHead>
+              <TableHead class="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <template v-for="doc in documents" :key="doc.id">
+              <TableRow>
+                <TableCell class="max-w-[20rem]">
+                  <div class="flex items-center gap-2">
+                    <component :is="fileIcon(doc.original_filename, doc.mime_type)" class="size-3.5 shrink-0 text-muted-foreground" />
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-medium">{{ doc.title }}</p>
+                      <p class="truncate text-[11px] text-muted-foreground">{{ doc.original_filename }}</p>
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div class="flex flex-wrap items-center gap-1">
+                    <span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium" :class="statusStyles[doc.status]">
+                      <Loader2Icon v-if="doc.status === 'queued' || doc.status === 'processing'" class="size-3 animate-spin" />
+                      {{ statusLabel[doc.status] }}
+                    </span>
+                    <span
+                      v-if="doc.case_id"
+                      class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                      title="Attached to a case"
+                    >
+                      <LinkIcon class="size-3" />
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell class="hidden md:table-cell">
+                  <div class="flex items-center gap-1.5">
+                    <Button variant="ghost" size="sm" class="h-6 px-2 text-xs" @click="tagOpen = true">
+                      File under
+                    </Button>
+                    <SparklesIcon
+                      v-if="isSuggested(doc)"
+                      class="size-3 text-espresso dark:text-peach"
+                      aria-label="Filed automatically — confirm or change it"
+                    />
+                  </div>
+                </TableCell>
+                <TableCell class="hidden whitespace-nowrap text-xs text-muted-foreground sm:table-cell">
+                  {{ formatDate(doc.created_at) }}
+                </TableCell>
+                <TableCell>
+                  <DocumentActions
+                    class="justify-end"
+                    compact
+                    :document="doc"
+                    :attaching="attachTarget?.id === doc.id"
+                    :retrying="retrying.has(doc.id)"
+                    @view="viewing = doc"
+                    @download="downloadDocument(doc.id, doc.original_filename)"
+                    @retry="retryDocument(doc)"
+                    @toggle-attach="toggleAttach(doc)"
+                    @remove="removeDocument(doc)"
+                  />
+                </TableCell>
+              </TableRow>
+              <TableRow v-if="attachTarget?.id === doc.id">
+                <TableCell colspan="5" class="p-0">
+                  <DocumentAttachPanel
+                    v-model="attachCaseId"
+                    :cases="cases"
+                    :busy="attaching"
+                    @attach="attachDocument"
+                    @cancel="attachTarget = null"
+                  />
+                </TableCell>
+              </TableRow>
+            </template>
+          </TableBody>
+        </Table>
+      </div>
     </div>
+
+    <!--
+      One filing dialog for the whole page rather than one per row: it is a
+      bulk view over every document, and each row's "File under" simply opens
+      it. Rendering it here also keeps it alive when the layout switches.
+    -->
+    <FileTagDialog
+      v-model:open="tagOpen"
+      kind="document_category"
+      hide-trigger
+      :max="5"
+      :files="documents"
+      @update-file="(file, ids) => updateCategories(file, ids)"
+    />
 
     <DocumentViewer v-if="viewing" :document="viewing" @close="viewing = null" />
     </div>

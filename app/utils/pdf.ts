@@ -177,10 +177,12 @@ function stripExportLinks(text: string): string {
 }
 
 /**
- * Derive a title from the message content when none is supplied.
+ * Derive a title from the message content when none is supplied. The extracted
+ * document body is used first so chat-only preamble and hidden markers never
+ * become the title.
  */
 function deriveTitleFromContent(content: string, fallback = 'Batayan Response'): string {
-  for (const rawLine of content.split(/\r?\n/)) {
+  for (const rawLine of extractDocumentText(content).split(/\r?\n/)) {
     const line = rawLine.trim().replace(/^#+\s*/, '').replace(/\*\*/g, '').trim()
     if (line && !line.startsWith('[[')) {
       return line

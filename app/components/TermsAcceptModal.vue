@@ -14,8 +14,15 @@ const marketingOptIn = ref(false)
 const submitting = ref(false)
 
 // /terms/accept renders the same flow as a full page, so skip the modal there.
+// A suspended member is skipped too: the API refuses their acceptance along
+// with everything else, so the modal could only trap them behind a button that
+// cannot succeed, in front of the notice explaining why.
 const showModal = computed(
-  () => auth.initialized && !!auth.user && !auth.hasAcceptedTerms && route.path !== '/terms/accept',
+  () => auth.initialized
+    && !!auth.user
+    && !auth.isSuspended
+    && !auth.hasAcceptedTerms
+    && route.path !== '/terms/accept',
 )
 
 const canSubmit = computed(() => agreed.value && !!document.value && !submitting.value)

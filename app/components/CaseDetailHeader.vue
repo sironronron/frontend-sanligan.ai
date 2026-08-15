@@ -10,6 +10,7 @@ import {
   MinimizeIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  UserPlusIcon,
 } from '@lucide/vue'
 import type { LegalCase } from '~/stores/cases'
 
@@ -47,10 +48,20 @@ const emit = defineEmits<{
   toggleFullscreen: []
 }>()
 
+const peopleOpen = ref(false)
+
 const archived = computed(() => !!props.case.archived_at)
 
 /** Closed and archived cases are read-only: only reading, exporting, and reopening remain. */
 const readOnly = computed(() => archived.value || props.case.status === 'closed')
+
+/**
+ * The roster follows the same rule as the rest of the case: it can still be
+ * read once the matter is closed or archived, but not changed. The avatar
+ * button keeps opening the dialog either way — "who worked this" stays a
+ * legitimate question on a finished matter.
+ */
+const canManageAssignees = computed(() => props.case.can_manage_assignees && !readOnly.value)
 </script>
 
 <template>
@@ -80,6 +91,22 @@ const readOnly = computed(() => archived.value || props.case.status === 'closed'
           Progress
         </button>
       </div>
+
+      <!--
+        Who is on the matter, next to the view tabs rather than off in the
+        overflow menu: on a shared case it is identity, not an action.
+      -->
+      <button
+        v-if="props.case.owner"
+        type="button"
+        class="ml-1 flex shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-muted"
+        :aria-label="canManageAssignees ? 'Manage who is on this case' : 'People on this case'"
+        :title="canManageAssignees ? 'Manage who is on this case' : 'People on this case'"
+        @click="peopleOpen = true"
+      >
+        <CaseMemberAvatars :owner="props.case.owner" :assignees="props.case.assignees" />
+        <UserPlusIcon v-if="canManageAssignees" class="size-3.5 text-muted-foreground" />
+      </button>
 
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
         <button
@@ -158,5 +185,15 @@ const readOnly = computed(() => archived.value || props.case.status === 'closed'
         </DropdownMenu>
       </div>
     </div>
+  
+    <CaseAssigneeDialog
+      v-if="peopleOpen"
+      :case-id="props.case.id"
+      :owner="props.case.owner"
+      :assignees="props.case.assignees"
+      :can-manage="props.case.can_manage_assignees"
+      :readonly="readOnly"
+      @close="peopleOpen = false"
+    />
   </header>
 </template>

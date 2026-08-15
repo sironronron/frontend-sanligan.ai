@@ -232,7 +232,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-4 py-8">
+  <div class="mx-auto w-full max-w-6xl px-4 py-6">
     <AdminNav />
 
     <Card class="mb-6">
@@ -245,7 +245,7 @@ onBeforeUnmount(() => {
       <CardContent>
         <form class="space-y-4" @submit.prevent="upload">
           <div
-            class="rounded-xl border border-dashed bg-muted/30 p-5 transition-colors"
+            class="surface-inset border-dashed p-5 transition-colors"
             :class="selectedFile ? '' : 'cursor-pointer hover:border-primary/50'"
             @click="!selectedFile && pickFile()"
           >

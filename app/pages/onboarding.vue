@@ -56,8 +56,25 @@ const auth = useAuthStore()
 // page they asked for attached, and a second visit should not lose it.
 const nextUrl = useRoute().query.next
 
+const billing = useBillingStore()
+
+/**
+ * Where answering the questions leads.
+ *
+ * With the organization step gone, these questions are the last thing between
+ * signing up and being asked to pay — so an account with no plan is sent to
+ * the pricing page directly. The subscription guard would bounce them there
+ * anyway; going straight avoids a flash of a workspace they cannot open yet.
+ */
 function destination() {
-  return typeof nextUrl === 'string' && nextUrl.length > 0 ? nextUrl : auth.homePath()
+  if (typeof nextUrl === 'string' && nextUrl.length > 0) return nextUrl
+  if (auth.user?.is_admin || billing.accessGranted) return auth.homePath()
+
+  return '/pricing'
+}
+
+if (!billing.subscription) {
+  await billing.fetchSubscription()
 }
 
 if (auth.kycCompleted) {

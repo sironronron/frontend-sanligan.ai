@@ -2,8 +2,10 @@ import { defineStore } from 'pinia'
 import { authHeaders } from '~/lib/http'
 import { upgradeMessage } from '~/stores/billing'
 import { useTodoStore } from '~/stores/todos'
+import { useAdvisoryStore } from '~/stores/advisories'
 import { createTextStreamer, type TextStreamer } from '~/composables/useTextStreamer'
 import type { IntakeField } from '~/components/IntakeFormSheet.vue'
+import type { ChoiceQuestion } from '~/components/chat/ChatChoicePrompt.vue'
 import type {
   ChatActivityStep,
   ChatMessage,
@@ -49,6 +51,13 @@ export interface ChatTurn {
   intakeFields: IntakeField[] | null
   intakeDefaults: Record<string, string> | null
   intakeDismissed: boolean
+  /**
+   * The decisions the model put to the user, held until they answer. Unlike the
+   * intake form these render inline under the reply, so whatever the model said
+   * before asking stays on screen — and they outlive the stream, which ends the
+   * moment the question is asked.
+   */
+  choiceQuestions: ChoiceQuestion[] | null
   error: string
   /** Between send and the first byte of the response. */
   sending: boolean
@@ -57,6 +66,8 @@ export interface ChatTurn {
   todoToolCalled: boolean
   /** Bumped whenever the store refreshes todos, for pages that open a panel. */
   todosUpdatedAt: number
+  /** Bumped when the model flags caveats, so the review pill can appear live. */
+  advisoriesUpdatedAt: number
   startedAt: number
   /** Bumped when the stream ends, however it ended. */
   finishedAt: number | null
@@ -84,9 +95,11 @@ const statusLabels: Record<string, string> = {
   composing: 'Writing your answer',
   collecting_facts: 'Collecting the facts I need',
   gathering_facts: 'Gathering the facts needed',
+  awaiting_choice: 'Waiting for your choice',
   drafting_document: 'Drafting your document',
   filling_template: 'Filling in your template',
   preparing_next_steps: 'Preparing your next steps',
+  reviewing_gaps: 'Flagging what to watch out for',
 }
 
 function localMessage(role: 'user' | 'assistant', content: string, attachments?: ChatMessageAttachment[]): ChatMessage {
@@ -194,6 +207,17 @@ export const useChatStreamStore = defineStore('chatStream', () => {
   }
 
   function handleToolCall(turn: ChatTurn, payload: Record<string, any>) {
+    if (payload.name === 'ask_user_question') {
+      if (!Array.isArray(payload.arguments?.questions) || payload.arguments.questions.length === 0) return
+
+      turn.choiceQuestions = payload.arguments.questions as ChoiceQuestion[]
+      completeActiveSteps(turn)
+      markStepActive(turn, 'ask_user_question', 'Waiting for your choice')
+      // The reply that led up to the question is kept: the options are a
+      // continuation of it, not a replacement for it.
+      return
+    }
+
     if (payload.name !== 'request_intake_form' || !Array.isArray(payload.arguments?.fields)) return
 
     turn.intakeFields = payload.arguments.fields as IntakeField[]
@@ -273,6 +297,9 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       turn.todoToolCalled = true
       void refreshTodos(turn)
       completeStep(turn, 'create_todo')
+    } else if (event === 'tool_result' && payload.name === 'flag_advisories') {
+      void refreshAdvisories(turn)
+      completeStep(turn, 'flag_advisories')
     } else if (event === 'done') {
       streamers.get(turn.conversationId)?.flush()
       completeActiveSteps(turn)
@@ -281,6 +308,9 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       streamers.get(turn.conversationId)?.flush()
       turn.error = String(payload.message ?? 'The AI provider could not complete the response.')
       turn.awaitingIntake = false
+      // A failed turn's question, if one was asked, is unanswerable: the retry
+      // starts the turn over.
+      turn.choiceQuestions = null
     }
   }
 
@@ -290,6 +320,15 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       turn.todosUpdatedAt = Date.now()
     } catch {
       // Todos are a convenience; never let them break the answer.
+    }
+  }
+
+  async function refreshAdvisories(turn: ChatTurn) {
+    try {
+      await useAdvisoryStore().fetchAdvisories(turn.conversationId)
+      turn.advisoriesUpdatedAt = Date.now()
+    } catch {
+      // Same as todos: the answer stands on its own without them.
     }
   }
 
@@ -323,11 +362,13 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       intakeFields: null,
       intakeDefaults: null,
       intakeDismissed: false,
+      choiceQuestions: null,
       error: '',
       sending: true,
       streaming: false,
       todoToolCalled: false,
       todosUpdatedAt: 0,
+      advisoriesUpdatedAt: 0,
       startedAt: Date.now(),
       finishedAt: null,
     }
@@ -498,6 +539,18 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     turn.awaitingIntake = true
   }
 
+  /**
+   * Drop the pending decision. Called the moment the user answers it — the
+   * answer goes out as an ordinary message, and the options have served their
+   * purpose.
+   */
+  function clearChoices(conversationId: string) {
+    const turn = turnFor(conversationId)
+    if (!turn) return
+
+    turn.choiceQuestions = null
+  }
+
   function clearIntake(conversationId: string) {
     const turn = turnFor(conversationId)
     if (!turn) return
@@ -529,6 +582,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     dismissIntake,
     reopenIntake,
     clearIntake,
+    clearChoices,
     clearError,
   }
 })

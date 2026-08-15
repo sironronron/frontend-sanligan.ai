@@ -10,7 +10,7 @@ import {
 } from '@lucide/vue'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
+  middleware: ['auth', 'onboarding', 'subscription'],
 })
 
 interface Template {
@@ -206,7 +206,7 @@ onMounted(loadTemplates)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl px-4 py-8">
+  <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <PageHeader
       title="Templates"
       description="Upload your own letter templates, then pick them from &quot;Draft a letter&quot; to guide a draft."
@@ -252,7 +252,7 @@ onMounted(loadTemplates)
 
           <div>
             <div
-              class="flex items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-xs text-muted-foreground transition-colors"
+              class="surface-inset flex items-center justify-center gap-2 border-dashed px-4 py-6 text-center text-xs text-muted-foreground transition-colors"
               :class="fileDrop.dragging.value ? 'border-primary bg-primary/5' : ''"
               @click="fileInput?.click()"
               @keydown.enter="fileInput?.click()"
@@ -301,7 +301,7 @@ onMounted(loadTemplates)
 
       <div
         v-else-if="ownTemplates.length === 0"
-        class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground"
+        class="surface p-8 text-center text-sm text-muted-foreground"
       >
         No custom templates yet. Upload your own above to use them when drafting a letter.
       </div>
@@ -318,7 +318,7 @@ onMounted(loadTemplates)
                   <p class="text-sm font-medium">{{ template.name }}</p>
                   <Badge variant="secondary" class="text-[10px]">Yours</Badge>
                 </div>
-                <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">{{ template.content }}</pre>
+                <pre class="surface-inset mt-2 max-h-40 overflow-auto whitespace-pre-wrap p-3 text-xs text-muted-foreground">{{ template.content }}</pre>
                 <p class="mt-1.5 text-xs text-muted-foreground">
                   {{ CATEGORY_LABELS[template.category] }} · Created {{ formatDate(template.created_at) }}
                 </p>
@@ -345,7 +345,7 @@ onMounted(loadTemplates)
         <Skeleton v-for="i in 2" :key="i" class="h-20 w-full rounded-xl" />
       </div>
 
-      <div v-else-if="systemTemplates.length === 0" class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+      <div v-else-if="systemTemplates.length === 0" class="surface p-8 text-center text-sm text-muted-foreground">
         No system templates yet.
       </div>
 

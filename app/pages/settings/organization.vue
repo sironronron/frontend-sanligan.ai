@@ -2,6 +2,8 @@
 import {
   BanIcon,
   Building2Icon,
+  GlobeIcon,
+  ImageIcon,
   Loader2Icon,
   MailIcon,
   RotateCcwIcon,
@@ -14,12 +16,13 @@ import { useOrganizationStore } from '~/stores/organization'
 import type { OrgMember } from '~/stores/organization'
 
 definePageMeta({
-  middleware: ['auth', 'organization'],
+  middleware: ['auth'],
   layout: 'default',
 })
 
 const org = useOrganizationStore()
 const auth = useAuthStore()
+const billing = useBillingStore()
 
 const inviteEmail = ref('')
 const inviting = ref(false)
@@ -60,6 +63,93 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase()
 
+/**
+ * The profile form is a local draft rather than a live binding on the store:
+ * typing must not rewrite the header above it, and Cancel has to have
+ * something to fall back to.
+ */
+const profile = reactive({ name: '', description: '', website: '' })
+const savingProfile = ref(false)
+const logoInput = ref<HTMLInputElement | null>(null)
+const logoBusy = ref(false)
+
+/** Max upload the API accepts, repeated here so the rejection is instant. */
+const MAX_LOGO_BYTES = 2 * 1024 * 1024
+
+function resetProfile() {
+  profile.name = org.organization?.name ?? ''
+  profile.description = org.organization?.description ?? ''
+  profile.website = org.organization?.website ?? ''
+}
+
+const profileDirty = computed(() =>
+  profile.name !== (org.organization?.name ?? '')
+  || profile.description !== (org.organization?.description ?? '')
+  || profile.website !== (org.organization?.website ?? ''),
+)
+
+const profileValid = computed(() => profile.name.trim().length > 0)
+
+async function handleSaveProfile() {
+  if (!profileDirty.value || !profileValid.value || savingProfile.value) return
+
+  savingProfile.value = true
+  try {
+    await org.updateProfile({
+      name: profile.name.trim(),
+      description: profile.description,
+      website: profile.website,
+    })
+    // The API normalizes what was typed — a bare host comes back with its
+    // scheme — so the draft is refilled from the answer, not from the input.
+    resetProfile()
+    toast.success('Organization profile saved')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not save the organization profile')
+  } finally {
+    savingProfile.value = false
+  }
+}
+
+async function handleLogoPicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+
+  // Cleared straight away so picking the same file twice still fires a change.
+  input.value = ''
+
+  if (!file) return
+
+  if (file.size > MAX_LOGO_BYTES) {
+    toast.error('That image is over 2 MB. Pick a smaller one.')
+    return
+  }
+
+  logoBusy.value = true
+  try {
+    await org.uploadLogo(file)
+    toast.success('Logo updated')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not upload that logo')
+  } finally {
+    logoBusy.value = false
+  }
+}
+
+async function handleRemoveLogo() {
+  logoBusy.value = true
+  try {
+    await org.removeLogo()
+    toast.success('Logo removed')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not remove the logo')
+  } finally {
+    logoBusy.value = false
+  }
+}
+
+watch(() => org.organization, resetProfile, { immediate: true })
+
 const seats = computed(() => org.organization?.seats)
 const noFreeSeats = computed(() => seats.value?.free === 0)
 const inviteDisabled = computed(() => inviting.value || noFreeSeats.value)
@@ -73,6 +163,15 @@ function formatDate(value: string | null) {
 
 function formatCount(value: number | null) {
   return value === null ? '—' : value.toLocaleString()
+}
+
+/**
+ * Plans without seat pricing report purchased/free seats as null. A bare dash
+ * reads as "we don't know"; say outright that seats are not part of the plan
+ * instead. Used seats stay a real member count regardless.
+ */
+function seatCountLabel(value: number | null) {
+  return seats.value?.purchased === null ? 'Not included' : formatCount(value)
 }
 
 function isSelf(member: OrgMember) {
@@ -140,7 +239,22 @@ async function handleRevoke(id: string) {
   }
 }
 
+/**
+ * Whether the plan can hold a team at all. Creating an organization is no
+ * longer part of signing up, so this page has two empty states rather than
+ * one: a plan that could have a team but has not made one yet, and a plan that
+ * cannot. Telling them apart is the difference between offering a button and
+ * offering an upgrade.
+ */
+const canHaveTeam = computed(() => auth.user?.is_admin === true || billing.hasFeature('teams'))
+
 onMounted(async () => {
+  await billing.fetchSubscription()
+
+  // A user with no organization is answered with a 404 by design, which is an
+  // ordinary state here rather than a failure worth a toast.
+  if (!auth.hasOrganization) return
+
   try {
     await Promise.all([org.fetchOrganization(), org.fetchInvitations()])
   } catch (err: any) {
@@ -150,7 +264,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <PageHeader
       title="Organization"
       description="Manage your workspace, members, and invitations."
@@ -166,10 +280,16 @@ onMounted(async () => {
         <CardHeader>
           <div class="flex items-start justify-between gap-4">
             <div class="flex items-center gap-3">
-              <div class="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-                <Building2Icon class="size-5 text-primary" />
+              <div class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-primary/10">
+                <img
+                  v-if="org.organization.logo_url"
+                  :src="org.organization.logo_url"
+                  :alt="`${org.organization.name} logo`"
+                  class="size-full object-cover"
+                >
+                <Building2Icon v-else class="size-5 text-primary" />
               </div>
-              <div>
+              <div class="min-w-0">
                 <CardTitle>{{ org.organization.name }}</CardTitle>
                 <CardDescription>Member since {{ formatDate(org.organization.created_at) }}</CardDescription>
               </div>
@@ -180,10 +300,28 @@ onMounted(async () => {
           </div>
         </CardHeader>
         <CardContent class="space-y-4">
+          <!--
+            Shown to everyone, editable below by admins only. A member who
+            cannot change the firm's blurb should still be able to read it.
+          -->
+          <p v-if="org.organization.description" class="text-sm text-muted-foreground">
+            {{ org.organization.description }}
+          </p>
+          <a
+            v-if="org.organization.website"
+            :href="org.organization.website"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+          >
+            <GlobeIcon class="size-3.5" />
+            {{ org.organization.website.replace(/^https?:\/\//, '') }}
+          </a>
+
           <div class="grid gap-4 sm:grid-cols-3">
             <div>
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Seats purchased</p>
-              <p class="mt-1 text-lg font-semibold">{{ formatCount(seats?.purchased ?? null) }}</p>
+              <p class="mt-1 text-lg font-semibold">{{ seatCountLabel(seats?.purchased ?? null) }}</p>
             </div>
             <div>
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Seats used</p>
@@ -195,7 +333,7 @@ onMounted(async () => {
                 class="mt-1 text-lg font-semibold"
                 :class="noFreeSeats ? 'text-destructive' : ''"
               >
-                {{ formatCount(seats?.free ?? null) }}
+                {{ seatCountLabel(seats?.free ?? null) }}
               </p>
             </div>
           </div>
@@ -209,6 +347,101 @@ onMounted(async () => {
           <p v-else-if="seats?.purchased === null" class="text-sm text-muted-foreground">
             Seat capacity is tied to your subscription. Choose a plan to invite teammates.
           </p>
+        </CardContent>
+      </Card>
+
+      <!--
+        Editing lives in its own card rather than as inline fields on the
+        summary above: the summary is what the firm looks like, and turning it
+        into a form would make every member's read-only view look broken.
+      -->
+      <Card v-if="org.isManager" class="mb-6">
+        <CardHeader>
+          <CardTitle class="flex items-center gap-2">
+            <Building2Icon class="size-4 text-muted-foreground" />
+            Organization profile
+          </CardTitle>
+          <CardDescription>
+            How your firm appears to everyone in the workspace.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-5">
+          <div class="flex items-center gap-4">
+            <div class="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted/40">
+              <img
+                v-if="org.organization.logo_url"
+                :src="org.organization.logo_url"
+                alt="Current logo"
+                class="size-full object-cover"
+              >
+              <ImageIcon v-else class="size-6 text-muted-foreground" />
+            </div>
+            <div class="min-w-0 flex-1 space-y-2">
+              <div class="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" :disabled="logoBusy" @click="logoInput?.click()">
+                  <Loader2Icon v-if="logoBusy" class="size-3.5 animate-spin" />
+                  {{ org.organization.logo_url ? 'Replace logo' : 'Upload logo' }}
+                </Button>
+                <Button
+                  v-if="org.organization.logo_url"
+                  variant="ghost"
+                  size="sm"
+                  class="text-muted-foreground hover:text-destructive"
+                  :disabled="logoBusy"
+                  @click="handleRemoveLogo"
+                >
+                  Remove
+                </Button>
+              </div>
+              <p class="text-xs text-muted-foreground">
+                JPEG, PNG, or WebP, up to 2 MB. A square image looks best.
+              </p>
+            </div>
+            <input
+              ref="logoInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="hidden"
+              @change="handleLogoPicked"
+            >
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="org-name">Name</Label>
+            <Input id="org-name" v-model="profile.name" placeholder="Acme Law Office" />
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="org-description">Description</Label>
+            <Textarea
+              id="org-description"
+              v-model="profile.description"
+              rows="3"
+              maxlength="2000"
+              placeholder="What your firm does, and who it does it for."
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <Label for="org-website">Website</Label>
+            <Input id="org-website" v-model="profile.website" placeholder="acme.test" />
+            <p class="text-xs text-muted-foreground">
+              You can leave off the https:// — we'll add it.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <Button :disabled="!profileDirty || !profileValid || savingProfile" @click="handleSaveProfile">
+              <Loader2Icon v-if="savingProfile" class="size-4 animate-spin" />
+              Save changes
+            </Button>
+            <Button v-if="profileDirty" variant="ghost" :disabled="savingProfile" @click="resetProfile">
+              Cancel
+            </Button>
+            <p v-if="!profileValid" class="text-xs text-destructive">
+              An organization needs a name.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -332,5 +565,38 @@ onMounted(async () => {
         </CardContent>
       </Card>
     </template>
+
+    <!--
+      No organization yet. Which of the two messages below applies is decided by
+      the plan, not by the absence: one is an invitation to create, the other is
+      an explanation of why the button is not there.
+    -->
+    <Card v-else>
+      <CardContent class="flex flex-col items-center gap-4 px-6 py-14 text-center">
+        <div class="flex size-12 items-center justify-center rounded-xl bg-primary/10">
+          <UsersIcon class="size-6 text-primary" />
+        </div>
+
+        <div class="max-w-sm space-y-1.5">
+          <p class="font-medium">
+            {{ canHaveTeam ? 'Work with your colleagues' : 'Teams are on the Firm plan' }}
+          </p>
+          <p class="text-sm text-muted-foreground">
+            {{
+              canHaveTeam
+                ? 'Create an organization to share cases, documents, and templates with your team. Each seat keeps its own message allowance.'
+                : 'Your plan covers a single account. Upgrade to Firm to invite colleagues onto shared matters, with seats you can add as the team grows.'
+            }}
+          </p>
+        </div>
+
+        <Button v-if="canHaveTeam" @click="navigateTo('/organization/setup')">
+          Create an organization
+        </Button>
+        <Button v-else variant="outline" @click="navigateTo('/pricing')">
+          Compare plans
+        </Button>
+      </CardContent>
+    </Card>
   </div>
 </template>

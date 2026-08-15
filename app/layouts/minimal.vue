@@ -37,7 +37,6 @@ const initials = computed(() =>
           >
             <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
           </button>
-          <TasksDropdown v-if="auth.hasOrganization" />
           <DropdownMenu>
             <DropdownMenuTrigger
               class="flex items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -55,11 +54,8 @@ const initials = computed(() =>
                 <span class="text-muted-foreground text-xs">{{ auth.user?.email }}</span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem v-if="!auth.hasOrganization" @click="navigateTo('/organization/setup')">
-                Set up organization
-              </DropdownMenuItem>
-              <DropdownMenuItem v-if="auth.hasOrganization" @click="navigateTo('/settings/organization')">
-                Manage organization
+              <DropdownMenuItem @click="navigateTo('/settings/organization')">
+                Organization
               </DropdownMenuItem>
               <DropdownMenuItem @click="navigateTo('/settings/billing')">
                 Billing

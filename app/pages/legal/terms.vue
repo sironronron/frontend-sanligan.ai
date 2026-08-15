@@ -22,7 +22,7 @@ onMounted(async () => {
 <template>
   <div class="min-h-screen bg-background">
     <div class="max-w-4xl mx-auto py-12 px-4">
-      <div class="bg-card text-card-foreground rounded-lg shadow-sm border p-8">
+      <div class="surface p-8">
         <div
           v-if="loading"
           class="flex items-center justify-center py-12"

@@ -17,14 +17,23 @@ function isActive(to: string) {
 
 <template>
   <div class="mb-6">
-    <h1 class="text-xl font-semibold tracking-tight">Admin</h1>
-    <nav class="mt-3 flex items-center gap-1 text-sm" aria-label="Admin sections">
+    <h1 class="font-heading text-2xl font-semibold tracking-tight">Admin</h1>
+
+    <!--
+      The same segmented control the case list uses for status: a recessed well
+      with the active tab raised out of it, so the sections read as one strip
+      rather than four loose links.
+    -->
+    <nav
+      class="surface-inset mt-4 flex items-center overflow-x-auto p-0.5 text-sm"
+      aria-label="Admin sections"
+    >
       <NuxtLink
         v-for="tab in tabs"
         :key="tab.to"
         :to="tab.to"
-        class="rounded-md px-3 py-1.5 transition-colors"
-        :class="isActive(tab.to) ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted'"
+        class="inline-flex h-7 shrink-0 items-center rounded-md px-3 text-xs font-medium transition-colors"
+        :class="isActive(tab.to) ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
         :aria-current="isActive(tab.to) ? 'page' : undefined"
       >
         {{ tab.label }}

@@ -4,7 +4,7 @@ import { toast } from '~/components/ui/sonner'
 import { useBillingStore, isAtLimit, limitPct } from '~/stores/billing'
 
 definePageMeta({
-  middleware: ['auth', 'organization'],
+  middleware: ['auth'],
   layout: 'default',
 })
 
@@ -107,6 +107,18 @@ const priceLabel = computed(() => {
   return sub.value?.interval === 'annual' ? plan.price_annual_label : plan.price_label
 })
 
+/**
+ * A contract-priced plan is invoiced outside the app, so the card states the
+ * arrangement rather than a per-month figure the subscription does not carry.
+ */
+const billingSummary = computed(() => {
+  if (sub.value?.plan?.contact_sales) {
+    return 'Priced by contract · invoiced by your account manager'
+  }
+
+  return `${priceLabel.value} per month · billed ${sub.value?.interval === 'annual' ? 'yearly' : 'monthly'}`
+})
+
 function formatPesos(value: number) {
   return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -117,7 +129,7 @@ function limitLabel(limit: number | null) {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
     <PageHeader
       title="Billing"
       description="Manage your subscription, payments, and usage."
@@ -161,7 +173,7 @@ function limitLabel(limit: number | null) {
                 </Badge>
               </CardTitle>
               <CardDescription v-if="sub.plan">
-                {{ priceLabel }} per month · billed {{ sub.interval === 'annual' ? 'yearly' : 'monthly' }}
+                {{ billingSummary }}
               </CardDescription>
             </div>
             <CreditCardIcon class="size-5 text-muted-foreground" />

@@ -85,7 +85,7 @@ export const useLabelStore = defineStore('labels', () => {
     return inFlight
   }
 
-  async function createLabel(payload: { kind: LabelKind; name: string; description?: string }) {
+  async function createLabel(payload: { kind: LabelKind; name: string; description?: string; color?: string | null }) {
     const { data } = await api<{ data: Label }>('/labels', {
       method: 'POST',
       body: payload,
@@ -94,7 +94,7 @@ export const useLabelStore = defineStore('labels', () => {
     return data
   }
 
-  async function updateLabel(id: string, payload: { name?: string; description?: string | null }) {
+  async function updateLabel(id: string, payload: { name?: string; description?: string | null; color?: string | null }) {
     const { data } = await api<{ data: Label }>(`/labels/${id}`, {
       method: 'PATCH',
       body: payload,

@@ -61,7 +61,7 @@ async function handleRedeem() {
       </div>
 
       <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-        Start a free trial with no card required — a quarter of the Starter plan's
+        Start a free trial with no card required — a quarter of the Standard plan's
         monthly allowance, enough to run a real matter end to end. One trial per
         organization.
       </p>

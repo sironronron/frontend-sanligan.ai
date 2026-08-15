@@ -1,9 +1,25 @@
 import { defineStore } from 'pinia'
 
+/**
+ * One feature's copy, as the API describes it.
+ *
+ * `capability` features are refused by the API when the plan lacks them;
+ * `service` features are delivered by people under a contract and enforced by
+ * nobody. The pricing table renders the two groups apart so a tick never
+ * implies a gate that does not exist.
+ */
+export interface PlanFeature {
+  label: string
+  description: string
+  group: 'capability' | 'service'
+}
+
+export type FeatureCatalogue = Record<string, PlanFeature>
+
 export interface Plan {
   id: string
   /** `trial` is never listed for sale — it only arrives on a redeemed trial. */
-  slug: 'trial' | 'starter' | 'pro' | 'firm'
+  slug: 'trial' | 'standard' | 'pro' | 'firm' | 'business'
   name: string
   price: number
   price_label: string
@@ -13,12 +29,22 @@ export interface Plan {
   overage_label: string | null
   currency: string
   interval: string
+  /** How many people the list price covers. */
+  included_seats: number
+  /** Null means the plan sells no extra seats — not that they are free. */
+  seat_price: number | null
+  seat_price_label: string | null
   limits: {
     active_cases: number | null
     documents_uploaded: number | null
     messages_used: number | null
   }
   features: string[]
+  /**
+   * Priced per organization rather than listed: the card asks for a
+   * conversation instead of quoting a figure, and checkout refuses the plan.
+   */
+  contact_sales: boolean
   sort_order: number
 }
 
@@ -73,6 +99,9 @@ export const useBillingStore = defineStore('billing', () => {
   const api = useApi()
 
   const plans = ref<Plan[]>([])
+  // Ships with the plans so the labels live in one place — the same place that
+  // enforces the features — rather than being retyped in each client.
+  const featureCatalogue = ref<FeatureCatalogue>({})
   const plansLoaded = ref(false)
   const subscription = ref<Subscription | null>(null)
   const busy = ref(false)
@@ -80,10 +109,12 @@ export const useBillingStore = defineStore('billing', () => {
   async function fetchPlans(force = false) {
     if (plansLoaded.value && !force) return plans.value
     try {
-      const { data } = await api<{ data: Plan[] }>('/plans')
+      const { data, meta } = await api<{ data: Plan[]; meta?: { features?: FeatureCatalogue } }>('/plans')
       plans.value = data.sort((a, b) => a.sort_order - b.sort_order)
+      featureCatalogue.value = meta?.features ?? {}
     } catch {
       plans.value = []
+      featureCatalogue.value = {}
     } finally {
       plansLoaded.value = true
     }
@@ -190,8 +221,22 @@ export const useBillingStore = defineStore('billing', () => {
 
   const plan = computed(() => subscription.value?.plan ?? null)
 
+  /**
+   * Whether the current plan carries a capability, keyed the same way the API
+   * gates it.
+   *
+   * This is for choosing what to *offer* — hiding a button, or sending someone
+   * to /pricing before they fill in a form the API would refuse. It is never
+   * the enforcement: that lives in PlanFeatures on the server, and every gated
+   * endpoint answers 402 whatever the client believes.
+   */
+  function hasFeature(feature: string): boolean {
+    return plan.value?.features.includes(feature) ?? false
+  }
+
   return {
     plans,
+    featureCatalogue,
     plansLoaded,
     subscription,
     busy,
@@ -199,6 +244,7 @@ export const useBillingStore = defineStore('billing', () => {
     onTrial,
     trialDaysRemaining,
     plan,
+    hasFeature,
     fetchPlans,
     fetchSubscription,
     subscribe,

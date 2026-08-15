@@ -6,10 +6,12 @@ import { upgradeMessage } from '~/stores/billing'
 import CaseIntakeForm, { type CaseIntakePayload, type IntakeTemplateOption } from '~/components/CaseIntakeForm.vue'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
+  middleware: ['auth', 'onboarding', 'subscription'],
 })
 
 const caseStore = useCaseStore()
+const orgStore = useOrganizationStore()
+const auth = useAuthStore()
 const api = useApi()
 const route = useRoute()
 const router = useRouter()
@@ -22,10 +24,20 @@ const search = ref('')
 const statusFilter = ref('all')
 const typeFilter = ref('all')
 const priorityFilter = ref('all')
+const assigneeFilter = ref('all')
 const archived = ref(false)
 const templates = ref<IntakeTemplateOption[]>([])
 const showIntake = ref(false)
 const creating = ref(false)
+
+/**
+ * Creation runs behind an overlay that shows the case being assembled, so the
+ * submitted payload has to outlive the request: it is what the overlay reads
+ * the title and chips off. Cleared once the case's own page has taken over, or
+ * on failure, when the drawer underneath comes back with the input intact.
+ */
+const preparing = ref<CaseIntakePayload | null>(null)
+const prepared = ref<LegalCase | null>(null)
 
 /**
  * Sorting is client-side: the list is already fully in memory after the
@@ -44,11 +56,13 @@ const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
 
 const sort = ref<SortKey>('activity')
 
+const view = useViewMode('cases', 'list')
+
 const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-watch([search, statusFilter, typeFilter, priorityFilter, archived], () => {
+watch([search, statusFilter, typeFilter, priorityFilter, assigneeFilter, archived], () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     void loadCases()
@@ -65,6 +79,7 @@ async function loadCases() {
     status: statusFilter.value === 'all' ? undefined : statusFilter.value,
     case_type: typeFilter.value === 'all' ? undefined : typeFilter.value,
     priority: priorityFilter.value === 'all' ? undefined : priorityFilter.value,
+    assignee: assigneeFilter.value === 'all' ? undefined : assigneeFilter.value,
     archived: archived.value,
   })
 }
@@ -123,6 +138,20 @@ const summary = computed(() => {
 })
 
 /**
+ * Colleagues worth offering in the people filter. The signed-in user is left
+ * out because "Assigned to me" already stands for them, and a solo practice
+ * ends up with an empty list — which is what hides the control entirely.
+ */
+const colleagues = computed(() =>
+  orgStore.members.filter((m) => m.id !== auth.user?.id && m.org_status !== 'invited'),
+)
+
+function assigneeLabel(value: string) {
+  if (value === 'me') return 'Me'
+  return colleagues.value.find((m) => m.id === value)?.name ?? 'Someone'
+}
+
+/**
  * Which narrowing controls are on, as removable chips. Four always-open
  * selects gave no answer to "why am I seeing so few rows?" — the chips do,
  * and they make undoing one filter a single click.
@@ -146,6 +175,13 @@ const activeFilters = computed(() => {
       clear: () => (priorityFilter.value = 'all'),
     })
   }
+  if (assigneeFilter.value !== 'all') {
+    chips.push({
+      key: 'assignee',
+      label: `On case: ${assigneeLabel(assigneeFilter.value)}`,
+      clear: () => (assigneeFilter.value = 'all'),
+    })
+  }
   return chips
 })
 
@@ -156,6 +192,7 @@ function clearFilters() {
   statusFilter.value = 'all'
   typeFilter.value = 'all'
   priorityFilter.value = 'all'
+  assigneeFilter.value = 'all'
 }
 
 async function loadTemplates() {
@@ -169,12 +206,18 @@ async function loadTemplates() {
 
 async function handleIntakeSubmit(payload: CaseIntakePayload) {
   creating.value = true
+  prepared.value = null
+  preparing.value = payload
+
   try {
-    const created = await caseStore.createCase(payload)
-    showIntake.value = false
-    toast.success('Case created')
-    await router.push({ path: `/cases/${created.id}` })
+    // The overlay is watching for this; it seals and hands over once it lands.
+    prepared.value = await caseStore.createCase(payload)
   } catch (err: any) {
+    // Take the overlay away rather than sealing it, so the drawer underneath is
+    // back with everything the user typed still in it.
+    preparing.value = null
+    creating.value = false
+
     const upgrade = upgradeMessage(err)
     if (upgrade) {
       toast.error(`${upgrade}. Upgrade your plan to continue.`, {
@@ -183,9 +226,26 @@ async function handleIntakeSubmit(payload: CaseIntakePayload) {
     } else {
       toast.error(err?.data?.message ?? 'Could not create the case')
     }
-  } finally {
-    creating.value = false
   }
+}
+
+/**
+ * The overlay has finished announcing the case, so open it. The overlay fades
+ * itself out as it emits this, which is why it is torn down a beat later — the
+ * case page arrives underneath it rather than replacing it in one frame.
+ */
+async function handlePrepared() {
+  const created = prepared.value
+  if (!created) return
+
+  showIntake.value = false
+  await router.push({ path: `/cases/${created.id}` })
+
+  setTimeout(() => {
+    preparing.value = null
+    prepared.value = null
+    creating.value = false
+  }, 400)
 }
 
 function handleIntakeCancel() {
@@ -201,7 +261,7 @@ async function openProgress(id: string) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadCases(), loadTemplates()])
+  await Promise.all([loadCases(), loadTemplates(), orgStore.fetchMembers()])
 })
 </script>
 
@@ -274,6 +334,21 @@ onMounted(async () => {
         </Select>
 
         <!--
+          Only a firm has people to filter by; a solo practitioner would get a
+          select whose every option means "all of them".
+        -->
+        <Select v-if="colleagues.length > 0" v-model="assigneeFilter">
+          <SelectTrigger class="w-40" aria-label="Filter by person">
+            <SelectValue placeholder="Anyone" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Anyone</SelectItem>
+            <SelectItem value="me">Assigned to me</SelectItem>
+            <SelectItem v-for="m in colleagues" :key="m.id" :value="m.id">{{ m.name }}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <!--
           Wrapped so the trigger's justify-between sees one child plus its
           chevron; a bare leading icon would get spread to the far edge.
         -->
@@ -290,6 +365,8 @@ onMounted(async () => {
             </SelectItem>
           </SelectContent>
         </Select>
+
+        <ViewModeToggle v-model="view" class="ml-auto" />
       </div>
 
       <div v-if="activeFilters.length > 0" class="mt-2 flex flex-wrap items-center gap-1.5">
@@ -307,22 +384,31 @@ onMounted(async () => {
       </div>
 
       <div class="mt-4">
-        <div v-if="caseStore.loading" class="space-y-2">
-          <Skeleton v-for="i in 6" :key="i" class="h-[4.75rem] w-full rounded-xl" />
+        <!-- The placeholder takes the shape of whatever is about to load. -->
+        <div
+          v-if="caseStore.loading"
+          :class="view === 'card' ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-2'"
+        >
+          <Skeleton
+            v-for="i in 6"
+            :key="i"
+            class="w-full rounded-xl"
+            :class="view === 'card' ? 'h-56' : view === 'table' ? 'h-12' : 'h-[4.75rem]'"
+          />
         </div>
 
         <!--
           A filtered-to-nothing list and a genuinely empty workspace need
           different offers: one wants its filters back, the other wants a case.
         -->
-        <div v-else-if="sortedCases.length === 0 && isFiltered" class="rounded-xl border border-dashed bg-muted/45 py-14 text-center">
+        <div v-else-if="sortedCases.length === 0 && isFiltered" class="surface-inset border-dashed py-14 text-center">
           <SearchIcon class="mx-auto size-7 text-muted-foreground" />
           <p class="mt-3 text-sm font-medium">No cases match these filters</p>
           <p class="mt-1 text-xs text-muted-foreground">Try a broader search, or clear the filters to see everything.</p>
           <Button variant="outline" size="sm" class="mt-4" @click="clearFilters">Clear filters</Button>
         </div>
 
-        <div v-else-if="sortedCases.length === 0" class="rounded-xl border border-dashed bg-muted/45 py-14 text-center">
+        <div v-else-if="sortedCases.length === 0" class="surface-inset border-dashed py-14 text-center">
           <FolderOpenIcon class="mx-auto size-7 text-muted-foreground" />
           <p class="mt-3 text-sm font-medium">{{ archived ? 'No archived cases' : 'No cases yet' }}</p>
           <p class="mt-1 text-xs text-muted-foreground">
@@ -334,7 +420,8 @@ onMounted(async () => {
           </Button>
         </div>
 
-        <div v-else class="space-y-2">
+        <!-- List: the dense row this page has always used. -->
+        <div v-else-if="view === 'list'" class="space-y-2">
           <CaseListItem
             v-for="c in sortedCases"
             :key="c.id"
@@ -342,6 +429,48 @@ onMounted(async () => {
             @open="openCase"
             @progress="openProgress"
           />
+        </div>
+
+        <!-- Card: fewer per screen, but the title and the roster get room. -->
+        <div v-else-if="view === 'card'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <CaseCardItem
+            v-for="c in sortedCases"
+            :key="c.id"
+            :case="c"
+            @open="openCase"
+            @progress="openProgress"
+          />
+        </div>
+
+        <!--
+          Table: columns are the point, so it scrolls sideways on a narrow
+          screen rather than reflowing into something that is no longer a
+          table. The lesser columns drop out first as the viewport shrinks.
+        -->
+        <div v-else class="surface overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Case</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead class="hidden sm:table-cell">Priority</TableHead>
+                <TableHead class="hidden md:table-cell">Due</TableHead>
+                <TableHead class="hidden lg:table-cell">Progress</TableHead>
+                <TableHead class="hidden lg:table-cell">People</TableHead>
+                <TableHead class="hidden xl:table-cell">Activity</TableHead>
+                <TableHead><span class="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <CaseTableRow
+                v-for="c in sortedCases"
+                :key="c.id"
+                :case="c"
+                @open="openCase"
+                @progress="openProgress"
+              />
+            </TableBody>
+          </Table>
         </div>
       </div>
 
@@ -355,6 +484,21 @@ onMounted(async () => {
       />
     </div>
 
-    <NuxtPage :transition="{ name: 'page', mode: 'out-in' }" />
+    <NuxtPage />
+
+    <!--
+      Outside the list block on purpose: that block unmounts the moment the
+      route becomes a case detail, and the overlay has to outlast the
+      navigation it triggers.
+    -->
+    <CasePreparingOverlay
+      v-if="preparing"
+      :title="preparing.title"
+      :case-type="preparing.case_type"
+      :status="preparing.status"
+      :priority="preparing.priority"
+      :done="!!prepared"
+      @finished="handlePrepared"
+    />
   </div>
 </template>

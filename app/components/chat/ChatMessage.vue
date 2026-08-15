@@ -3,8 +3,9 @@ import {
   CheckIcon,
   ClipboardCheckIcon,
   CopyIcon,
-  DownloadIcon,
+  FileDownIcon,
   FileTextIcon,
+  FileTypeIcon,
   Loader2Icon,
   ThumbsDownIcon,
   ThumbsUpIcon,
@@ -76,6 +77,34 @@ function intakePairs(content: string): IntakePair[] | null {
     })
   }
   return pairs.length > 0 ? pairs : null
+}
+
+interface ChoiceSelection {
+  question: string
+  answer: string
+}
+
+/**
+ * The answers to an ask_user_question call, shown as the decision that was made
+ * rather than as the `Q:`/`A:` transport the model receives.
+ */
+function choiceSelections(content: string): ChoiceSelection[] | null {
+  if (!content.startsWith('[Choice Selection]')) return null
+
+  const selections: ChoiceSelection[] = []
+  let question = ''
+
+  for (const line of content.split('\n').slice(1)) {
+    const text = line.trim()
+
+    if (text.startsWith('Q: ')) question = text.slice(3).trim()
+    else if (text.startsWith('A: ') && question !== '') {
+      selections.push({ question, answer: text.slice(3).trim() })
+      question = ''
+    }
+  }
+
+  return selections.length > 0 ? selections : null
 }
 
 async function copyContent() {
@@ -208,6 +237,20 @@ const highlightValue = computed(() => ({
               </dl>
             </div>
           </template>
+          <template v-else-if="choiceSelections(message.content)">
+            <div class="w-full rounded-2xl border bg-card/80 px-4 py-3 shadow-sm">
+              <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                <CheckIcon class="size-3.5" />
+                Your choice
+              </p>
+              <dl class="mt-2.5 space-y-2">
+                <div v-for="selection in choiceSelections(message.content)" :key="selection.question">
+                  <dt class="text-[10px] uppercase tracking-wide text-muted-foreground/80">{{ selection.question }}</dt>
+                  <dd v-highlight="highlightValue" class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ selection.answer || '—' }}</dd>
+                </div>
+              </dl>
+            </div>
+          </template>
           <template v-else>
             <div v-highlight="highlightValue" class="whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
               {{ message.content }}
@@ -266,25 +309,39 @@ const highlightValue = computed(() => ({
           </div>
 
           <!-- Export actions -->
-          <div v-if="persisted && canExport(message)" class="mt-2 flex items-center gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              class="h-8 gap-1.5 px-3 text-xs font-medium shadow-sm transition-all hover:bg-primary/5 hover:text-primary hover:border-primary/30"
-              @click="emit('export', message, 'word')"
-            >
-              <FileTextIcon class="size-3.5" />
-              Word
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              class="h-8 gap-1.5 px-3 text-xs font-medium shadow-sm transition-all hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30"
-              @click="emit('export', message, 'pdf')"
-            >
-              <DownloadIcon class="size-3.5" />
-              PDF
-            </Button>
+          <div v-if="persisted && canExport(message)" class="mt-2.5">
+            <div class="inline-flex items-stretch overflow-hidden rounded-lg border bg-card shadow-sm">
+              <span
+                class="inline-flex items-center gap-1 border-r bg-muted/40 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                aria-hidden="true"
+              >
+                <FileDownIcon class="size-3" />
+                Export
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-7 gap-1.5 rounded-none px-2.5 text-xs text-foreground/80 transition-colors hover:bg-primary/10 hover:text-primary"
+                title="Download as Word document (.docx)"
+                @click="emit('export', message, 'word')"
+              >
+                <FileTypeIcon class="size-3.5" />
+                Word
+                <span class="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">.docx</span>
+              </Button>
+              <span class="my-1.5 w-px bg-border" />
+              <Button
+                variant="ghost"
+                size="sm"
+                class="h-7 gap-1.5 rounded-none px-2.5 text-xs text-foreground/80 transition-colors hover:bg-primary/10 hover:text-primary"
+                title="Download as PDF document (.pdf)"
+                @click="emit('export', message, 'pdf')"
+              >
+                <FileTextIcon class="size-3.5" />
+                PDF
+                <span class="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">.pdf</span>
+              </Button>
+            </div>
           </div>
         </template>
       </div>

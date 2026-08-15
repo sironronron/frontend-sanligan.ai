@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { ActivityIcon, ChevronRightIcon } from '@lucide/vue'
-import type { LegalCase } from '~/stores/cases'
+import { ActivityIcon, ChevronRightIcon, CrownIcon } from '@lucide/vue'
+import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
+import type { CaseMember, LegalCase } from '~/stores/cases'
 
 /**
  * One case as a scannable row.
  *
- * The previous card stacked five border-separated blocks — heading, blurb,
- * meta, progress, last message, action footer — each at its own font size, so
- * two cases filled a laptop screen and nothing lined up between them. A row
- * puts the same facts on fixed columns: identity reads left, state reads
- * right, and the eye can run straight down either one.
+ * The facts sit on a fixed grid rather than in a wrapping sentence: every row
+ * puts reference, type, deadline and last activity in the same four tracks, so
+ * the eye can run straight down a column and compare cases without reading
+ * each one. Empty cells hold their place instead of collapsing, which is what
+ * keeps the columns true.
  */
 const props = defineProps<{
   case: LegalCase
@@ -34,18 +35,48 @@ const isLate = computed(
 
 const doneTasks = computed(() => props.case.total_tasks_count - props.case.open_tasks_count)
 
-const meta = computed(() => {
+const details = computed(() => {
   const c = props.case
-  const parts: Array<{ text: string; class?: string }> = []
-  if (c.reference) parts.push({ text: c.reference, class: 'font-medium text-foreground/70' })
-  parts.push({ text: typeLabel(c.case_type) })
-  if (due.value) parts.push({ text: due.value.label, class: due.value.class })
-  if (c.open_tasks_count > 0) {
-    parts.push({ text: `${c.open_tasks_count} open task${c.open_tasks_count === 1 ? '' : 's'}` })
+  const muted = 'text-muted-foreground/50'
+
+  return [
+    {
+      label: 'Reference',
+      text: c.reference || 'None',
+      class: c.reference ? 'font-medium text-foreground/80' : muted,
+    },
+    { label: 'Type', text: typeLabel(c.case_type), class: 'text-muted-foreground' },
+    {
+      label: 'Due',
+      text: due.value?.label ?? 'No deadline',
+      class: due.value?.class ?? muted,
+    },
+    {
+      label: 'Activity',
+      text: c.last_message_at ? relativeTime(c.last_message_at) : 'No messages',
+      class: c.last_message_at ? 'text-muted-foreground' : muted,
+    },
+  ]
+})
+
+/** The owner leads; the roster below the case is the same list the avatars draw. */
+const people = computed(() => {
+  const list: Array<CaseMember & { isOwner: boolean }> = []
+
+  if (props.case.owner) list.push({ ...props.case.owner, isOwner: true })
+
+  for (const assignee of props.case.assignees ?? []) {
+    if (assignee.id !== props.case.owner?.id) list.push({ ...assignee, isOwner: false })
   }
-  if (c.last_message_at) parts.push({ text: relativeTime(c.last_message_at) })
-  if (c.archived_at) parts.push({ text: 'Archived' })
-  return parts
+
+  return list
+})
+
+const peopleLabel = computed(() => {
+  const n = people.value.length
+  if (n === 0) return 'Unassigned'
+  if (n === 1) return people.value[0]!.isOwner ? 'Owner only' : '1 person'
+  return `${n} people`
 })
 </script>
 
@@ -63,20 +94,81 @@ const meta = computed(() => {
 
     <div class="min-w-0 flex-1">
       <div class="flex min-w-0 items-center gap-2">
-        <h3 class="truncate text-sm font-medium group-hover:text-primary">{{ props.case.title }}</h3>
+        <h3 class="truncate text-lg font-semibold group-hover:text-primary">{{ props.case.title }}</h3>
         <CasePriorityBadge :priority="props.case.priority" />
+        <span
+          v-if="props.case.archived_at"
+          class="shrink-0 rounded-4xl border px-1.5 text-[10px] text-muted-foreground"
+        >
+          Archived
+        </span>
       </div>
 
-      <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-        <template v-for="(part, index) in meta" :key="`${part.text}-${index}`">
-          <span v-if="index > 0" aria-hidden="true" class="text-muted-foreground/40">·</span>
-          <span :class="part.class">{{ part.text }}</span>
-        </template>
-      </div>
+      <!--
+        Fixed tracks, not auto ones: a column that resized to its own row's
+        content would defeat the point of putting these facts in columns.
+      -->
+      <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-[8rem_9rem_9rem_9rem]">
+        <div v-for="detail in details" :key="detail.label" class="min-w-0">
+          <dt class="text-[10px] font-medium tracking-wide text-muted-foreground/60 uppercase">
+            {{ detail.label }}
+          </dt>
+          <dd class="truncate text-xs" :class="detail.class">{{ detail.text }}</dd>
+        </div>
+      </dl>
 
-      <p v-if="props.case.last_message_snippet" class="mt-1.5 truncate text-xs text-muted-foreground/80">
+      <p v-if="props.case.last_message_snippet" class="mt-2 truncate text-xs text-muted-foreground/80">
         {{ props.case.last_message_snippet }}
       </p>
+
+      <!--
+        Who is on the case closes the block, below the facts about it. It is a
+        button rather than a static stack because four avatars is where a row
+        stops being able to answer "who exactly?" — past that the popover does.
+      -->
+      <Popover>
+        <PopoverTrigger as-child>
+          <button
+            type="button"
+            class="mt-2.5 -ml-1 inline-flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            :aria-label="`People on ${props.case.title}: ${peopleLabel}`"
+            @click.stop
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <CaseMemberAvatars
+              v-if="people.length > 0"
+              :owner="props.case.owner"
+              :assignees="props.case.assignees"
+              :max="4"
+              overflow-label="4+"
+            />
+            <span class="text-xs text-muted-foreground">{{ peopleLabel }}</span>
+          </button>
+        </PopoverTrigger>
+
+        <PopoverContent align="start" class="w-64 gap-0 p-0" @click.stop>
+          <p class="border-b px-3 py-2 text-xs font-medium">On this case</p>
+
+          <div v-if="people.length === 0" class="px-3 py-3 text-xs text-muted-foreground">
+            Nobody is assigned yet.
+          </div>
+
+          <ul v-else class="max-h-64 overflow-y-auto py-1">
+            <li
+              v-for="person in people"
+              :key="person.id"
+              class="flex items-center gap-2 px-3 py-1.5"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-xs font-medium">{{ person.name }}</p>
+                <p class="truncate text-[11px] text-muted-foreground">{{ person.email }}</p>
+              </div>
+              <CrownIcon v-if="person.isOwner" class="size-3.5 shrink-0 text-primary" aria-label="Owner" />
+            </li>
+          </ul>
+        </PopoverContent>
+      </Popover>
     </div>
 
     <div class="flex shrink-0 items-center gap-3">

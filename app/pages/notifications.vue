@@ -24,15 +24,15 @@ onMounted(() => {
   <div class="mx-auto w-full max-w-3xl px-4 py-6">
     <PageHeader title="Notifications" description="Deadline reminders for your cases and tasks.">
       <template #actions>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+        <Button
+          variant="outline"
+          class="gap-2"
           :disabled="notificationStore.unreadCount === 0"
           @click="notificationStore.markAllRead()"
         >
           <CheckCheckIcon class="size-4" />
           Mark all as read
-        </button>
+        </Button>
       </template>
     </PageHeader>
 

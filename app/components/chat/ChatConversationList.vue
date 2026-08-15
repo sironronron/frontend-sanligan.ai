@@ -60,7 +60,7 @@ function timeLabel(conversation: ConversationItem): string {
 </script>
 
 <template>
-    <aside :class="cn('flex w-72 shrink-0 flex-col border-r bg-muted/30', props.class)">
+    <aside :class="cn('surface flex w-72 shrink-0 flex-col overflow-hidden', props.class)">
     <div class="space-y-2 border-b p-3">
       <Button class="w-full gap-1.5" @click="$emit('new')">
         <PlusIcon class="size-4" />

@@ -40,6 +40,9 @@ export default defineNuxtConfig({
       // designed to ship to browsers; the service-role key never appears here.
       supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
       supabasePublishableKey: process.env.NUXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
+      // Where the contact-sales plans point. Configurable so the address can
+      // move without a release.
+      salesEmail: process.env.NUXT_PUBLIC_SALES_EMAIL || 'secretary@batayan.co',
     },
   },
 

@@ -3,7 +3,7 @@ import { CheckIcon, CircleIcon, ClockIcon, TrashIcon } from '@lucide/vue'
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 definePageMeta({
-  middleware: ['auth', 'organization', 'onboarding', 'subscription'],
+  middleware: ['auth', 'onboarding', 'subscription'],
 })
 
 const todoStore = useTodoStore()

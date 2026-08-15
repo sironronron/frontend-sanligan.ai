@@ -30,14 +30,10 @@ async function handleAccept(marketingOptIn: boolean) {
   try {
     await auth.acceptTerms(marketingOptIn)
     accepted.value = true
-    // Redirect to next step based on user state
-    if (!auth.hasOrganization) {
-      router.push('/organization/setup')
-    } else if (!auth.kycCompleted) {
-      router.push('/onboarding')
-    } else {
-      router.push('/chat')
-    }
+    // The questions are the only setup left before working: an organization is
+    // no longer part of getting started, since teams are a paid capability and
+    // most accounts never need one.
+    router.push(auth.kycCompleted ? '/chat' : '/onboarding')
   } catch (e) {
     error.value = 'Failed to accept terms. Please try again.'
   }
@@ -48,7 +44,7 @@ async function handleAccept(marketingOptIn: boolean) {
   <div class="min-h-screen bg-background flex flex-col">
     <div class="flex-1 flex items-center justify-center p-4">
       <div class="w-full max-w-2xl">
-        <div class="bg-card text-card-foreground rounded-lg shadow-sm border p-6">
+        <div class="surface p-6">
           <div class="mb-6">
             <h1 class="text-xl font-semibold text-foreground">Terms of Service and Privacy Policy</h1>
             <p class="text-sm text-muted-foreground mt-1">Please review and accept our terms to continue.</p>

@@ -4,8 +4,9 @@
  * direct visit — a bookmark or a manual `/` — from walking past onboarding
  * into the subscription gate and landing on /pricing instead.
  *
- * Runs after `organization`, so a user without an org is sent to create one
- * first, and before `subscription`, so onboarding wins over the paywall.
+ * Runs before `subscription`, so onboarding wins over the paywall: the
+ * questions shape the product, and asking them before showing a price is the
+ * order that lets someone see what they would be paying for.
  */
 export default defineNuxtRouteMiddleware(async (to) => {
   const auth = useAuthStore()

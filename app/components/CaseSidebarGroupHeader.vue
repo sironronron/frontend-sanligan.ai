@@ -18,6 +18,7 @@ defineProps<{
   name: string
   count: number
   collapsed: boolean
+  color?: string | null
 }>()
 </script>
 
@@ -30,6 +31,12 @@ defineProps<{
     <ChevronRightIcon
       class="size-3.5 shrink-0 transition-transform"
       :class="collapsed ? '' : 'rotate-90'"
+    />
+    <span
+      class="size-2 shrink-0 rounded-full"
+      :class="color ? '' : 'bg-muted-foreground/40'"
+      :style="color ? { backgroundColor: color } : undefined"
+      aria-hidden="true"
     />
     <span class="min-w-0 flex-1 truncate text-left">{{ name }}</span>
     <span class="shrink-0 tabular-nums opacity-60">{{ count }}</span>
