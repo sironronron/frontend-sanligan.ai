@@ -127,7 +127,7 @@ async function cycleStatus() {
       @click="emit('open', todo)"
     >
       <span
-        class="block truncate text-[11px] leading-snug"
+        class="block truncate text-xs leading-snug"
         :class="todo.status === 'completed'
           ? 'text-sidebar-foreground/40 line-through'
           : 'text-sidebar-foreground/90'"
@@ -138,14 +138,14 @@ async function cycleStatus() {
       <span v-if="todo.priority || dueLabel" class="mt-1 flex items-center gap-1.5">
         <span
           v-if="todo.priority"
-          class="rounded px-1 py-px text-[9px] font-medium uppercase leading-none tracking-wide"
+          class="rounded px-1 py-px text-[10px] font-medium uppercase leading-none tracking-wide"
           :class="priorityClass"
         >
           {{ todo.priority }}
         </span>
         <span
           v-if="dueLabel"
-          class="flex items-center gap-0.5 text-[10px] leading-none"
+          class="flex items-center gap-0.5 text-[11px] leading-none"
           :class="overdue ? 'font-medium text-destructive' : 'text-sidebar-foreground/50'"
         >
           <ClockIcon class="size-2.5" />

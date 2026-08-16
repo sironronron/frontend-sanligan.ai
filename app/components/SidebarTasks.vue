@@ -99,11 +99,11 @@ onMounted(() => {
 
           <PopoverContent side="right" align="end" :side-offset="8" class="w-72 overflow-hidden p-0">
             <div class="flex items-center justify-between gap-2 border-b px-3 py-2">
-              <span class="flex items-center gap-1.5 text-xs font-semibold">
+              <span class="flex items-center gap-1.5 text-sm font-semibold">
                 <ListChecksIcon class="size-3.5 text-primary" />
                 Next up
               </span>
-              <span class="text-[10px] text-muted-foreground tabular-nums">
+              <span class="text-[11px] text-muted-foreground tabular-nums">
                 {{ openTasks.length }} open
               </span>
             </div>
@@ -120,7 +120,7 @@ onMounted(() => {
 
             <NuxtLink
               to="/todos"
-              class="flex items-center justify-between border-t px-3 py-2 text-[11px] font-medium text-primary transition-colors hover:bg-accent"
+              class="flex items-center justify-between border-t px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-accent"
             >
               <span>{{ remaining > 0 ? `${remaining} more` : 'All tasks' }}</span>
               <span aria-hidden="true">→</span>
@@ -135,8 +135,8 @@ onMounted(() => {
       class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-sidebar-accent/40 group-data-[collapsible=icon]:hidden"
     >
       <div class="flex items-center justify-between gap-2 px-2.5 pt-2 pb-1">
-        <span class="text-xs font-medium text-sidebar-foreground/70">Next up</span>
-        <NuxtLink to="/todos" class="text-[11px] font-medium text-primary hover:underline">
+        <span class="text-sm font-medium text-sidebar-foreground/70">Next up</span>
+        <NuxtLink to="/todos" class="text-xs font-medium text-primary hover:underline">
           {{ remaining > 0 ? `${remaining} more` : 'All tasks' }}
         </NuxtLink>
       </div>

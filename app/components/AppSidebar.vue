@@ -163,16 +163,16 @@ onMounted(() => {
             </PopoverTrigger>
             <PopoverContent side="right" align="start" class="w-64 p-3">
               <div class="flex items-center justify-between pb-1.5">
-                <span class="text-xs font-medium text-sidebar-foreground/70">Usage</span>
+                <span class="text-sm font-medium text-sidebar-foreground/70">Usage</span>
                 <NuxtLink
                   to="/settings/billing"
-                  class="text-[11px] font-medium text-primary hover:underline"
+                  class="text-xs font-medium text-primary hover:underline"
                 >
                   View
                 </NuxtLink>
               </div>
               <div v-for="meter in usageMeters" :key="meter.key" class="px-1 py-0.5">
-                <div class="flex items-center justify-between gap-2 text-[11px] leading-tight">
+                <div class="flex items-center justify-between gap-2 text-xs leading-tight">
                   <span class="text-sidebar-foreground/80">{{ meter.label }}</span>
                   <span class="text-sidebar-foreground/50">
                     {{ meter.used.toLocaleString() }}{{ meter.limit ? ` / ${meter.limit.toLocaleString()}` : '' }}
@@ -196,16 +196,16 @@ onMounted(() => {
         class="rounded-xl border border-sidebar-border/70 bg-sidebar-accent/40 p-2 group-data-[collapsible=icon]:hidden"
       >
         <div class="flex items-center justify-between px-1 pb-1.5">
-          <span class="text-xs font-medium text-sidebar-foreground/70">Usage</span>
+          <span class="text-sm font-medium text-sidebar-foreground/70">Usage</span>
           <NuxtLink
             to="/settings/billing"
-            class="text-[11px] font-medium text-primary hover:underline"
+            class="text-xs font-medium text-primary hover:underline"
           >
             View
           </NuxtLink>
         </div>
         <div v-for="meter in usageMeters" :key="meter.key" class="px-1 py-0.5">
-          <div class="flex items-center justify-between gap-2 text-[11px] leading-tight">
+          <div class="flex items-center justify-between gap-2 text-xs leading-tight">
             <span class="text-sidebar-foreground/80">{{ meter.label }}</span>
             <span class="text-sidebar-foreground/50">
               {{ meter.used.toLocaleString() }}{{ meter.limit ? ` / ${meter.limit.toLocaleString()}` : '' }}
