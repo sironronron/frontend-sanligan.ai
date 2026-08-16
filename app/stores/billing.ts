@@ -77,6 +77,13 @@ export interface Subscription {
     ends_at: string | null
     days_remaining: number | null
   }
+  seats: {
+    purchased: number
+    /** Centavos, carried on the subscription rather than read off the plan. */
+    price_per_seat: number | null
+    next_invoice_amount: number
+    next_invoice_pesos: number
+  }
   usage: {
     messages: MessageUsageMeter
     documents: UsageMeter
@@ -151,6 +158,43 @@ export const useBillingStore = defineStore('billing', () => {
       const { data } = await api<{ data: Subscription }>('/subscription/change-plan', {
         method: 'POST',
         body: { plan_id: planId },
+      })
+      subscription.value = data
+      return data
+    } finally {
+      busy.value = false
+    }
+  }
+
+  /**
+   * Buy extra seats on top of the ones the plan bundles. The API is the
+   * authority on who may do this and whether the plan sells seats at all —
+   * it answers 402/403/422 whatever the client offers.
+   */
+  async function addSeats(quantity = 1) {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: Subscription }>('/subscription/seats', {
+        method: 'POST',
+        body: { quantity },
+      })
+      subscription.value = data
+      return data
+    } finally {
+      busy.value = false
+    }
+  }
+
+  /**
+   * Give seats back. Refused by the API when it would drop the count below the
+   * organization's active members, so members are removed first.
+   */
+  async function removeSeats(quantity = 1) {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: Subscription }>('/subscription/seats', {
+        method: 'DELETE',
+        body: { quantity },
       })
       subscription.value = data
       return data
@@ -249,6 +293,8 @@ export const useBillingStore = defineStore('billing', () => {
     fetchSubscription,
     subscribe,
     changePlan,
+    addSeats,
+    removeSeats,
     cancel,
     redeemTrialCode,
     waitForActiveSubscription,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckIcon, CreditCardIcon, Loader2Icon, SparklesIcon } from '@lucide/vue'
+import { CheckIcon, CreditCardIcon, Loader2Icon, MinusIcon, PlusIcon, SparklesIcon, UsersIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
 import { useBillingStore, isAtLimit, limitPct } from '~/stores/billing'
 
@@ -9,11 +9,16 @@ definePageMeta({
 })
 
 const billing = useBillingStore()
+const org = useOrganizationStore()
+const auth = useAuthStore()
 const route = useRoute()
 
 const loading = ref(true)
 const confirmingPayment = ref(false)
 const cancelling = ref(false)
+const seatQuantity = ref(1)
+const seatBusy = ref(false)
+const confirmSeatPurchase = ref(false)
 
 const sub = computed(() => billing.subscription)
 
@@ -65,7 +70,13 @@ async function handleCancel() {
 }
 
 onMounted(async () => {
-  await Promise.all([billing.fetchPlans(), billing.fetchSubscription()])
+  await Promise.all([
+    billing.fetchPlans(),
+    billing.fetchSubscription(),
+    // A solo account has no organization and is refused here; that is an
+    // answer, not a failure, and the seat card simply stays hidden.
+    org.fetchOrganization().catch(() => null),
+  ])
   loading.value = false
 
   // Checkouts return to `/welcome` now. This stays for sessions that were
@@ -125,6 +136,79 @@ function formatPesos(value: number) {
 
 function limitLabel(limit: number | null) {
   return formatCount(limit)
+}
+
+/**
+ * Seats are only sellable when the plan prices them, so the card is offered on
+ * exactly the plans the API would accept a purchase for. A plan without a seat
+ * price is not "zero seats" — it is a plan that sells none, and the answer
+ * there is a different plan rather than a quantity box.
+ */
+const sellsSeats = computed(() => sub.value?.plan?.seat_price != null)
+
+const seats = computed(() => sub.value?.seats ?? null)
+const seatsUsed = computed(() => org.organization?.seats.used ?? 0)
+const seatsFree = computed(() => Math.max(0, (seats.value?.purchased ?? 0) - seatsUsed.value))
+
+/** Only admins may change the seat count; the API enforces the same rule. */
+const canManageSeats = computed(() => sellsSeats.value && org.isManager && sub.value?.status !== 'cancelled')
+
+/**
+ * The subscription carries a per-seat price only once it has been set on the
+ * row — subscriptions predating seat pricing, and ones created without it,
+ * report null. The plan's own seat price is what the next seat actually costs
+ * there, so it is the fallback rather than zero, which would quote a free seat.
+ */
+const seatPricePesos = computed(
+  () => (seats.value?.price_per_seat ?? sub.value?.plan?.seat_price ?? 0) / 100,
+)
+
+/** What the requested change costs, so the button is not a blind commitment. */
+const seatChargePesos = computed(() => seatPricePesos.value * Math.max(1, seatQuantity.value))
+
+/** Who the charge lands on — the workspace when there is one, else the signed-in account. */
+const billedAccount = computed(
+  () => org.organization?.name ?? auth.user?.organization_name ?? auth.user?.email ?? 'your account',
+)
+
+/**
+ * Buying a seat spends the organization's money, so the button asks rather
+ * than charges: the dialog names the account being billed and the amount it
+ * adds, and the request only leaves once that is confirmed.
+ */
+function requestSeatPurchase() {
+  if (seatQuantity.value < 1) return
+  confirmSeatPurchase.value = true
+}
+
+async function handleAddSeats() {
+  seatBusy.value = true
+  try {
+    const purchased = seatQuantity.value
+    await billing.addSeats(purchased)
+    await org.fetchOrganization().catch(() => null)
+    confirmSeatPurchase.value = false
+    toast.success(`Added ${purchased} seat${purchased === 1 ? '' : 's'}`)
+    seatQuantity.value = 1
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not add seats')
+  } finally {
+    seatBusy.value = false
+  }
+}
+
+async function handleRemoveSeats() {
+  seatBusy.value = true
+  try {
+    await billing.removeSeats(seatQuantity.value)
+    await org.fetchOrganization().catch(() => null)
+    toast.success(`Removed ${seatQuantity.value} seat${seatQuantity.value === 1 ? '' : 's'}`)
+    seatQuantity.value = 1
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not remove seats')
+  } finally {
+    seatBusy.value = false
+  }
 }
 </script>
 
@@ -213,6 +297,78 @@ function limitLabel(limit: number | null) {
         </CardContent>
       </Card>
 
+      <Card v-if="sellsSeats" class="mb-6">
+        <CardHeader>
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Seats</CardTitle>
+              <CardDescription>
+                &#8369;{{ formatPesos(seatPricePesos) }} per seat · next invoice
+                &#8369;{{ formatPesos(seats?.next_invoice_pesos ?? 0) }}
+              </CardDescription>
+            </div>
+            <UsersIcon class="size-5 text-muted-foreground" />
+          </div>
+        </CardHeader>
+        <CardContent class="space-y-4 text-sm">
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div>
+              <p class="text-xs uppercase tracking-wide text-muted-foreground">Purchased</p>
+              <p class="mt-1 text-lg font-semibold">{{ formatCount(seats?.purchased ?? 0) }}</p>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-wide text-muted-foreground">Used</p>
+              <p class="mt-1 text-lg font-semibold">{{ formatCount(seatsUsed) }}</p>
+            </div>
+            <div>
+              <p class="text-xs uppercase tracking-wide text-muted-foreground">Free</p>
+              <p class="mt-1 text-lg font-semibold" :class="seatsFree === 0 ? 'text-destructive' : ''">
+                {{ formatCount(seatsFree) }}
+              </p>
+            </div>
+          </div>
+
+          <div v-if="canManageSeats" class="flex flex-wrap items-end gap-3 border-t pt-4">
+            <div class="w-24">
+              <Label for="seat-quantity" class="text-xs uppercase tracking-wide text-muted-foreground">
+                Quantity
+              </Label>
+              <Input
+                id="seat-quantity"
+                v-model.number="seatQuantity"
+                type="number"
+                min="1"
+                max="100"
+                class="mt-1.5"
+              />
+            </div>
+            <Button :disabled="seatBusy || seatQuantity < 1" @click="requestSeatPurchase">
+              <Loader2Icon v-if="seatBusy" class="size-4 animate-spin" />
+              <PlusIcon v-else class="size-4" />
+              Purchase seats
+            </Button>
+            <Button
+              variant="outline"
+              :disabled="seatBusy || seatQuantity < 1 || (seats?.purchased ?? 0) < 1"
+              @click="handleRemoveSeats"
+            >
+              <MinusIcon class="size-4" />
+              Remove seats
+            </Button>
+          </div>
+          <p v-if="canManageSeats" class="text-xs text-muted-foreground">
+            Adds &#8369;{{ formatPesos(seatChargePesos) }} to your next invoice. Seats you remove cannot drop
+            below the members already using them.
+          </p>
+          <p v-else-if="sub.status === 'cancelled'" class="text-sm text-muted-foreground">
+            Seat changes are unavailable on a cancelled subscription.
+          </p>
+          <p v-else class="text-sm text-muted-foreground">
+            Only organization owners and admins can change the seat count.
+          </p>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Usage this period</CardTitle>
@@ -268,5 +424,31 @@ function limitLabel(limit: number | null) {
         </CardContent>
       </Card>
     </template>
+
+    <AlertDialog v-model:open="confirmSeatPurchase">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Purchase {{ seatQuantity }} seat{{ seatQuantity === 1 ? '' : 's' }}?
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This charges <span class="font-medium text-foreground">{{ billedAccount }}</span>
+            an extra &#8369;{{ formatPesos(seatChargePesos) }} per cycle, billed to
+            {{ gatewayLabel[sub?.gateway ?? ''] ?? sub?.gateway }} as
+            {{ auth.user?.email }}. The seats are available immediately and appear on your
+            next invoice.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="seatBusy">
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction :disabled="seatBusy" @click.prevent="handleAddSeats">
+            <Loader2Icon v-if="seatBusy" class="size-4 animate-spin" />
+            {{ seatBusy ? 'Purchasing…' : 'Confirm purchase' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
