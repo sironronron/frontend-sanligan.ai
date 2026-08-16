@@ -163,8 +163,22 @@ const seatPricePesos = computed(
   () => (seats.value?.price_per_seat ?? sub.value?.plan?.seat_price ?? 0) / 100,
 )
 
-/** What the requested change costs, so the button is not a blind commitment. */
-const seatChargePesos = computed(() => seatPricePesos.value * Math.max(1, seatQuantity.value))
+/** How many of the plan's bundled seats are still unbought, and so still free. */
+const includedSeats = computed(() => sub.value?.plan?.included_seats ?? 0)
+const bundledSeatsLeft = computed(() => Math.max(0, includedSeats.value - (seats.value?.purchased ?? 0)))
+
+/**
+ * What the requested change costs, so the button is not a blind commitment.
+ *
+ * The list price already covers the bundled seats, so buying into that range
+ * adds nothing — only the seats past it carry the per-seat rate, and quoting
+ * the flat rate would overstate a purchase that is partly or wholly free.
+ */
+const seatChargePesos = computed(() => {
+  const quantity = Math.max(1, seatQuantity.value)
+
+  return seatPricePesos.value * Math.max(0, quantity - bundledSeatsLeft.value)
+})
 
 /** Who the charge lands on — the workspace when there is one, else the signed-in account. */
 const billedAccount = computed(
@@ -303,8 +317,8 @@ async function handleRemoveSeats() {
             <div>
               <CardTitle>Seats</CardTitle>
               <CardDescription>
-                &#8369;{{ formatPesos(seatPricePesos) }} per seat · next invoice
-                &#8369;{{ formatPesos(seats?.next_invoice_pesos ?? 0) }}
+                {{ formatCount(includedSeats) }} included · &#8369;{{ formatPesos(seatPricePesos) }}
+                per extra seat · next invoice &#8369;{{ formatPesos(seats?.next_invoice_pesos ?? 0) }}
               </CardDescription>
             </div>
             <UsersIcon class="size-5 text-muted-foreground" />
@@ -357,8 +371,14 @@ async function handleRemoveSeats() {
             </Button>
           </div>
           <p v-if="canManageSeats" class="text-xs text-muted-foreground">
-            Adds &#8369;{{ formatPesos(seatChargePesos) }} to your next invoice. Seats you remove cannot drop
-            below the members already using them.
+            <template v-if="seatChargePesos === 0">
+              Your plan still covers {{ formatCount(bundledSeatsLeft) }} more seat{{ bundledSeatsLeft === 1 ? '' : 's' }}
+              at no extra cost.
+            </template>
+            <template v-else>
+              Adds &#8369;{{ formatPesos(seatChargePesos) }} to your next invoice.
+            </template>
+            Seats you remove cannot drop below the members already using them.
           </p>
           <p v-else-if="sub.status === 'cancelled'" class="text-sm text-muted-foreground">
             Seat changes are unavailable on a cancelled subscription.
@@ -432,11 +452,16 @@ async function handleRemoveSeats() {
             Purchase {{ seatQuantity }} seat{{ seatQuantity === 1 ? '' : 's' }}?
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This charges <span class="font-medium text-foreground">{{ billedAccount }}</span>
-            an extra &#8369;{{ formatPesos(seatChargePesos) }} per cycle, billed to
-            {{ gatewayLabel[sub?.gateway ?? ''] ?? sub?.gateway }} as
-            {{ auth.user?.email }}. The seats are available immediately and appear on your
-            next invoice.
+            <template v-if="seatChargePesos === 0">
+              Your plan bundles {{ formatCount(includedSeats) }} seats, so this adds nothing to what
+              <span class="font-medium text-foreground">{{ billedAccount }}</span> pays.
+            </template>
+            <template v-else>
+              This charges <span class="font-medium text-foreground">{{ billedAccount }}</span>
+              an extra &#8369;{{ formatPesos(seatChargePesos) }} per cycle, billed to
+              {{ gatewayLabel[sub?.gateway ?? ''] ?? sub?.gateway }} as {{ auth.user?.email }}.
+            </template>
+            The seats are available immediately and appear on your next invoice.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
