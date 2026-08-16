@@ -42,7 +42,30 @@ function humanize(value: string) {
 
 const formData = ref<Record<string, string>>({})
 const checkboxValues = ref<Record<string, string[]>>({})
+// What the user typed for a choice field they answered with "Other". Kept
+// apart from formData so switching back to a listed option does not carry the
+// free text along, and switching back to "Other" does not lose it.
+const otherValues = ref<Record<string, string>>({})
 const validationError = ref('')
+
+const OTHER_OPTION = 'Other'
+
+function isChoice(field: IntakeField) {
+  return field.type === 'radio' || field.type === 'select'
+}
+
+/**
+ * A choice field offers "Other" when the AI could not enumerate every answer.
+ * Picking it reveals a text box, so the user is never forced into an option
+ * that does not describe their situation.
+ */
+function hasOther(field: IntakeField) {
+  return isChoice(field) && (field.options ?? []).includes(OTHER_OPTION)
+}
+
+function needsOtherText(field: IntakeField) {
+  return hasOther(field) && formData.value[field.key] === OTHER_OPTION
+}
 
 const visibleFields = computed<IntakeField[]>(() =>
   props.fields.filter((field) => {
@@ -79,6 +102,7 @@ watch(
   () => {
     formData.value = {}
     checkboxValues.value = {}
+    otherValues.value = {}
     validationError.value = ''
 
     // Carry over the user's previously submitted answers (e.g. when they
@@ -92,6 +116,14 @@ watch(
           .split(',')
           .map((option) => option.trim())
           .filter(Boolean)
+      } else if (isChoice(field) && !(field.options ?? []).includes(value)) {
+        // A previous answer that is not one of the offered options was typed
+        // freehand, so it is restored the way it was given: "Other", selected,
+        // with the text alongside it.
+        if (hasOther(field)) {
+          formData.value[field.key] = OTHER_OPTION
+          otherValues.value[field.key] = value
+        }
       } else {
         formData.value[field.key] = value
       }
@@ -112,6 +144,10 @@ watch(visibleFields, (fields) => {
   for (const key of Object.keys(checkboxValues.value)) {
     if (!visibleKeys.has(key)) delete checkboxValues.value[key]
   }
+
+  for (const key of Object.keys(otherValues.value)) {
+    if (!visibleKeys.has(key)) delete otherValues.value[key]
+  }
 })
 
 function toggleCheckbox(key: string, option: string) {
@@ -127,12 +163,22 @@ function missingRequiredCheckboxes(): string[] {
     .map((field) => humanize(field.label))
 }
 
+function missingOtherText(): string[] {
+  return visibleFields.value
+    .filter((field) => field.required && needsOtherText(field) && (otherValues.value[field.key] ?? '').trim() === '')
+    .map((field) => humanize(field.label))
+}
+
 function serialize(): Record<string, string> {
   const data: Record<string, string> = { ...formData.value }
 
   for (const field of visibleFields.value) {
     if (field.type === 'checkbox') {
       data[field.key] = (checkboxValues.value[field.key] ?? []).join(', ')
+    } else if (needsOtherText(field)) {
+      // The AI receives what the user actually described, not the literal
+      // word "Other", which would tell it nothing.
+      data[field.key] = (otherValues.value[field.key] ?? '').trim()
     }
   }
 
@@ -140,6 +186,13 @@ function serialize(): Record<string, string> {
 }
 
 function handleSubmit() {
+  const unspecified = missingOtherText()
+
+  if (unspecified.length > 0) {
+    validationError.value = `Please describe your answer for: ${unspecified.join(', ')}`
+    return
+  }
+
   const missing = missingRequiredCheckboxes()
 
   if (missing.length > 0) {
@@ -258,6 +311,14 @@ function handleSubmit() {
                   :required="field.required"
                 />
               </template>
+
+              <Input
+                v-if="needsOtherText(field)"
+                v-model="otherValues[field.key]"
+                type="text"
+                class="text-sm"
+                placeholder="Describe your answer"
+              />
             </div>
           </div>
 

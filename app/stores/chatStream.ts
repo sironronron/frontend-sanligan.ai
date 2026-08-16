@@ -220,6 +220,15 @@ export const useChatStreamStore = defineStore('chatStream', () => {
 
     if (payload.name !== 'request_intake_form' || !Array.isArray(payload.arguments?.fields)) return
 
+    // An empty form is a dead end: it opens with nothing to answer and the
+    // submit button sends back no facts.
+    if (payload.arguments.fields.length === 0) return
+
+    // One form per turn. A second frame would re-open the sheet on top of the
+    // answers the user just gave and drop the draft below it — the server
+    // suppresses repeats, and this keeps a stale client honest too.
+    if (turn.intakeFields !== null) return
+
     turn.intakeFields = payload.arguments.fields as IntakeField[]
     turn.intakeDefaults = payload.arguments.default_values ?? null
     turn.awaitingIntake = true

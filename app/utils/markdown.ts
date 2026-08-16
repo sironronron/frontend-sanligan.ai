@@ -33,6 +33,13 @@ function removeProtocolMarkers(text: string): string {
     // While a write-back block is still streaming in it has no closing marker
     // yet; hide the raw start marker rather than let it flash on screen.
     .replace(/\[\[MEMORY_WRITE_START\]\][\s\S]*$/g, '')
+    // The fact-gathering block is a protocol between the model and the server,
+    // which turns its questions into the intake form. The server withholds it
+    // from the stream, so this only catches replies persisted before that
+    // landed — but a visible "[[NEED_INFO]]" followed by questions the user
+    // cannot answer in chat is the worst thing to leave on screen.
+    .replace(/\[\[NEED_INFO\]\][\s\S]*?\[\[(?:\/\s*NEED_INFO|NEED_INFO_END)\]\]/g, '')
+    .replace(/\[\[NEED_INFO\]\][\s\S]*$/g, '')
 }
 
 /**
