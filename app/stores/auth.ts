@@ -100,32 +100,19 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * Creates the Supabase account. When the project requires email
-   * confirmation no session is returned, so the caller is told to check their
-   * inbox instead of being sent into the app.
+   * Creates the account server-side. The API provisions the Supabase user and
+   * emails the confirmation link through Laravel's mailer, so the caller is
+   * always told to check their inbox rather than being sent into the app.
    */
   async function register(name: string, email: string, password: string) {
     busy.value = true
     try {
-      const { data, error } = await useSupabase().auth.signUp({
-        email,
-        password,
-        options: {
-          // Read back by the API from the JWT's user_metadata.full_name.
-          data: { full_name: name },
-          emailRedirectTo: `${window.location.origin}/login`,
-        },
+      await api('/auth/register', {
+        method: 'POST',
+        body: { name, email, password },
       })
 
-      if (error) throw error
-
-      if (!data.session) {
-        return { confirmationRequired: true as const }
-      }
-
-      await fetchUser()
-
-      return { confirmationRequired: false as const }
+      return { confirmationRequired: true as const }
     } finally {
       busy.value = false
     }
