@@ -57,7 +57,7 @@ export const TOUR_STEPS: TourStep[] = [
     cta: 'Got it',
   },
   {
-    target: 'nav-documents',
+    target: 'nav-files',
     route: '/cases',
     placement: 'bottom',
     title: 'Attach the documents you already have',
@@ -65,7 +65,7 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     target: 'documents-upload',
-    route: '/documents',
+    route: '/files',
     placement: 'bottom',
     title: 'What happens after an upload',
     body: 'The file is encrypted at rest, its text is extracted and indexed, then Batayan can quote it back with the filename attached. Nothing you upload is shared outside your account.',
@@ -80,6 +80,43 @@ export const TOUR_STEPS: TourStep[] = [
   },
 ]
 
+/**
+ * The verified-lawyer first-run. A lawyer lands on the workspace rather than
+ * the chat, so the walkthrough stays there: control availability, read the
+ * offers, work a matter, and keep the journal.
+ */
+export const LAWYER_TOUR_STEPS: TourStep[] = [
+  {
+    target: 'lawyer-availability',
+    route: '/lawyer/dashboard',
+    placement: 'bottom',
+    title: 'Control when you get work',
+    body: 'Keep this toggle on to be offered document requests matched to your practice. Switch it off when you are too busy to take new matters.',
+  },
+  {
+    target: 'lawyer-offered',
+    route: '/lawyer/dashboard',
+    placement: 'bottom',
+    title: 'Review the requests offered to you',
+    body: 'A request you are matched with appears here first — its document type, fee, and urgency. Open it to read the full document and see who submitted it before you accept or decline.',
+  },
+  {
+    target: 'lawyer-active',
+    route: '/lawyer/dashboard',
+    placement: 'bottom',
+    title: 'Work your active matters',
+    body: 'Accepted requests move here. On each one you open the document, ask the submitter for anything you need, mark it vetted, and schedule a notarization — all on the same page.',
+  },
+  {
+    target: 'lawyer-journal',
+    route: '/lawyer/dashboard',
+    placement: 'bottom',
+    title: 'Your notarial journal is kept for you',
+    body: 'Every notarization you record lands here with its certificate number — the official register of the notarial acts you have performed.',
+    cta: 'Start using Batayan',
+  },
+]
+
 export function useProductTour() {
   const auth = useAuthStore()
 
@@ -90,9 +127,12 @@ export function useProductTour() {
   /** Shown once, the first time the tour is finished or skipped. */
   const welcoming = useState('tour-welcoming', () => false)
 
-  const step = computed<TourStep | null>(() => (active.value ? TOUR_STEPS[index.value] ?? null : null))
-  const isLast = computed(() => index.value >= TOUR_STEPS.length - 1)
-  const total = computed(() => TOUR_STEPS.length)
+  /** Which walkthrough fits this account: the workspace for a verified lawyer, chat otherwise. */
+  const steps = computed<TourStep[]>(() => (auth.isVerifiedLawyer ? LAWYER_TOUR_STEPS : TOUR_STEPS))
+
+  const step = computed<TourStep | null>(() => (active.value ? steps.value[index.value] ?? null : null))
+  const isLast = computed(() => index.value >= steps.value.length - 1)
+  const total = computed(() => steps.value.length)
 
   function hasCompleted(): boolean {
     return auth.user?.tour_completed_at != null
@@ -170,15 +210,17 @@ export function useProductTour() {
    *
    * First-run opens on the intro rather than the first spotlight: a tooltip
    * pointing at the composer means little to someone who does not yet know
-   * what Batayan is for.
+   * what Batayan is for. A lawyer application skips the KYC questions, so a
+   * verified profile counts as onboarding done there.
    */
   function maybeStart(): void {
     // Never reopen over a tour already in progress — this is called from a
     // watcher that can fire again while the user is midway through it.
-    if (introducing.value || active.value || !auth.user || !auth.kycCompleted || hasCompleted()) return
+    if (introducing.value || active.value || !auth.user || hasCompleted()) return
+    if (!auth.kycCompleted && !auth.isVerifiedLawyer) return
 
     introducing.value = true
   }
 
-  return { active, index, step, isLast, total, introducing, welcoming, start, beginTour, skipIntro, restart, finish, next, back, maybeStart, hasCompleted, dismissWelcome }
+  return { active, index, step, steps, isLast, total, introducing, welcoming, start, beginTour, skipIntro, restart, finish, next, back, maybeStart, hasCompleted, dismissWelcome }
 }

@@ -110,9 +110,11 @@ async function handleSubmit() {
   try {
     await auth.login(email.value.trim(), password.value)
 
-    const redirect = String(useRoute().query.redirect ?? '')
-
-    await navigateTo(redirect || (auth.kycCompleted ? auth.homePath() : '/onboarding'))
+    // Terms and the KYC questions are checked here rather than in a route
+    // guard so the destination resolves in the same order for every entry
+    // point — email/password, Google, or a lawyer registration parked during
+    // sign-up.
+    await navigateTo(resolveAuthDestination(String(useRoute().query.redirect ?? '') || null))
   } catch (err) {
     const parsed = parseApiError(err, 'Sign in failed. Please try again.')
     error.value = parsed.message

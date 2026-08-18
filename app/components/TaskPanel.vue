@@ -15,6 +15,7 @@ const props = withDefaults(defineProps<{
 defineEmits<{ close: [] }>()
 
 const todoStore = useTodoStore()
+const { openTodo } = useTaskDetailPanel()
 
 const newTaskTitle = ref('')
 const adding = ref(false)
@@ -260,7 +261,7 @@ function formatDueDate(date: string | null) {
                 <button
                   class="block w-full text-left text-sm leading-tight"
                   @dblclick="startEdit(todo)"
-                  @click="startEdit(todo)"
+                  @click="openTodo(todo)"
                 >
                   {{ todo.title }}
                 </button>
@@ -317,7 +318,7 @@ function formatDueDate(date: string | null) {
             >
               <CheckIcon class="size-4" />
             </button>
-            <button class="min-w-0 flex-1 text-left text-sm leading-tight line-through" @dblclick="startEdit(todo)">
+            <button class="min-w-0 flex-1 text-left text-sm leading-tight line-through" @click="openTodo(todo)" @dblclick="startEdit(todo)">
               {{ todo.title }}
             </button>
             <button

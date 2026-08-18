@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DownloadIcon, EyeIcon, LinkIcon, Loader2Icon, RotateCcwIcon, TrashIcon } from '@lucide/vue'
+import { DownloadIcon, EyeIcon, FolderInputIcon, LinkIcon, Loader2Icon, RotateCcwIcon, TrashIcon } from '@lucide/vue'
 
 /**
  * The button cluster on an uploaded document: view, download or retry, attach
@@ -33,6 +33,7 @@ const emit = defineEmits<{
   download: []
   retry: []
   toggleAttach: []
+  toggleFile: []
   remove: []
 }>()
 
@@ -75,6 +76,16 @@ const iconClass = computed(() => (props.compact ? 'size-3.5' : 'size-4'))
     >
       <Loader2Icon v-if="retrying" :class="[iconClass, 'animate-spin']" />
       <RotateCcwIcon v-else :class="iconClass" />
+    </Button>
+
+    <Button
+      variant="ghost"
+      size="icon"
+      :class="[sizeClass, 'text-muted-foreground hover:text-foreground']"
+      :aria-label="`File ${document.title} under a folder`"
+      @click="emit('toggleFile')"
+    >
+      <FolderInputIcon :class="iconClass" />
     </Button>
 
     <Button

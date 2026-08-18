@@ -9,10 +9,28 @@ definePageMeta({
 
 const notificationStore = useNotificationStore()
 
+const kindLabel: Record<string, string> = {
+  case: 'Case',
+  task: 'Task',
+  vetting_request: 'Vetting request',
+  vetting_message: 'Message',
+  lawyer_verification: 'Verification',
+  payout: 'Payout',
+}
+
 function dueLabel(days: number, overdue: boolean) {
   if (overdue) return 'Overdue'
   if (days === 0) return 'Due today'
   return `Due in ${days} ${days === 1 ? 'day' : 'days'}`
+}
+
+/**
+ * Case and task reminders carry a due date; the vetting/payout notifications
+ * are informational and have no countdown, so they just get the timestamp.
+ */
+function metaLabel(n: { kind: string, days: number, overdue: boolean }) {
+  if (n.kind === 'case' || n.kind === 'task') return dueLabel(n.days, n.overdue)
+  return ''
 }
 
 onMounted(() => {
@@ -59,12 +77,13 @@ onMounted(() => {
           </div>
           <div class="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <Badge
+              v-if="metaLabel(n) !== ''"
               :class="n.overdue ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'"
               class="text-[10px]"
             >
-              {{ dueLabel(n.days, n.overdue) }}
+              {{ metaLabel(n) }}
             </Badge>
-            <span>{{ n.kind === 'case' ? 'Case' : 'Task' }}</span>
+            <span>{{ kindLabel[n.kind] ?? '' }}</span>
             <span>{{ timeAgo(n.created_at) }}</span>
           </div>
         </NuxtLink>

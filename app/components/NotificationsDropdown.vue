@@ -94,6 +94,7 @@ onBeforeUnmount(() => {
               </p>
               <p class="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
                 <Badge
+                  v-if="n.kind === 'case' || n.kind === 'task'"
                   :class="n.overdue ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground'"
                   class="px-1.5 py-0 text-[10px]"
                 >

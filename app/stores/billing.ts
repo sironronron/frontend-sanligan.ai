@@ -111,6 +111,13 @@ export const useBillingStore = defineStore('billing', () => {
   const featureCatalogue = ref<FeatureCatalogue>({})
   const plansLoaded = ref(false)
   const subscription = ref<Subscription | null>(null)
+  /**
+   * Whether `/subscription` has answered at least once. A user with no plan
+   * resolves the same way an unloaded store does (`null`), so the UI cannot
+   * tell the difference from the value alone — anything that renders a
+   * subscriber-only state must wait for this before drawing locks or perks.
+   */
+  const subscriptionLoaded = ref(false)
   const busy = ref(false)
 
   async function fetchPlans(force = false) {
@@ -134,6 +141,8 @@ export const useBillingStore = defineStore('billing', () => {
       subscription.value = data
     } catch {
       subscription.value = null
+    } finally {
+      subscriptionLoaded.value = true
     }
     return subscription.value
   }
@@ -283,6 +292,7 @@ export const useBillingStore = defineStore('billing', () => {
     featureCatalogue,
     plansLoaded,
     subscription,
+    subscriptionLoaded,
     busy,
     accessGranted,
     onTrial,

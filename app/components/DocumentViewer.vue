@@ -9,7 +9,9 @@ export interface ViewerDocument {
   mime_type: string
 }
 
-const props = defineProps<{ document: ViewerDocument }>()
+const props = withDefaults(defineProps<{ document: ViewerDocument; zClass?: string }>(), {
+  zClass: 'z-50',
+})
 const emit = defineEmits<{ close: [] }>()
 
 const { fetchBlob, objectUrl, download } = useDocumentFile()
@@ -137,7 +139,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div :class="['fixed inset-0 flex items-center justify-center p-4 sm:p-6', props.zClass]">
       <div class="absolute inset-0 bg-black/60" @click="emit('close')" />
       <div
         role="dialog"

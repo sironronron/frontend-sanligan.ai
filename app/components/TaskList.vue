@@ -3,7 +3,7 @@ import { CheckIcon, CircleIcon, ClockIcon, ListChecksIcon, Loader2Icon } from '@
 import { useTodoStore, type Todo } from '~/stores/todos'
 
 const todoStore = useTodoStore()
-const router = useRouter()
+const { openTodo } = useTaskDetailPanel()
 
 const pendingTodos = computed(() => todoStore.todos.filter((t) => t.status !== 'completed'))
 const completedTodos = computed(() => todoStore.todos.filter((t) => t.status === 'completed'))
@@ -32,8 +32,8 @@ function dueText(todo: Todo) {
   return todo.due_hint ?? ''
 }
 
-async function openConversation(conversationId: string) {
-  await router.push({ path: '/chat', query: { c: conversationId } })
+function openTask(todo: Todo) {
+  openTodo(todo)
 }
 </script>
 
@@ -67,7 +67,7 @@ async function openConversation(conversationId: string) {
         <div class="min-w-0 flex-1">
           <button
             class="block w-full truncate text-left text-sm leading-tight"
-            @click="openConversation(todo.conversation_id)"
+            @click="openTask(todo)"
           >
             {{ todo.title }}
           </button>

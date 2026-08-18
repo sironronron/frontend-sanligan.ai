@@ -2,8 +2,12 @@
 import {
   CheckIcon,
   ChevronRightIcon,
+  EyeIcon,
   FolderIcon,
+  FolderMinusIcon,
+  FolderOpenIcon,
   GripVerticalIcon,
+  InboxIcon,
   Loader2Icon,
   PaletteIcon,
   PlusIcon,
@@ -15,21 +19,23 @@ import {
 import { toast } from '~/components/ui/sonner'
 import { cn } from '@/lib/utils'
 import { useLabelStore, type AppliedLabel, type Label, type LabelKind } from '~/stores/labels'
+import DocumentViewer from '~/components/DocumentViewer.vue'
 
 /**
- * File the case's documents, by dragging each onto a category in the tree.
+ * File the case's documents, by dragging each onto a folder in the tree.
  *
  * The old picker listed tags in a dropdown and asked for each selection as a
- * tap. The category tree the sidebar already groups files under is a better
- * map of where a file can live — so this dialog shows that same tree on the
- * left, holds every file on the right as things you pick up, and treats a drop
- * onto a category as "file it here". Dropping onto a category a file already
- * sits in takes it back out.
+ * tap. The folder tree the sidebar already groups files under is a better map
+ * of where a file can live — so this dialog shows that same tree on the left
+ * and the files on the right. Picking a folder (or "Unfiled") narrows the pane
+ * to the files under it. With one folder per file, dropping a file onto a
+ * folder moves it there — the folder it leaves drops off it — and dropping
+ * onto the folder it already sits in takes it back out.
  */
 const props = withDefaults(defineProps<{
-  /** Which vocabulary to offer. Files are filed under document categories. */
+  /** Which vocabulary to offer. Files are filed under document folders. */
   kind: LabelKind
-  /** Every file this dialog can file, each with its current categories. */
+  /** Every file this dialog can file, each with its current folders. */
   files: Array<{
     id: string
     title: string
@@ -37,7 +43,7 @@ const props = withDefaults(defineProps<{
     mime_type: string
     categories?: AppliedLabel[]
   }>
-  /** How many categories a single file may carry at once, per the API. */
+  /** How many folders a single file may carry at once, per the API. */
   max?: number
   triggerLabel?: string
   /** Overrides on the trigger's own chrome, mirroring LabelPicker. */
@@ -153,7 +159,7 @@ function groupCollapsed(name: string) {
   return collapsed.value.has(name)
 }
 
-/** How many of the dialog's files sit under a given category. */
+/** How many of the dialog's files sit under a given folder. */
 function countInCategory(labelId: string) {
   return props.files.filter((file) => (file.categories ?? []).some((category) => category.id === labelId)).length
 }
@@ -164,6 +170,7 @@ const groups = computed(() => {
   return store.grouped(props.kind)
     .map((group) => ({
       ...group,
+      name: group.name === 'Your labels' ? 'My folders' : group.name,
       labels: needle
         ? group.labels.filter((label) => label.name.toLowerCase().includes(needle)
           || label.description?.toLowerCase().includes(needle))
@@ -171,8 +178,8 @@ const groups = computed(() => {
     }))
     .filter((group) => group.labels.length > 0)
     .sort((a, b) => {
-      if (a.name === 'Your labels') return -1
-      if (b.name === 'Your labels') return 1
+      if (a.name === 'My folders') return -1
+      if (b.name === 'My folders') return 1
       return 0
     })
 })
@@ -190,31 +197,74 @@ function isFiled(fileId: string, labelId: string) {
     .some((category) => category.id === labelId)
 }
 
+/**
+ * One folder per file when `max` is 1, so dropping onto a folder moves a file
+ * there instead of stacking another folder on it. Dropping onto the folder the
+ * file already sits in takes it back out; `max` > 1 still appends.
+ */
 function toggle(fileId: string, label: Label) {
   const file = props.files.find((item) => item.id === fileId)
   if (!file) return
-  const current = (file.categories ?? []).map((category) => category.id)
 
-  if (isFiled(fileId, label.id)) {
+  const isCurrent = isFiled(fileId, label.id)
+
+  if (props.max === 1) {
+    emit('update-file', file, isCurrent ? [] : [label.id])
+    return
+  }
+
+  const current = (file.categories ?? []).map((category) => category.id)
+  if (isCurrent) {
     emit('update-file', file, current.filter((id) => id !== label.id))
     return
   }
-
   if (atCapacity(fileId)) {
-    toast.error(`A file can carry at most ${props.max} categories.`)
+    toast.error(`A file can carry at most ${props.max} folders.`)
     return
   }
-
   emit('update-file', file, [...current, label.id])
 }
 
-function removeCategory(fileId: string, label: Label) {
-  const file = props.files.find((item) => item.id === fileId)
-  if (!file) return
-  const current = (file.categories ?? []).map((category) => category.id)
-  if (!isFiled(fileId, label.id)) return
-  emit('update-file', file, current.filter((id) => id !== label.id))
+/**
+ * The files shown on the right. By default everything; picking a folder in the
+ * tree narrows the pane to the files filed under it; "Unfiled" shows the files
+ * that have no folder yet.
+ */
+const selectedFolderId = ref<string | null>(null)
+const showUnfiled = ref(false)
+
+function selectFolder(labelId: string | null, unfiled = false) {
+  selectedFolderId.value = labelId
+  showUnfiled.value = unfiled
 }
+
+const filteredFiles = computed(() => {
+  if (selectedFolderId.value) {
+    return props.files.filter((file) =>
+      (file.categories ?? []).some((category) => category.id === selectedFolderId.value))
+  }
+  if (showUnfiled.value) {
+    return props.files.filter((file) => !file.categories || file.categories.length === 0)
+  }
+  return props.files
+})
+
+const selectedViewName = computed(() => {
+  if (selectedFolderId.value) return store.byId.get(selectedFolderId.value)?.name ?? 'All files'
+  if (showUnfiled.value) return 'Unfiled'
+  return 'All files'
+})
+
+const unfiledCount = computed(() =>
+  props.files.filter((file) => !file.categories || file.categories.length === 0).length)
+
+/** The file open in the inline preview dialog, null while it is closed. */
+const previewing = ref<{
+  id: string
+  title: string
+  original_filename: string
+  mime_type: string
+} | null>(null)
 
 /** The color a newly created label starts with, if the user picks one. */
 const newLabelColor = ref<string | null>(null)
@@ -231,7 +281,7 @@ async function createFromQuery() {
     toast.success(`Created "${label.name}"`)
   } catch (error) {
     const message = (error as { data?: { errors?: Record<string, string[]> } })?.data?.errors?.name?.[0]
-    toast.error(message ?? 'That category could not be created.')
+    toast.error(message ?? 'That folder could not be created.')
   } finally {
     creating.value = false
   }
@@ -240,6 +290,8 @@ async function createFromQuery() {
 function openDialog() {
   if (props.disabled) return
   open.value = true
+  query.value = ''
+  selectFolder(null)
   void store.fetchLabels()
   nextTick(() => searchInput.value?.focus())
 }
@@ -281,7 +333,7 @@ async function commitRename(label: Label) {
     cancelRename()
   } catch (error) {
     const message = (error as { data?: { errors?: Record<string, string[]> } })?.data?.errors?.name?.[0]
-    toast.error(message ?? 'That category could not be renamed.')
+    toast.error(message ?? 'That folder could not be renamed.')
     nextTick(() => {
       renameInput.value?.focus()
       renameInput.value?.select()
@@ -324,7 +376,7 @@ async function performDelete() {
     toast.success(`Deleted "${label.name}"`)
   } catch (error) {
     const message = (error as { data?: { message?: string } })?.data?.message
-    toast.error(message ?? 'That category could not be deleted.')
+    toast.error(message ?? 'That folder could not be deleted.')
   } finally {
     deleting.value = false
   }
@@ -352,7 +404,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 const draggingId = ref<string | null>(null)
 const overId = ref<string | null>(null)
 
-/** The file leaves the dialog as a draggable stand-in for the categories it carries. */
+/** The file leaves the dialog as a draggable stand-in for the folders it carries. */
 function onFileDragStart(event: DragEvent, fileId: string) {
   draggingId.value = fileId
   if (event.dataTransfer) {
@@ -366,7 +418,7 @@ function onFileDragEnd() {
   overId.value = null
 }
 
-/** Allow the drop on a category row and mark it as the one under the cursor. */
+/** Allow the drop on a folder row and mark it as the one under the cursor. */
 function onTagDragOver(event: DragEvent, label: Label) {
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
@@ -380,7 +432,7 @@ function onTagDragLeave(event: DragEvent, label: Label) {
   }
 }
 
-/** Dropping a file onto a category files it there — or takes it back out. */
+/** Dropping a file onto a folder files it there — or takes it back out. */
 function onTagDrop(event: DragEvent, label: Label) {
   event.preventDefault()
   overId.value = null
@@ -418,16 +470,16 @@ function onKeydownEscape() {
         style="background: rgb(0 0 0 / 0.45)"
         role="dialog"
         aria-modal="true"
-        aria-label="File under a category"
+        aria-label="File under a folder"
         @click.self="closeDialog"
       >
         <div class="flex max-h-[86dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl">
           <!-- Header -->
           <div class="flex items-start gap-3 border-b px-5 py-3.5">
             <div class="min-w-0 flex-1">
-              <h2 class="text-sm font-semibold">File under a category</h2>
+              <h2 class="text-sm font-semibold">File under a folder</h2>
               <p class="mt-0.5 truncate text-xs text-muted-foreground">
-                Pick a file up and drop it onto a category to file it there.
+                Pick a file up and drop it onto a folder to file it there.
               </p>
             </div>
             <Button variant="ghost" size="icon" class="size-7" aria-label="Close" @click="closeDialog">
@@ -437,7 +489,7 @@ function onKeydownEscape() {
 
           <!-- Body -->
           <div class="flex min-h-0 flex-1">
-            <!-- Tree of categories -->
+            <!-- Tree of folders -->
             <div class="flex w-64 shrink-0 flex-col border-r">
               <div class="flex items-center gap-2 border-b px-2.5 py-1.5">
                 <SearchIcon class="size-3.5 shrink-0 text-muted-foreground" />
@@ -455,6 +507,34 @@ function onKeydownEscape() {
                 <div v-if="store.loading && store.labels.length === 0" class="px-2 py-3 text-center text-xs text-muted-foreground">
                   <Loader2Icon class="mx-auto size-4 animate-spin" />
                 </div>
+
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  :class="!selectedFolderId && !showUnfiled
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/10 dark:hover:text-popover-foreground'"
+                  @click="selectFolder(null)"
+                >
+                  <InboxIcon class="size-3.5 shrink-0" />
+                  <span class="min-w-0 flex-1 truncate text-left">All files</span>
+                  <span class="shrink-0 rounded bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{{ props.files.length }}</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="mt-0.5 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  :class="showUnfiled
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/10 dark:hover:text-popover-foreground'"
+                  @click="selectFolder(null, true)"
+                >
+                  <FolderMinusIcon class="size-3.5 shrink-0" />
+                  <span class="min-w-0 flex-1 truncate text-left">Unfiled</span>
+                  <span class="shrink-0 rounded bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">{{ unfiledCount }}</span>
+                </button>
+
+                <div v-if="props.files.length > 0" class="mb-1.5 mt-1.5 h-px w-full bg-border" aria-hidden="true" />
 
                 <div v-for="(group, index) in groups" :key="group.name" class="mb-1">
                   <div
@@ -503,7 +583,7 @@ function onKeydownEscape() {
                         v-if="editingId === label.id"
                         type="button"
                         class="mr-1 shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
-                        :aria-label="`Delete category ${label.name}`"
+                        :aria-label="`Delete folder ${label.name}`"
                         :disabled="renaming || deleting"
                         @mousedown.prevent
                         @click.stop="removeLabel(label)"
@@ -527,8 +607,14 @@ function onKeydownEscape() {
                         v-else
                         type="button"
                         class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                        :class="overId === label.id ? '' : 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/10 dark:hover:text-popover-foreground'"
+                        :class="[
+                          selectedFolderId === label.id
+                            ? 'bg-primary/10 font-medium text-primary'
+                            : 'text-foreground hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/10 dark:hover:text-popover-foreground',
+                          overId === label.id ? 'ring-1 ring-primary/60 bg-primary/5' : '',
+                        ]"
                         :title="labelTitle(label)"
+                        @click="selectFolder(label.id)"
                         @dragover="onTagDragOver($event, label)"
                         @dragleave="onTagDragLeave($event, label)"
                         @drop="onTagDrop($event, label)"
@@ -541,6 +627,11 @@ function onKeydownEscape() {
                           aria-hidden="true"
                         />
                         <span class="min-w-0 flex-1 truncate">{{ label.name }}</span>
+                        <CheckIcon
+                          v-if="selectedFolderId === label.id"
+                          class="size-3 shrink-0"
+                          :stroke-width="2.5"
+                        />
                         <span
                           class="shrink-0 rounded bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground"
                           :title="`${countInCategory(label.id)} file${countInCategory(label.id) === 1 ? '' : 's'} filed here`"
@@ -593,7 +684,7 @@ function onKeydownEscape() {
                 </div>
 
                 <p v-if="groups.length === 0 && !store.loading" class="px-2 py-3 text-center text-xs text-muted-foreground">
-                  No categories match.
+                  No folders match.
                 </p>
               </div>
 
@@ -632,15 +723,23 @@ function onKeydownEscape() {
               </div>
             </div>
 
-            <!-- The files to pick up -->
-            <div class="flex min-w-0 flex-1 flex-col p-4">
-              <div class="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+            <!-- The files in the selected folder (or all of them) -->
+            <div class="flex min-w-0 flex-1 flex-col">
+              <div class="flex items-center gap-2 border-b px-4 py-2.5">
+                <FolderOpenIcon class="size-4 shrink-0 text-muted-foreground" />
+                <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ selectedViewName }}</span>
+                <span class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  {{ filteredFiles.length }} file{{ filteredFiles.length === 1 ? '' : 's' }}
+                </span>
+              </div>
+
+              <div class="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-4">
                 <div
-                  v-for="file in props.files"
+                  v-for="file in filteredFiles"
                   :key="file.id"
                   draggable="true"
                   :class="cn(
-                    'flex items-center gap-3 rounded-xl border-2 border-dashed p-3 transition-colors active:cursor-grabbing',
+                    'flex items-center gap-3 rounded-xl border p-3 transition-colors active:cursor-grabbing',
                     draggingId === file.id ? 'cursor-grabbing border-primary/60 bg-primary/5' : 'cursor-grab border-muted bg-muted/20 hover:border-primary/30',
                   )"
                   @dragstart="onFileDragStart($event, file.id)"
@@ -650,36 +749,41 @@ function onKeydownEscape() {
                   <component :is="fileIcon(file.original_filename, file.mime_type)" class="size-5 shrink-0 text-muted-foreground" />
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm font-medium">{{ file.title }}</span>
-                    <span v-if="categoriesOf(file.id).length > 0" class="mt-0.5 flex flex-wrap gap-1">
-                      <span
-                        v-for="label in categoriesOf(file.id)"
-                        :key="label.id"
-                        class="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                      >
-                        <CheckIcon class="size-2.5" />
-                        {{ label.name }}
-                        <button
-                          type="button"
-                          :aria-label="`Remove ${file.title} from ${label.name}`"
-                          class="rounded text-primary/60 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                          @click="removeCategory(file.id, label)"
-                        >
-                          <XIcon class="size-3" />
-                        </button>
-                      </span>
+                    <span v-if="categoriesOf(file.id).length > 0" class="mt-0.5 inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      <FolderIcon class="size-2.5" />
+                      {{ categoriesOf(file.id)[0].name }}
                     </span>
-                    <span v-else class="mt-0.5 block text-[10px] text-muted-foreground">Not filed yet</span>
+                    <span v-else class="mt-0.5 inline-flex items-center gap-1.5 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      Not filed
+                    </span>
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-7 shrink-0 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    :aria-label="`Preview ${file.title}`"
+                    @click.stop="previewing = file"
+                  >
+                    <EyeIcon class="size-3.5" />
+                  </Button>
                 </div>
 
-                <p v-if="props.files.length === 0" class="px-2 py-3 text-center text-xs text-muted-foreground">
-                  No files to file.
-                </p>
+                <div
+                  v-if="filteredFiles.length === 0"
+                  class="flex flex-col items-center gap-1.5 px-2 py-10 text-center"
+                >
+                  <FolderOpenIcon class="size-6 text-muted-foreground/40" />
+                  <p class="text-xs text-muted-foreground">
+                    <template v-if="showUnfiled">Nothing is unfiled.</template>
+                    <template v-else-if="selectedFolderId">No files in this folder yet — drop one onto it to file it here.</template>
+                    <template v-else>No files to file.</template>
+                  </p>
+                </div>
               </div>
 
-              <div class="flex items-center justify-between gap-2 border-t pt-3">
+              <div class="flex items-center justify-between gap-2 border-t px-4 py-3">
                 <p class="text-[0.7rem] text-muted-foreground">
-                  Drop onto a category to file it there — drop again to take it out.
+                  Drag a file onto a folder to move it there — drop on its own folder to unfile it.
                 </p>
                 <Button size="sm" @click="closeDialog">Done</Button>
               </div>
@@ -692,7 +796,7 @@ function onKeydownEscape() {
     <AlertDialog v-model:open="confirmOpen">
       <AlertDialogContent class="z-[130]">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete category?</AlertDialogTitle>
+          <AlertDialogTitle>Delete folder?</AlertDialogTitle>
           <AlertDialogDescription>
             "<span class="text-foreground font-medium">{{ confirmDelete?.name }}</span>" will be removed. Documents filed under it stay attached to the case.
           </AlertDialogDescription>
@@ -705,5 +809,7 @@ function onKeydownEscape() {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <DocumentViewer v-if="previewing" :document="previewing" z-class="z-[130]" @close="previewing = null" />
   </div>
 </template>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 definePageMeta({
-  middleware: ['auth', 'onboarding', 'subscription'],
+  middleware: ['auth', 'onboarding'],
 })
 
-await navigateTo('/chat', { replace: true })
+const auth = useAuthStore()
+await navigateTo(auth.isVerifiedLawyer ? '/lawyer/dashboard' : '/chat', { replace: true })
 </script>
 
 <template>

@@ -43,7 +43,7 @@ const documents = ref<LegalDocument[]>([])
 const meta = ref<Paginated<LegalDocument>['meta'] | null>(null)
 const loading = ref(false)
 const page = ref(1)
-const statusFilter = ref('')
+const statusFilter = ref('all')
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | null>(null)
@@ -101,7 +101,7 @@ async function loadDocuments() {
   loading.value = true
   try {
     const query: Record<string, string | number> = { page: page.value }
-    if (statusFilter.value) query.status = statusFilter.value
+    if (statusFilter.value && statusFilter.value !== 'all') query.status = statusFilter.value
 
     const res = await api<Paginated<LegalDocument>>(`/admin/legal-documents?${new URLSearchParams(String(query))}`)
     documents.value = res.data
@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
           <SelectValue placeholder="All statuses" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All statuses</SelectItem>
+          <SelectItem value="all">All statuses</SelectItem>
           <SelectItem value="pending">Pending</SelectItem>
           <SelectItem value="ok">Indexed</SelectItem>
           <SelectItem value="failed">Failed</SelectItem>

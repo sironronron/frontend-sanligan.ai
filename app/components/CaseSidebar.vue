@@ -1,17 +1,13 @@
 <script setup lang="ts">
 import {
-  ArrowLeftIcon,
   ArrowUpRightIcon,
-  CalendarClockIcon,
-  CheckIcon,
-  ChevronDownIcon,
   CircleAlertIcon,
   DownloadIcon,
   FileIcon,
+  FileSearchIcon,
   FileTextIcon,
   FileUpIcon,
   Loader2Icon,
-  LockIcon,
   MessagesSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -21,21 +17,25 @@ import {
   TrashIcon,
   XIcon,
 } from '@lucide/vue'
-import { CASE_STATUSES, type CaseConversation, type LegalCase } from '~/stores/cases'
-import type { DueTone } from '~/composables/useCasePresentation'
+import { type CaseConversation, type LegalCase } from '~/stores/cases'
 import { useAuthStore } from '~/stores/auth'
 import { useLabelStore } from '~/stores/labels'
 import { DOCUMENT_STATUS_LABEL, type CaseDocument, type GeneratedDocument } from '~/types/case'
 import LabelPicker from '~/components/LabelPicker.vue'
 import FileTagDialog from '~/components/FileTagDialog.vue'
-import CaseMiniCalendar, { type ScheduleEvent } from '~/components/CaseMiniCalendar.vue'
 import CaseBrief from '~/components/CaseBrief.vue'
 import CaseSidebarSection from '~/components/CaseSidebarSection.vue'
 import CaseSidebarGroupHeader from '~/components/CaseSidebarGroupHeader.vue'
 import { THREAD_ICONS, THREAD_TILES, threadPurposeKind } from '~/lib/threads'
 
 /**
- * The case rail: which matter you are in, then everything it is made of.
+ * The case rail: everything the matter is made of, in separated sections.
+ *
+ * Identity — title, status, priority, deadline — used to be pinned at the top
+ * of this rail, so the rail carried it, a calendar, and three material lists.
+ * All of that identity has moved to the overview band at the top of the case
+ * page, and the calendar now opens from that band's deadline strip. The rail is
+ * left with what it is actually for: the work.
  *
  * Two shapes have already failed here. Stacking the three lists with fixed
  * height caps gave each one its own cramped scroll box, all competing for the
@@ -48,10 +48,7 @@ import { THREAD_ICONS, THREAD_TILES, threadPurposeKind } from '~/lib/threads'
  * So: one scroller, four bands, sized by their contents rather than by a cap.
  * Only the section you are reading is expanded, the headers stick as you pass
  * them, and each band's primary action rides in its header instead of standing
- * below it as a full-width button. Identity — title, status, priority,
- * deadline — is pinned above all of it, because the page header gave case
- * identity up to this rail and the rail used to keep it behind a disclosure
- * that opened closed.
+ * below it as a full-width button.
  */
 const props = withDefaults(defineProps<{
   threads: CaseConversation[]
@@ -64,8 +61,6 @@ const props = withDefaults(defineProps<{
   generated: GeneratedDocument[]
   generatedLoading: boolean
   exporting: string | null
-  /** Schedule items pinned to days: the case deadline plus due-dated tasks. */
-  calendarEvents: ScheduleEvent[]
   /**
    * Threads whose answer is still being generated. A thread keeps working after
    * the user leaves it, so this rail is where they see it is still going — and
@@ -74,9 +69,9 @@ const props = withDefaults(defineProps<{
   streamingThreadIds?: string[]
   /** Closed and archived cases keep their materials readable but add nothing. */
   readonly?: boolean
-  /** The case record, whose identity anchors the top of the rail. */
+  /** The case record, whose facts anchor the Details section. */
   case: LegalCase
-  /** Whether the case is still editable; gates the tag, status and edit controls. */
+  /** Whether the case is still editable; gates the tag controls. */
   editable: boolean
 }>(), { readonly: false, streamingThreadIds: () => [] })
 
@@ -93,10 +88,9 @@ const emit = defineEmits<{
   downloadGenerated: [doc: GeneratedDocument, type: 'word' | 'pdf']
   updateThreadTags: [threadId: string, ids: string[]]
   updateTags: [tags: string[]]
-  changeStatus: [status: LegalCase['status']]
 }>()
 
-const { formatShortDate, relativeTime, dueState } = useCasePresentation()
+const { formatShortDate, relativeTime } = useCasePresentation()
 const { fileIcon } = useFileTypeIcon()
 const auth = useAuthStore()
 const labelStore = useLabelStore()
@@ -108,37 +102,6 @@ function isStreaming(id: string): boolean {
 function threadName(thread: CaseConversation) {
   return thread.purpose || thread.title || 'Untitled'
 }
-
-/* -------------------------------------------------------------------------
- * Identity and schedule
- * ---------------------------------------------------------------------- */
-
-const due = computed(() => dueState(props.case.due_date))
-
-/** Only a deadline near enough to act on earns colour. */
-const DUE_STRIP: Record<DueTone, string> = {
-  overdue: 'border-destructive/30 bg-destructive/10 text-destructive',
-  soon: 'border-espresso/30 bg-espresso/10 text-espresso dark:border-peach/30 dark:bg-peach/10 dark:text-peach',
-  normal: 'border-border bg-muted/50 text-muted-foreground',
-}
-
-const dueStripClass = computed(() =>
-  due.value ? DUE_STRIP[due.value.tone] : 'border-border bg-muted/50 text-muted-foreground')
-
-/**
- * The strip is both the case's deadline and the way into its calendar. Those
- * were two separate things — a deadline buried in the brief's definition list,
- * and a collapsed "Calendar" bar above the lists — which meant the row that
- * said "due in 3 days" was not the row that showed you the days.
- */
-const scheduleSummary = computed(() => {
-  if (due.value) return due.value.label
-  const count = props.calendarEvents.length
-  if (count > 0) return `${count} date${count === 1 ? '' : 's'} scheduled`
-  return 'No deadline set'
-})
-
-const scheduleOpen = ref(false)
 
 /* -------------------------------------------------------------------------
  * Filtering
@@ -450,6 +413,56 @@ function groupCollapsed(set: Set<string>, key: string) {
 }
 
 /**
+ * Drag & drop filing, mirroring the Files page: dragging a file row onto a
+ * folder group header files it there, replacing any folder it already sits in
+ * (never merging). Dropping onto "Unfiled" takes it back out.
+ */
+const dragDocId = ref<string | null>(null)
+const dragOverFolderId = ref<string | null>(null)
+
+function onDocDragStart(event: DragEvent, doc: CaseDocument) {
+  dragDocId.value = doc.id
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', doc.id)
+  }
+}
+
+function onDocDragEnd() {
+  dragDocId.value = null
+  dragOverFolderId.value = null
+}
+
+function onFolderDragOver(event: DragEvent, folderId: string) {
+  if (!dragDocId.value) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dragOverFolderId.value = folderId
+}
+
+function onFolderDragLeave(folderId: string) {
+  if (dragOverFolderId.value === folderId) dragOverFolderId.value = null
+}
+
+function onFolderDrop(event: DragEvent, folderId: string | null) {
+  event.preventDefault()
+  event.stopPropagation()
+  dragOverFolderId.value = null
+  const docId = dragDocId.value
+  dragDocId.value = null
+  if (!docId) return
+
+  const doc = props.documents.find((d) => d.id === docId)
+  if (!doc) return
+
+  const currentFolderId = doc.categories?.[0]?.id ?? null
+  if (currentFolderId === folderId) return
+
+  // Replaces, never merges — one folder per file, like the Files page.
+  emit('updateDocumentCategories', doc, folderId ? [folderId] : [])
+}
+
+/**
  * Tagged threads live under accordions keyed by their tags — one collapsible
  * group per tag, with a thread appearing in every group it carries. Threads
  * without tags fall under "Ungrouped", but only once something else has been
@@ -500,9 +513,10 @@ const threadRows = computed<ThreadRow[]>(() => {
 })
 
 /**
- * The files view is a tree keyed by category: each tag the documents carry
- * becomes a collapsible group, and anything without a tag falls under
- * "Unfiled". A document filed under several tags appears in each of its groups.
+ * The files view is a tree keyed by folder — one collapsible accordion per
+ * folder, mirroring the thread tree above it. A folder header toggles its own
+ * group; "All Files" and a header's drop target both keep working regardless
+ * of which groups are folded.
  */
 const fileRows = computed<FileRow[]>(() => {
   const rows: FileRow[] = []
@@ -525,19 +539,22 @@ const fileRows = computed<FileRow[]>(() => {
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  const unfiled = visibleDocuments.value.filter((doc) => (doc.categories ?? []).length === 0)
+
+  const showDocs = (groupKey: string) => !groupCollapsed(collapsedFileGroups.value, groupKey)
+
   for (const group of groups) {
     rows.push({ type: 'header', key: group.key, name: group.name, color: group.color, count: group.documents.length })
-    if (!groupCollapsed(collapsedFileGroups.value, group.key)) {
+    if (showDocs(group.key)) {
       for (const doc of group.documents) {
         rows.push({ type: 'doc', key: `d-${group.key}-${doc.id}`, group: group.key, doc })
       }
     }
   }
 
-  const unfiled = visibleDocuments.value.filter((doc) => (doc.categories ?? []).length === 0)
   if (unfiled.length > 0) {
     rows.push({ type: 'header', key: 'unfiled', name: 'Unfiled', count: unfiled.length })
-    if (!groupCollapsed(collapsedFileGroups.value, 'unfiled')) {
+    if (showDocs('unfiled')) {
       for (const doc of unfiled) {
         rows.push({ type: 'doc', key: `d-unfiled-${doc.id}`, group: 'unfiled', doc })
       }
@@ -565,86 +582,6 @@ onMounted(() => {
       class="pointer-events-none absolute inset-1 z-30 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-primary/10 text-sm font-medium text-primary"
     >
       Drop to attach
-    </div>
-
-    <!--
-      Identity, pinned and unconditional. Whatever else the rail is showing, it
-      answers "which case am I in, what state is it in, and when is it due" —
-      three questions that used to live inside a disclosure that opened closed.
-    -->
-    <div class="shrink-0 border-b px-3 pb-3 pt-2.5">
-      <NuxtLink
-        to="/cases"
-        class="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      >
-        <ArrowLeftIcon class="size-3.5" />
-        All cases
-      </NuxtLink>
-
-      <h2
-        class="mt-1.5 line-clamp-2 font-heading text-base font-semibold leading-snug tracking-tight"
-        :title="props.case.title"
-      >
-        {{ props.case.title }}
-      </h2>
-
-      <div class="mt-2 flex flex-wrap items-center gap-1.5">
-        <DropdownMenu v-if="props.editable">
-          <DropdownMenuTrigger class="shrink-0 rounded-4xl" :aria-label="`Case status: ${props.case.status}`">
-            <CaseStatusBadge :status="props.case.status" interactive>
-              <ChevronDownIcon class="size-3 opacity-60" />
-            </CaseStatusBadge>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" class="w-40">
-            <DropdownMenuLabel class="text-xs text-muted-foreground">Move case to</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              v-for="option in CASE_STATUSES"
-              :key="option.value"
-              @click="emit('changeStatus', option.value as LegalCase['status'])"
-            >
-              <CheckIcon v-if="props.case.status === option.value" class="size-4 text-primary" />
-              <span v-else class="size-4" aria-hidden="true" />
-              {{ option.label }}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <CaseStatusBadge v-else :status="props.case.status" />
-
-        <CasePriorityBadge :priority="props.case.priority" show-quiet />
-
-        <span
-          v-if="props.readonly"
-          class="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-          title="Closed and archived cases can be read and exported, but not changed."
-        >
-          <LockIcon class="size-3" />
-          Read-only
-        </span>
-      </div>
-
-      <!-- The deadline is also the door to the calendar it belongs to. -->
-      <button
-        type="button"
-        class="mt-2.5 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        :class="dueStripClass"
-        :aria-expanded="scheduleOpen"
-        @click="scheduleOpen = !scheduleOpen"
-      >
-        <CalendarClockIcon class="size-4 shrink-0" />
-        <span class="min-w-0 flex-1 truncate text-left">{{ scheduleSummary }}</span>
-        <span v-if="due" class="shrink-0 tabular-nums opacity-70">
-          {{ formatShortDate(props.case.due_date) }}
-        </span>
-        <ChevronDownIcon
-          class="size-4 shrink-0 opacity-60 transition-transform"
-          :class="scheduleOpen ? '' : '-rotate-90'"
-        />
-      </button>
-    </div>
-
-    <div v-if="scheduleOpen" class="max-h-[26rem] shrink-0 overflow-y-auto border-b">
-      <CaseMiniCalendar :events="props.calendarEvents" />
     </div>
 
     <div v-if="showFilter" class="shrink-0 border-b px-2.5 py-2">
@@ -685,8 +622,8 @@ onMounted(() => {
           :editable="props.editable"
           :collapsible="false"
           :show-identity="false"
+          :hide-deadline="true"
           @update-tags="(tags) => emit('updateTags', tags)"
-          @change-status="(status) => emit('changeStatus', status)"
         />
       </section>
 
@@ -957,7 +894,13 @@ onMounted(() => {
               :count="row.count"
               :color="row.color"
               :collapsed="groupCollapsed(collapsedFileGroups, row.key)"
+              :class="[
+                dragOverFolderId === row.key ? 'ring-1 ring-primary/60 bg-primary/5' : '',
+              ]"
               @click="toggleFileGroup(row.key)"
+              @dragover="onFolderDragOver($event, row.key)"
+              @dragleave="onFolderDragLeave(row.key)"
+              @drop="onFolderDrop($event, row.key === 'unfiled' ? null : row.key)"
             />
 
             <!--
@@ -966,8 +909,14 @@ onMounted(() => {
             -->
             <div
               v-else
+              draggable="true"
               class="group relative rounded-lg transition-colors"
-              :class="row.doc.status === 'failed' ? 'bg-destructive/5 hover:bg-destructive/10' : 'hover:bg-muted'"
+              :class="[
+                dragDocId === row.doc.id ? 'opacity-40' : '',
+                row.doc.status === 'failed' ? 'bg-destructive/5 hover:bg-destructive/10' : 'hover:bg-muted',
+              ]"
+              @dragstart="onDocDragStart($event, row.doc)"
+              @dragend="onDocDragEnd"
             >
               <div class="flex items-center">
                 <button
@@ -998,7 +947,7 @@ onMounted(() => {
                         v-for="category in alsoFiledUnder(row.doc, row.group)"
                         :key="category.id"
                         class="flex max-w-[4.5rem] shrink-0 items-center gap-1 truncate rounded bg-muted px-1.5 text-[11px] leading-4 text-muted-foreground"
-                        :title="`Also filed under ${category.name}`"
+                        :title="`Also in ${category.name}`"
                       >
                         <span
                           class="size-1.5 shrink-0 rounded-full"
@@ -1023,7 +972,7 @@ onMounted(() => {
                     type="button"
                     :class="ROW_ACTION_BUTTON"
                     :aria-label="`Tag ${row.doc.title}`"
-                    title="File under a category"
+                    title="File under a folder"
                     @click="fileTagOpen = true"
                   >
                     <TagIcon class="size-4" />
@@ -1144,6 +1093,15 @@ onMounted(() => {
             </div>
 
             <div :class="ROW_ACTIONS">
+              <button
+                type="button"
+                :class="ROW_ACTION_BUTTON"
+                :aria-label="`Request vetting and notarization for ${doc.title}`"
+                title="Request vetting & notarization"
+                @click="navigateTo(`/vetting/new?draft=${encodeURIComponent(doc.id)}`)"
+              >
+                <FileSearchIcon class="size-4" />
+              </button>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   :class="ROW_ACTION_BUTTON"
@@ -1181,7 +1139,7 @@ onMounted(() => {
     v-model:open="fileTagOpen"
     kind="document_category"
     hide-trigger
-    :max="5"
+    :max="1"
     :files="props.documents"
     @update-file="(file, ids) => emit('updateDocumentCategories', file, ids)"
   />

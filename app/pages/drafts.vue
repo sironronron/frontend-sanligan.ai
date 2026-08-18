@@ -2,6 +2,7 @@
 import {
   DownloadIcon,
   EyeIcon,
+  FileSearchIcon,
   FileTextIcon,
 } from '@lucide/vue'
 import { useDocumentExport } from '~/composables/useDocumentExport'
@@ -45,6 +46,10 @@ function preview(doc: GeneratedDocument) {
   void openExport(doc.content, 'pdf', doc.title)
 }
 
+function requestVetting(doc: GeneratedDocument) {
+  void navigateTo(`/vetting/new?draft=${encodeURIComponent(doc.id)}`)
+}
+
 async function loadDocuments() {
   loading.value = true
   try {
@@ -65,7 +70,14 @@ onMounted(loadDocuments)
     <PageHeader
       title="Drafts"
       description="Revisit the letters, pleadings, and forms the assistant drafted for you, and download them again."
-    />
+    >
+      <template #actions>
+        <Button class="gap-2" @click="navigateTo('/vetting')">
+          <FileSearchIcon class="size-4" />
+          Vetting
+        </Button>
+      </template>
+    </PageHeader>
 
     <ListSkeleton v-if="loading" :rows="3" />
 
@@ -116,6 +128,16 @@ onMounted(loadDocuments)
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                class="h-7 gap-1.5 px-2.5 text-xs"
+                :aria-label="`Request vetting and notarization for ${doc.title}`"
+                @click="requestVetting(doc)"
+              >
+                <FileSearchIcon class="size-3.5" />
+                Vetting
+              </Button>
               <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="preview(doc)">
                 <EyeIcon class="size-3.5" />
                 Preview
@@ -168,6 +190,16 @@ onMounted(loadDocuments)
           </div>
 
           <div class="mt-auto flex flex-wrap items-center gap-2 border-t pt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-7 gap-1.5 px-2.5 text-xs"
+              :aria-label="`Request vetting and notarization for ${doc.title}`"
+              @click="requestVetting(doc)"
+            >
+              <FileSearchIcon class="size-3.5" />
+              Vetting
+            </Button>
             <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="preview(doc)">
               <EyeIcon class="size-3.5" />
               Preview
@@ -236,6 +268,15 @@ onMounted(loadDocuments)
                   actions column into the widest thing on the page.
                 -->
                 <div class="flex items-center justify-end gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-7"
+                    :aria-label="`Request vetting and notarization for ${doc.title}`"
+                    @click="requestVetting(doc)"
+                  >
+                    <FileSearchIcon class="size-3.5" />
+                  </Button>
                   <Button variant="ghost" size="icon" class="size-7" :aria-label="`Preview ${doc.title}`" @click="preview(doc)">
                     <EyeIcon class="size-3.5" />
                   </Button>

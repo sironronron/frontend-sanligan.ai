@@ -17,6 +17,10 @@ const continuing = ref(false)
 /** Seconds until the page walks the user onward on its own; 0 disables it. */
 const countdown = ref(0)
 
+// Set when the account was created for the lawyer application, so the copy and
+// the continuation both point at that instead of the research workspace.
+const isLawyerSignup = ref(false)
+
 const firstName = computed(() => String(auth.user?.name ?? '').trim().split(/\s+/)[0] ?? '')
 
 /**
@@ -40,19 +44,14 @@ async function waitForSession() {
 
 // Same order the email/password sign-up walks: terms, then the KYC questions,
 // then the app. A returning user has both behind them and goes straight
-// through to wherever they'd normally land.
+// through to wherever they'd normally land. A lawyer registration jumps the
+// KYC questions entirely and continues into the application instead.
 async function continueToApp() {
   if (continuing.value) return
 
   continuing.value = true
 
-  if (!auth.hasAcceptedTerms) {
-    await navigateTo('/terms/accept')
-  } else if (!auth.kycCompleted) {
-    await navigateTo('/onboarding')
-  } else {
-    await navigateTo(auth.homePath())
-  }
+  await navigateTo(resolveAuthDestination())
 }
 
 onMounted(async () => {
@@ -75,6 +74,8 @@ onMounted(async () => {
   }
 
   state.value = 'verified'
+
+  isLawyerSignup.value = getPostAuthRedirect() === '/lawyer/register'
 
   // A long pause on a page that has already done its job invites a reload;
   // walking the user on keeps the confirmation feeling like it worked.
@@ -125,13 +126,19 @@ onUnmounted(() => {
           class="reveal mt-3 text-sm leading-relaxed text-balance text-muted-foreground"
           style="--reveal-delay: 0.18s"
         >
-          Your email is verified and your account is ready. Start researching Philippine law
-          with Batayan.
+          <template v-if="isLawyerSignup">
+            Your email is verified and your account is ready. Continue to your application to
+            offer document vetting & notarization.
+          </template>
+          <template v-else>
+            Your email is verified and your account is ready. Start researching Philippine law
+            with Batayan.
+          </template>
         </p>
 
         <div class="reveal mt-8 w-full" style="--reveal-delay: 0.3s">
           <Button class="h-11 w-full gap-1.5 text-sm" :loading="continuing" @click="continueToApp">
-            Continue to Batayan
+            {{ isLawyerSignup ? 'Continue to my application' : 'Continue to Batayan' }}
             <ArrowRightIcon v-if="!continuing" class="size-4" />
           </Button>
         </div>

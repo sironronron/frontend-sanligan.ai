@@ -8,6 +8,8 @@ const tabs = [
   { to: '/admin/crawled-pages', label: 'Crawled pages' },
   { to: '/admin/legal-documents', label: 'Uploaded documents' },
   { to: '/admin/system-prompts', label: 'System prompts' },
+  { to: '/admin/lawyers', label: 'Lawyers' },
+  { to: '/admin/vetting', label: 'Vetting & payouts' },
 ]
 
 function isActive(to: string) {

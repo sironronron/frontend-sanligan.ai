@@ -32,8 +32,9 @@ async function handleAccept(marketingOptIn: boolean) {
     accepted.value = true
     // The questions are the only setup left before working: an organization is
     // no longer part of getting started, since teams are a paid capability and
-    // most accounts never need one.
-    router.push(auth.kycCompleted ? '/chat' : '/onboarding')
+    // most accounts never need one. A lawyer who signed up to offer services
+    // resumes their application instead.
+    router.push(resolveAuthDestination())
   } catch (e) {
     error.value = 'Failed to accept terms. Please try again.'
   }

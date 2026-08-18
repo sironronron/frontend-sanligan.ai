@@ -15,6 +15,8 @@ const conversations = ref<Array<{ id: string; title: string | null }>>([])
 const conversationFilter = ref<string>('all')
 const loadingConversations = ref(false)
 
+const { openTodo } = useTaskDetailPanel()
+
 const filteredTodos = computed(() =>
   todoStore.todos.filter((t) => {
     if (statusFilter.value !== 'all' && t.status !== statusFilter.value) return false
@@ -123,7 +125,8 @@ onMounted(async () => {
       <div
         v-for="todo in filteredTodos"
         :key="todo.id"
-        class="surface-interactive group flex items-start gap-3 p-4"
+        class="surface-interactive group flex items-start gap-3 p-4 cursor-pointer"
+        @click="openTodo(todo)"
       >
         <button
           type="button"

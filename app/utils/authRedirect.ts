@@ -46,3 +46,53 @@ export function takePostAuthRedirect(): string | null {
     return null
   }
 }
+
+/**
+ * Reads the destination without clearing it. Used by screens that only want to
+ * tailor their copy to the pending destination — the confirmation page, for
+ * instance — and leave the actual routing to `resolveAuthDestination`.
+ */
+export function getPostAuthRedirect(): string | null {
+  try {
+    const path = sessionStorage.getItem(REDIRECT_KEY)
+
+    return path && isInternalPath(path) ? path : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Decides where a just-signed-in user goes next, in the order the funnel runs:
+ * terms first, then (for researchers) the KYC questions, then wherever the
+ * user was actually headed.
+ *
+ * A lawyer application is the one destination that skips the KYC questions:
+ * they describe the research side of the product and are irrelevant to
+ * someone joining to offer notarization. The registration page parks the
+ * intent here, and the hop across email confirmation / Google consent reads it
+ * back without losing it to the terms screen in between.
+ */
+export function resolveAuthDestination(explicitRedirect: string | null = null): string {
+  const auth = useAuthStore()
+
+  const destination = explicitRedirect || takePostAuthRedirect()
+
+  if (!auth.hasAcceptedTerms) {
+    // Terms come first. The destination is parked back in the same slot so the
+    // terms page can read it once acceptance is done.
+    if (destination) rememberPostAuthRedirect(destination)
+
+    return '/terms/accept'
+  }
+
+  if (destination === '/lawyer/register') {
+    return destination
+  }
+
+  if (!auth.kycCompleted) {
+    return '/onboarding'
+  }
+
+  return destination ?? auth.homePath()
+}

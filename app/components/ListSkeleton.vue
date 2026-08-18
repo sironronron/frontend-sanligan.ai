@@ -19,6 +19,7 @@ withDefaults(defineProps<{
       :key="row"
       class="flex items-center gap-3 rounded-xl border bg-card p-4"
     >
+      <Skeleton class="size-4 shrink-0 rounded-[4px]" />
       <Skeleton v-if="icon" class="size-9 shrink-0 rounded-lg" />
       <div class="min-w-0 flex-1 space-y-2">
         <Skeleton class="h-3.5 w-[42%]" />

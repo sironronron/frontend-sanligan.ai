@@ -6,7 +6,7 @@ export interface AppNotification {
   read: boolean
   read_at: string | null
   created_at: string
-  kind: 'case' | 'task'
+  kind: 'case' | 'task' | 'vetting_request' | 'vetting_message' | 'lawyer_verification' | 'payout'
   title: string
   due_date: string | null
   days: number

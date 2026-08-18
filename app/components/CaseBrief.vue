@@ -18,7 +18,13 @@ const props = withDefaults(defineProps<{
   collapsible?: boolean
   /** Repeat the title, status and priority. Off when the caller already shows them. */
   showIdentity?: boolean
-}>(), { collapsible: true, showIdentity: true })
+  /**
+   * Drop the deadline row. The overview band at the top of the case page owns
+   * the deadline (and the calendar behind it), so repeating it in the facts is
+   * duplication, not context.
+   */
+  hideDeadline?: boolean
+}>(), { collapsible: true, showIdentity: true, hideDeadline: false })
 
 const emit = defineEmits<{ 'update-tags': [tags: string[]]; changeStatus: [status: LegalCase['status']] }>()
 
@@ -59,7 +65,7 @@ const rows = computed(() => {
   const out: Array<{ label: string; value: string; class?: string }> = []
   out.push({ label: 'Category', value: typeLabel(c.case_type) })
   if (c.reference) out.push({ label: 'Case reference', value: c.reference })
-  if (c.due_date) {
+  if (c.due_date && !props.hideDeadline) {
     out.push({ label: 'Deadline', value: `${formatDate(c.due_date)} — ${due.value?.label}`, class: due.value?.class })
   }
   if (c.related_parties?.length) out.push({ label: 'Parties', value: c.related_parties.join(', ') })

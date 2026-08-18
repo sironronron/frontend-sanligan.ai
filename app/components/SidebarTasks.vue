@@ -22,7 +22,7 @@ import { useTodoStore, type Todo } from '~/stores/todos'
  * row can be ticked off in place without leaving the page.
  */
 const todoStore = useTodoStore()
-const router = useRouter()
+const { openTodo } = useTaskDetailPanel()
 
 const HOW_MANY = 3
 
@@ -62,11 +62,10 @@ const topTasks = computed(() =>
 const remaining = computed(() => Math.max(0, openTasks.value.length - topTasks.value.length))
 
 /**
- * Open the task where it can actually be worked — the thread that produced it
- * — rather than the tasks board, which would only restate what was clicked.
+ * Open the task detail panel instead of navigating away.
  */
 function openTask(todo: Todo) {
-  return router.push({ path: '/chat', query: { c: todo.conversation_id } })
+  openTodo(todo)
 }
 
 onMounted(() => {

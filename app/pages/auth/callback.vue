@@ -75,24 +75,10 @@ onMounted(async () => {
     return
   }
 
-  const next = takePostAuthRedirect()
-
   // Same order the email/password sign-up walks: terms, then the KYC
   // questions, then wherever the user was actually headed. A returning user
   // has both behind them and goes straight through.
-  if (!auth.hasAcceptedTerms) {
-    await navigateTo('/terms/accept')
-
-    return
-  }
-
-  if (!auth.kycCompleted) {
-    await navigateTo('/onboarding')
-
-    return
-  }
-
-  await navigateTo(next ?? auth.homePath())
+  await navigateTo(resolveAuthDestination())
 })
 </script>
 

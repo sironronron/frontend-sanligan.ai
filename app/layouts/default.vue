@@ -8,22 +8,23 @@ import {
   SparklesIcon,
   SunIcon,
 } from '@lucide/vue'
+import TaskDetailPanel from '~/components/TaskDetailPanel.vue'
 
 const auth = useAuthStore()
 const { isDark, toggle: toggleTheme } = useTheme()
 const billing = useBillingStore()
 const tour = useProductTour()
+const { selectedTodo, closeTodo } = useTaskDetailPanel()
 
 // Offered once onboarding is done, so a first-time user is not interrupted
 // while still choosing their role. Watched rather than checked on mount: the
 // profile can resolve after the layout renders, and onboarding lives on the
-// bare layout, so the flag may flip while this layout is already up. Shown
-// once per user; replayable from the account menu.
+// bare layout, so the flag may flip while this layout is already up. A lawyer
+// application skips the KYC questions, so verification stands in for it there.
+// Shown once per user; replayable from the account menu.
 watch(
-  () => auth.kycCompleted,
-  (completed) => {
-    if (completed) tour.maybeStart()
-  },
+  () => [auth.kycCompleted, auth.isVerifiedLawyer],
+  () => tour.maybeStart(),
   { immediate: true },
 )
 
@@ -72,7 +73,7 @@ onMounted(() => {
       -->
       <header v-if="auth.user" class="sticky top-4 z-40 mt-4 px-4 md:px-6">
         <div
-          class="flex h-14 items-center gap-1 rounded-full border border-border bg-card/90 px-2 shadow-float backdrop-blur-md sm:gap-2 sm:px-3"
+          class="flex h-14 items-center gap-1 rounded-2xl border border-border bg-card/90 px-2 shadow-float backdrop-blur-md sm:gap-2 sm:px-3"
         >
           <SidebarTrigger class="shrink-0 rounded-full" />
 
@@ -88,14 +89,6 @@ onMounted(() => {
           <div class="ml-auto flex items-center gap-1">
             <ChatStreamingIndicator class="mr-1" />
             <NotificationsDropdown />
-            <button
-              type="button"
-              aria-label="Toggle theme"
-              class="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              @click="toggleTheme"
-            >
-              <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
-            </button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 class="flex shrink-0 items-center gap-2 rounded-full p-1 pr-3 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -147,11 +140,19 @@ onMounted(() => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <button
+              type="button"
+              aria-label="Toggle theme"
+              class="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              @click="toggleTheme"
+            >
+              <component :is="isDark ? SunIcon : MoonIcon" class="size-4" />
+            </button>
           </div>
         </div>
       </header>
 
-      <main class="flex flex-1 flex-col">
+      <main class="flex min-w-0 flex-1 flex-col">
         <slot />
       </main>
     </SidebarInset>
@@ -159,6 +160,12 @@ onMounted(() => {
     <TourIntro />
     <ProductTour />
     <WelcomeDialog />
+    <TaskDetailPanel
+      v-if="selectedTodo"
+      :todo="selectedTodo"
+      :open="!!selectedTodo"
+      @close="closeTodo"
+    />
     </SidebarProvider>
   </div>
 </template>

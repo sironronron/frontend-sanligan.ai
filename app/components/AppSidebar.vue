@@ -2,14 +2,17 @@
 import {
   Building2Icon,
   FilePenIcon,
+  FileSearchIcon,
   FileTextIcon,
   FolderIcon,
   GaugeIcon,
   HeadphonesIcon,
   LayoutTemplateIcon,
   ListChecksIcon,
+  LockIcon,
   MessageCircleIcon,
   MessageSquareIcon,
+  ScaleIcon,
   ShieldIcon,
 } from '@lucide/vue'
 import {
@@ -38,16 +41,39 @@ const billing = useBillingStore()
 const org = useOrganizationStore()
 
 const navItems = computed(() => [
-  { to: '/chat', label: 'Chat', icon: MessageSquareIcon },
-  { to: '/cases', label: 'Cases', icon: FolderIcon },
-  { to: '/documents', label: 'Documents', icon: FileTextIcon },
-  { to: '/drafts', label: 'Drafts', icon: FilePenIcon },
-  { to: '/templates', label: 'Templates', icon: LayoutTemplateIcon },
+  { to: '/chat', label: 'Chat', icon: MessageSquareIcon, gated: true },
+  { to: '/cases', label: 'Cases', icon: FolderIcon, gated: true },
+  { to: '/files', label: 'Files', icon: FileTextIcon, gated: true },
+  { to: '/drafts', label: 'Drafts', icon: FilePenIcon, gated: true },
+  { to: '/vetting', label: 'Vetting', icon: FileSearchIcon, gated: true },
+  { to: '/templates', label: 'Templates', icon: LayoutTemplateIcon, gated: true },
   ...(auth.user?.is_admin ? [{ to: '/admin/legal-sources', label: 'Admin', icon: ShieldIcon }] : []),
 ])
 
+/**
+ * The document-vetting workspace sits apart from the ordinary pages: for a
+ * verified lawyer it is the home screen, so it renders on top and is separated
+ * from the rest of the workspace by its own rule.
+ */
+const lawyerNavItems = computed(() =>
+  auth.isVerifiedLawyer ? [{ to: '/lawyer/dashboard', label: 'Lawyer Dashboard', icon: ScaleIcon }] : [],
+)
+
+/**
+ * A lock marks each gated workspace page until the user is subscribed; once
+ * access is granted it disappears. Nothing is drawn until the subscription has
+ * actually answered, so a subscribed user never sees locks flash in while it
+ * loads.
+ */
+const showSubscriptionLock = computed(() => billing.subscriptionLoaded && !billing.accessGranted)
+
 function isActive(to: string) {
   return route.path === to || route.path.startsWith(`${to}/`)
+}
+
+/** A workspace page that exists but needs a subscription to be reached. */
+function isLocked(item: (typeof navItems.value)[number]) {
+  return showSubscriptionLock.value && item.gated
 }
 
 const orgName = computed(() => org.organization?.name ?? auth.user?.name ?? 'Batayan')
@@ -125,11 +151,49 @@ onMounted(() => {
     </SidebarHeader>
 
     <SidebarContent>
+      <SidebarGroup v-if="lawyerNavItems.length > 0">
+        <SidebarGroupLabel>Lawyer</SidebarGroupLabel>
+        <SidebarMenu class="space-y-1">
+          <SidebarMenuItem v-for="item in lawyerNavItems" :key="item.to">
+            <SidebarMenuButton
+              as-child
+              :is-active="isActive(item.to)"
+              :tooltip="item.label"
+              :data-tour="`nav-${item.to.replace('/', '')}`"
+            >
+              <NuxtLink :to="item.to">
+                <component :is="item.icon" />
+                <span>{{ item.label }}</span>
+              </NuxtLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
+
+      <SidebarSeparator
+        v-if="lawyerNavItems.length > 0"
+        class="group-data-[collapsible=icon]:hidden"
+      />
+
       <SidebarGroup>
         <SidebarGroupLabel>Workspace</SidebarGroupLabel>
         <SidebarMenu>
           <SidebarMenuItem v-for="item in navItems" :key="item.to">
             <SidebarMenuButton
+              v-if="isLocked(item)"
+              disabled
+              :tooltip="item.label"
+              :data-tour="`nav-${item.to.replace('/', '')}`"
+            >
+              <component :is="item.icon" />
+              <span>{{ item.label }}</span>
+              <LockIcon
+                class="ml-auto size-3.5 shrink-0 text-muted-foreground/50 group-data-[collapsible=icon]:hidden"
+                aria-label="Requires a subscription"
+              />
+            </SidebarMenuButton>
+            <SidebarMenuButton
+              v-else
               as-child
               :is-active="isActive(item.to)"
               :tooltip="item.label"

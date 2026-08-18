@@ -53,14 +53,6 @@ const initials = computed(() =>
                 <span class="text-sm font-medium">{{ auth.user?.name }}</span>
                 <span class="text-muted-foreground text-xs">{{ auth.user?.email }}</span>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem @click="navigateTo('/settings/organization')">
-                Organization
-              </DropdownMenuItem>
-              <DropdownMenuItem @click="navigateTo('/settings/billing')">
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem @click="handleLogout">
                 Log out
               </DropdownMenuItem>

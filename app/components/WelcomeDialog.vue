@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileTextIcon, MessagesSquareIcon } from '@lucide/vue'
+import { FileTextIcon, MessagesSquareIcon, ScaleIcon } from '@lucide/vue'
 
 /**
  * The close of first-run: shown once, whether the user finished the tour or
@@ -13,6 +13,15 @@ const tour = useProductTour()
 const auth = useAuthStore()
 
 const firstName = computed(() => (auth.user?.name ?? '').trim().split(/\s+/)[0] ?? '')
+
+const isLawyer = computed(() => auth.isVerifiedLawyer)
+
+/** A lawyer has just walked the workspace, so the close points back at it. */
+const description = computed(() =>
+  isLawyer.value
+    ? 'Review and notarize documents from your workspace, or ask a question about Philippine law. Every answer comes with the sources it relied on.'
+    : 'Ask a question about Philippine law, or open a case and let Batayan work from your own documents. Every answer comes with the sources it relied on.',
+)
 
 const dialog = ref<HTMLElement | null>(null)
 
@@ -82,19 +91,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             class="dialog-reveal mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground"
             style="--reveal-delay: 0.28s"
           >
-            Ask a question about Philippine law, or open a case and let Batayan work from your own
-            documents. Every answer comes with the sources it relied on.
+            {{ description }}
           </p>
 
           <div class="dialog-reveal mt-6 grid gap-2 sm:grid-cols-2" style="--reveal-delay: 0.35s">
-            <Button class="w-full gap-1.5" @click="go('/chat')">
-              <MessagesSquareIcon class="size-4" />
-              Ask a question
-            </Button>
-            <Button variant="outline" class="w-full gap-1.5" @click="go('/cases')">
-              <FileTextIcon class="size-4" />
-              Create a case
-            </Button>
+            <template v-if="isLawyer">
+              <Button class="w-full gap-1.5" @click="go('/lawyer/dashboard')">
+                <ScaleIcon class="size-4" />
+                Go to my workspace
+              </Button>
+              <Button variant="outline" class="w-full gap-1.5" @click="go('/chat')">
+                <MessagesSquareIcon class="size-4" />
+                Ask a question
+              </Button>
+            </template>
+            <template v-else>
+              <Button class="w-full gap-1.5" @click="go('/chat')">
+                <MessagesSquareIcon class="size-4" />
+                Ask a question
+              </Button>
+              <Button variant="outline" class="w-full gap-1.5" @click="go('/cases')">
+                <FileTextIcon class="size-4" />
+                Create a case
+              </Button>
+            </template>
           </div>
 
           <button

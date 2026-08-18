@@ -37,7 +37,7 @@ const pages = ref<CrawledPage[]>([])
 const meta = ref<Paginated<CrawledPage>['meta'] | null>(null)
 const loading = ref(false)
 const page = ref(1)
-const statusFilter = ref('')
+const statusFilter = ref('all')
 
 const statusStyles: Record<string, { label: string; class: string }> = {
   pending: { label: 'Pending', class: 'bg-muted text-muted-foreground' },
@@ -64,7 +64,7 @@ async function loadPages() {
   loading.value = true
   try {
     const query: Record<string, string | number> = { page: page.value }
-    if (statusFilter.value) query.status = statusFilter.value
+    if (statusFilter.value && statusFilter.value !== 'all') query.status = statusFilter.value
 
     const res = await api<Paginated<CrawledPage>>(`/admin/crawled-pages?${new URLSearchParams(String(query))}`)
     pages.value = res.data
@@ -105,7 +105,7 @@ onMounted(loadPages)
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All statuses</SelectItem>
+            <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="ok">OK</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>

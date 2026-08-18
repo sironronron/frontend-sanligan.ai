@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { FolderOpenIcon, MessagesSquareIcon, PaperclipIcon } from '@lucide/vue'
+import {
+  BookOpenTextIcon,
+  FileSearchIcon,
+  FolderOpenIcon,
+  MessagesSquareIcon,
+  PaperclipIcon,
+  ScaleIcon,
+} from '@lucide/vue'
 
 /**
  * The opening of first-run, shown before the first spotlight step.
@@ -17,23 +24,52 @@ const firstName = computed(() => (auth.user?.name ?? '').trim().split(/\s+/)[0] 
 
 const dialog = ref<HTMLElement | null>(null)
 
-const highlights = [
-  {
-    icon: MessagesSquareIcon,
-    title: 'Ask in plain language',
-    body: 'Put the question the way you would to a colleague. Answers come from statutes, jurisprudence, and official issuances — with the sources attached.',
-  },
-  {
-    icon: FolderOpenIcon,
-    title: 'Keep a matter together',
-    body: 'A case holds its facts, conversations, deadlines, and files in one place, so you never re-explain the background.',
-  },
-  {
-    icon: PaperclipIcon,
-    title: 'Work from your files',
-    body: 'Upload contracts, titles, or notices — even phone photos. Batayan reads them and quotes them back with the filename.',
-  },
-]
+/** A verified lawyer lands on the workspace, so the framing follows that. */
+const isLawyer = computed(() => auth.isVerifiedLawyer)
+
+const highlights = computed(() =>
+  isLawyer.value
+    ? [
+        {
+          icon: ScaleIcon,
+          title: 'Work offered to you',
+          body: 'Keep your availability on to receive document vetting and notarization requests matched to your practice. Review each one and accept what fits.',
+        },
+        {
+          icon: FileSearchIcon,
+          title: 'Review end to end',
+          body: 'Open the submitted document, ask the submitter for anything you need, mark it vetted, and schedule a remote notarization — all on one page.',
+        },
+        {
+          icon: BookOpenTextIcon,
+          title: 'Keep an official journal',
+          body: 'Every notarization you record is captured into your notarial journal with its certificate number.',
+        },
+      ]
+    : [
+        {
+          icon: MessagesSquareIcon,
+          title: 'Ask in plain language',
+          body: 'Put the question the way you would to a colleague. Answers come from statutes, jurisprudence, and official issuances — with the sources attached.',
+        },
+        {
+          icon: FolderOpenIcon,
+          title: 'Keep a matter together',
+          body: 'A case holds its facts, conversations, deadlines, and files in one place, so you never re-explain the background.',
+        },
+        {
+          icon: PaperclipIcon,
+          title: 'Work from your files',
+          body: 'Upload contracts, titles, or notices — even phone photos. Batayan reads them and quotes them back with the filename.',
+        },
+      ],
+)
+
+const description = computed(() =>
+  isLawyer.value
+    ? 'Your workspace for vetting and notarizing documents, alongside the full research assistant for Philippine law. Here is what you get, in the order most people use it.'
+    : 'A legal research assistant for Philippine law that shows its work. Here is what you get, in the order most people use it.',
+)
 
 function onKeydown(event: KeyboardEvent) {
   if (tour.introducing.value && event.key === 'Escape') tour.skipIntro()
@@ -96,8 +132,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             class="dialog-reveal mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground"
             style="--reveal-delay: 0.28s"
           >
-            A legal research assistant for Philippine law that shows its work. Here is what you get,
-            in the order most people use it.
+            {{ description }}
           </p>
 
           <div class="mt-7 grid gap-4 text-left sm:grid-cols-3">
@@ -125,7 +160,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             class="dialog-reveal mx-auto mt-6 max-w-lg text-xs leading-relaxed text-muted-foreground"
             style="--reveal-delay: 0.56s"
           >
-            The walkthrough is about a minute — seven stops through the app, and you can leave it at
+            The walkthrough is about a minute — {{ tour.total.value }}
+            {{ tour.total.value === 1 ? 'stop' : 'stops' }} through the app, and you can leave it at
             any point.
           </p>
 

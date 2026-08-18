@@ -2,6 +2,17 @@ import { defineStore } from 'pinia'
 import { useSupabase } from '~/lib/supabase'
 import type { KycProfilePayload } from '~/utils/kyc'
 
+export interface LawyerProfileSummary {
+  id: string
+  full_name: string
+  bar_number: string
+  verification_status: 'pending' | 'verified' | 'rejected'
+  is_notary: boolean
+  available: boolean
+  practice_areas: string[]
+  region: string | null
+}
+
 export interface User {
   id: string
   name: string
@@ -26,6 +37,7 @@ export interface User {
   terms_current_version: string
   marketing_opt_in: boolean
   created_at: string
+  lawyer_profile: LawyerProfileSummary | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -48,6 +60,17 @@ export const useAuthStore = defineStore('auth', () => {
 
   const hasAcceptedTerms = computed(() => user.value?.terms_accepted === true)
 
+  const lawyerProfile = computed(() => user.value?.lawyer_profile ?? null)
+
+  /**
+   * A verified lawyer profile is what unlocks the document-vetting workspace:
+   * offering work, accepting requests, and notarizing. Anything less routes a
+   * lawyer to the register/pending screens instead.
+   */
+  const isVerifiedLawyer = computed(() => lawyerProfile.value?.verification_status === 'verified')
+
+  const isLawyer = computed(() => user.value?.lawyer_profile != null)
+
   /** The user accepted an earlier version and has to accept the updated terms. */
   const needsTermsReacceptance = computed(
     () => user.value != null && user.value.terms_accepted_at != null && !user.value.terms_accepted,
@@ -63,7 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
    * on a team plan creates one deliberately, from settings.
    */
   function homePath() {
-    return '/chat'
+    return isVerifiedLawyer.value ? '/lawyer/dashboard' : '/chat'
   }
 
   async function fetchUser() {
@@ -327,6 +350,9 @@ export const useAuthStore = defineStore('auth', () => {
     kycCompleted,
     hasAcceptedTerms,
     needsTermsReacceptance,
+    lawyerProfile,
+    isVerifiedLawyer,
+    isLawyer,
     homePath,
     fetchUser,
     login,

@@ -376,7 +376,7 @@ async function retryCaseDocument(doc: CaseDocument) {
   }
 }
 
-/** File a document under a new set of categories from the case sidebar. */
+/** File a document under a new set of folders from the case sidebar. */
 async function updateDocumentCategories(doc: CaseDocument, ids: string[]) {
   const previous = doc.categories ?? []
 
@@ -392,7 +392,7 @@ async function updateDocumentCategories(doc: CaseDocument, ids: string[]) {
     doc.categories = data.categories
   } catch (err: any) {
     doc.categories = previous
-    toast.error(err?.data?.message ?? 'Could not update the categories')
+    toast.error(err?.data?.message ?? 'Could not update the folders')
   }
 }
 
@@ -1100,10 +1100,30 @@ watch(
     on the page ground with a gutter between them, so fullscreen drops the
     padding rather than leaving one panel inset inside a blank frame.
   -->
-  <div
-    class="flex h-[calc(100dvh-4.5rem)] overflow-hidden"
-    :class="fullscreen ? '' : 'gap-3 p-4 md:px-6 lg:gap-4 lg:p-6'"
-  >
+  <div class="flex h-[calc(100dvh-4.5rem)] flex-col overflow-hidden">
+    <!--
+      The overview band sits above the workspace, spanning its full width: it
+      owns case identity, the deadline (and the calendar behind it) and the
+      people, so the left rail is left with just its separated sections.
+    -->
+    <div v-if="caseDetail && !loading" class="px-4 pt-4 md:px-6 lg:px-6">
+      <CaseDetailHeader
+        :case="caseDetail"
+        :view="view"
+        :panel-toggles="panelToggles"
+        :calendar-events="scheduleEvents"
+        :fullscreen="fullscreen"
+        @set-view="setView"
+        @draft="pickerOpen = true"
+        @edit="openEdit"
+        @archive="archiveCase"
+        @restore="restoreCase"
+        @toggle-fullscreen="toggleFullscreen"
+        @change-status="changeStatus"
+      />
+    </div>
+
+    <div class="flex min-h-0 flex-1" :class="fullscreen ? '' : 'gap-3 p-4 md:px-6 lg:gap-4 lg:p-6'">
     <CaseSidebar
       v-if="caseDetail && !loading && !fullscreen"
       :threads="threads"
@@ -1116,7 +1136,6 @@ watch(
       :generated="generatedDocuments"
       :generated-loading="generatedLoading"
       :exporting="exporting"
-      :calendar-events="scheduleEvents"
       :streaming-thread-ids="chatStream.streamingIds"
       :readonly="readOnly"
       :case="caseDetail"
@@ -1133,7 +1152,6 @@ watch(
       @download-generated="downloadGenerated"
       @update-thread-tags="updateThreadTags"
       @update-tags="saveCaseTags"
-      @change-status="changeStatus"
     />
 
     <section
@@ -1161,19 +1179,6 @@ watch(
       </template>
 
       <template v-else>
-        <CaseDetailHeader
-          :case="caseDetail"
-          :view="view"
-          :panel-toggles="panelToggles"
-          :fullscreen="fullscreen"
-          @set-view="setView"
-          @draft="pickerOpen = true"
-          @edit="openEdit"
-          @archive="archiveCase"
-          @restore="restoreCase"
-          @toggle-fullscreen="toggleFullscreen"
-        />
-
         <div
           v-if="autoArchiveDate && !fullscreen"
           class="flex shrink-0 items-start gap-2 border-b bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
@@ -1239,8 +1244,9 @@ watch(
           class="md:hidden"
           :case="caseDetail"
           :editable="!readOnly"
+          :show-identity="false"
+          :hide-deadline="true"
           @update-tags="saveCaseTags"
-          @change-status="changeStatus"
         />
 
         <div class="relative min-h-0 flex-1">
@@ -1375,6 +1381,7 @@ watch(
           @close="rightPanel = null"
         />
       </div>
+    </div>
     </div>
 
     <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />

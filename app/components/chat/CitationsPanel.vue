@@ -190,7 +190,7 @@ function readableUrl(url: string | null): string {
                   />
                   <span class="min-w-0 break-words">{{ entry.label }}</span>
                 </p>
-                <p class="mt-0.5 text-[11px] text-muted-foreground">
+                <p class="mt-0.5 break-words text-[11px] text-muted-foreground">
                   {{ typeLabel(entry) }}<template v-if="metaLine(entry)"> · {{ metaLine(entry) }}</template>
                 </p>
               </div>
@@ -211,7 +211,7 @@ function readableUrl(url: string | null): string {
             <blockquote
               v-for="(excerpt, i) in entry.excerpts"
               :key="i"
-              class="mt-2.5 border-l-2 border-primary/40 pl-2.5 text-[12px] leading-relaxed text-muted-foreground"
+              class="mt-2.5 break-words border-l-2 border-primary/40 pl-2.5 text-[12px] leading-relaxed text-muted-foreground"
             >
               {{ excerpt }}
             </blockquote>
@@ -301,7 +301,7 @@ function readableUrl(url: string | null): string {
             <blockquote
               v-for="(excerpt, i) in entry.excerpts"
               :key="i"
-              class="mt-2.5 border-l-2 border-primary/40 pl-2.5 text-[12px] leading-relaxed text-muted-foreground"
+              class="mt-2.5 break-words border-l-2 border-primary/40 pl-2.5 text-[12px] leading-relaxed text-muted-foreground"
             >
               {{ excerpt }}
             </blockquote>

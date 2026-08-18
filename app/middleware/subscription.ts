@@ -11,6 +11,8 @@ export default defineNuxtRouteMiddleware(async () => {
 
   if (auth.user.is_admin) return
 
+  if (auth.isVerifiedLawyer) return
+
   const billing = useBillingStore()
 
   if (!billing.subscription) {

@@ -4,15 +4,22 @@
  * line between signing in and signing up — the first consent creates the
  * account, every later one signs into it.
  */
-withDefaults(
+const props = withDefaults(
   defineProps<{
     label?: string
     /** Human "X ago" label shown as a pill when the account was last used. */
     lastUsed?: string
+    /**
+     * Destination carried across the OAuth round trip. Overrides the page's
+     * own `?redirect=` so the register page can park a lawyer registration
+     * without relying on a query string.
+     */
+    redirect?: string
   }>(),
   {
     label: 'Continue with Google',
     lastUsed: '',
+    redirect: undefined,
   },
 )
 
@@ -26,7 +33,7 @@ async function handleClick() {
   pending.value = true
 
   try {
-    await auth.loginWithGoogle(useRoute().query.redirect as string | undefined)
+    await auth.loginWithGoogle(props.redirect ?? (useRoute().query.redirect as string | undefined))
     // On success the browser is already on its way to Google's consent screen,
     // so the button stays in its pending state until the page unloads.
   } catch (err) {
