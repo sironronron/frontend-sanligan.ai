@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 48" width="210" height="48" role="img" aria-label="Batayan.co">
+  <rect x="4" y="4" width="40" height="40" rx="10" fill="#1D4533"/>
+  <g transform="translate(8,8)" fill="#FBF3EC" fill-rule="evenodd">
+    <path d="M6 6 L26 6 L16 26 Z M12 15 L20 15 L20 18 L12 18 Z"/>
+  </g>
+  <circle cx="24" cy="34" r="2.4" fill="#F9D2BA"/>
+  <text x="58" y="32" font-family="Fraunces, 'Times New Roman', serif" font-size="22" font-weight="600" letter-spacing="0.3" fill="#1D4533">Batayan<tspan fill="#5E3122" font-weight="500">.co</tspan></text>
+</svg>

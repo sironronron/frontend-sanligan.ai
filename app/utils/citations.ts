@@ -230,3 +230,108 @@ export function citationDate(value: string | null): string | null {
   if (Number.isNaN(date.getTime())) return null
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
+
+/**
+ * One labelled section of a digest, e.g. "Facts" and what follows it.
+ *
+ * `bullets` is set when the section's body is an enumeration ("Key provisions",
+ * "Key terms"), so the reader can lay it out as a list rather than as a
+ * paragraph that happens to contain dashes.
+ */
+export interface DigestSection {
+  label: string
+  body: string
+  bullets: string[]
+}
+
+/**
+ * The labels a digest is written against, in the order they are laid out.
+ * Anything the model emits under a label outside this set is still shown —
+ * the list fixes the order of the ones we know, not what is allowed.
+ */
+const DIGEST_LABELS = [
+  'Nature',
+  'Facts',
+  'Parties',
+  'Issue',
+  'Ruling',
+  'Doctrine',
+  'Scope',
+  'Key provisions',
+  'Key terms',
+  'Notes',
+]
+
+const digestLabelPattern = new RegExp(`^(${DIGEST_LABELS.join('|')})\\s*:\\s*(.*)$`, 'i')
+
+/**
+ * Split a digest into its labelled sections.
+ *
+ * A digest is written as "Facts: ...", one label per line, precisely so it can
+ * be laid out as a digest rather than run together as prose — the labels are
+ * what a reader scans to find the holding without reading the rest. Returns an
+ * empty array when the text carries no labels at all, which is the signal to
+ * fall back to rendering it as plain markdown.
+ */
+export function parseDigest(digest: string): DigestSection[] {
+  const sections: DigestSection[] = []
+  let current: DigestSection | null = null
+
+  for (const rawLine of digest.split('\n')) {
+    const line = rawLine.trim()
+    if (line === '') continue
+
+    const match = digestLabelPattern.exec(line)
+
+    if (match) {
+      current = { label: titleCase(match[1] ?? ''), body: (match[2] ?? '').trim(), bullets: [] }
+      sections.push(current)
+      continue
+    }
+
+    if (!current) continue
+
+    // A "- " line continues the section as an enumeration; anything else is
+    // more prose for the section already open.
+    if (line.startsWith('- ')) {
+      current.bullets.push(line.slice(2).trim())
+      continue
+    }
+
+    current.body = current.body === '' ? line : `${current.body} ${line}`
+  }
+
+  return sections.filter((section) => section.body !== '' || section.bullets.length > 0)
+}
+
+/** "Key provisions" however the model cased it, back to its canonical form. */
+function titleCase(label: string): string {
+  const canonical = DIGEST_LABELS.find((known) => known.toLowerCase() === label.toLowerCase())
+
+  return canonical ?? label
+}
+
+/**
+ * Mark up rendered markdown so the cited highlight follows the words.
+ *
+ * The highlight is a gradient that paints only across each line of glyphs,
+ * which is an inline-box effect (`box-decoration-break: clone`). Put it on a
+ * block instead and it floods the paragraph's whole box, which is exactly the
+ * filled-behind-the-text look the reader avoids. So the text inside each
+ * block is wrapped in an inline span and the mark goes there.
+ *
+ * Blocks that contain other blocks — a list item holding a nested list, a
+ * paragraph holding a table — are left alone: wrapping those would put the
+ * mark behind their children too, and the children get marked in their own
+ * right on the next pass of the same expression.
+ */
+export function markCitedHtml(html: string): string {
+  return html.replace(
+    /<(p|li|h[1-6]|blockquote)((?:\s[^>]*)?)>([\s\S]*?)<\/\1>/g,
+    (whole, tag: string, attributes: string, inner: string) => {
+      if (inner.trim() === '' || /<(p|ul|ol|li|table|blockquote|pre)\b/i.test(inner)) return whole
+
+      return `<${tag}${attributes}><span class="cite-mark">${inner}</span></${tag}>`
+    },
+  )
+}

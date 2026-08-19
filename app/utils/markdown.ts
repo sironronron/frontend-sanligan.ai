@@ -63,18 +63,13 @@ function stripCodeFencesAndInternalReasoning(text: string): string {
   return cleaned.trim()
 }
 
-function transformExportLinks(text: string): string {
-  return text.replace(
-    /\[Download as (Word|PDF)\]\(\/api\/messages\/([^)]+)\/export\/(word|pdf)\)/g,
-    '',
-  )
-}
+function transformInline(text: string, bare: boolean): string {
+  const code = bare ? '<code>$1</code>' : '<code class="rounded bg-muted px-1.5 py-0.5 text-xs">$1</code>'
 
-function transformInline(text: string): string {
   return text
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`(.+?)`/g, '<code class="rounded bg-muted px-1.5 py-0.5 text-xs">$1</code>')
+    .replace(/`(.+?)`/g, code)
 }
 
 type CitationKind = 'legal' | 'document' | 'web'
@@ -102,12 +97,12 @@ function transformCitations(text: string): string {
     (_match, tokenKind: string, token: string, legacyKind: string, index: string) => {
       if (tokenKind !== undefined) {
         const kind = tokenKind === 'SRC' ? 'legal' : 'document'
-        return `<button type="button" class="saligan-citation" data-cite-kind="${kind}" data-cite-token="${token}" title="Show source [${tokenKind} ${token}]" aria-label="Show source ${token}">${token}</button>`
+        return `<button type="button" class="saligan-citation cite-mark" data-cite-kind="${kind}" data-cite-token="${token}" title="Show source [${tokenKind} ${token}]" aria-label="Show source ${token}">${token}</button>`
       }
 
       const kind = citationKindOf(legacyKind)
       const label = `${legacyKind} ${index}`
-      return `<button type="button" class="saligan-citation" data-cite-kind="${kind}" data-cite-index="${index}" title="Show source ${label}" aria-label="Show source ${label}">${index}</button>`
+      return `<button type="button" class="saligan-citation cite-mark" data-cite-kind="${kind}" data-cite-index="${index}" title="Show source ${label}" aria-label="Show source ${label}">${index}</button>`
     },
   )
 }
@@ -131,27 +126,53 @@ function alignOf(cell: string): 'left' | 'center' | 'right' {
   return 'left'
 }
 
-function buildTable(rows: string[]): string {
+function buildTable(rows: string[], bare: boolean): string {
   const cells = rows.map(splitRow)
   const header = cells[0] ?? []
   const aligns = (cells[1] ?? []).map(alignOf)
   const body = cells.slice(2)
   const colCount = Math.max(header.length, ...body.map((r) => r.length), 1)
 
-  const th = Array.from({ length: colCount }, (_, i) => {
-    const align = aligns[i] ?? 'left'
-    return `<th class="border-b border-border px-3 py-2 align-middle font-medium whitespace-nowrap ${align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left'}">${header[i] ?? ''}</th>`
-  }).join('')
+  // Alignment is the table's own meaning, not decoration, so it survives in
+  // both modes; only the spacing and border utilities are dropped when the
+  // caller styles the block itself.
+  const cell = (tag: 'th' | 'td', index: number, content: string): string => {
+    const align = aligns[index] ?? 'left'
+    const alignClass = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left'
+    const base = tag === 'th'
+      ? 'border-b border-border px-3 py-2 align-middle font-medium whitespace-nowrap'
+      : 'border-b border-border px-3 py-2 align-top whitespace-normal'
+
+    return `<${tag} class="${bare ? alignClass : `${base} ${alignClass}`}">${content}</${tag}>`
+  }
+
+  const th = Array.from({ length: colCount }, (_, i) => cell('th', i, header[i] ?? '')).join('')
 
   const trs = body.map((row) => {
-    const tds = Array.from({ length: colCount }, (_, i) => {
-      const align = aligns[i] ?? 'left'
-      return `<td class="border-b border-border px-3 py-2 align-top whitespace-normal ${align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : 'text-left'}">${row[i] ?? ''}</td>`
-    }).join('')
+    const tds = Array.from({ length: colCount }, (_, i) => cell('td', i, row[i] ?? '')).join('')
     return `<tr>${tds}</tr>`
   }).join('')
 
-  return `<div class="my-3 overflow-x-auto"><table class="w-full border-collapse text-sm"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`
+  const wrapper = bare ? 'overflow-x-auto' : 'my-3 overflow-x-auto'
+  const table = bare ? '' : ' class="w-full border-collapse text-sm"'
+
+  return `<div class="${wrapper}"><table${table}><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`
+}
+
+export interface RenderMarkdownOptions {
+  /**
+   * Emit structural HTML without the presentational utility classes, for a
+   * caller that styles the whole block itself.
+   *
+   * The chat answer is set as prose by one stylesheet rule (`.batayan-prose`)
+   * so its rhythm is decided in a single place. Utility classes baked into the
+   * markup fight that — Tailwind's `space-y-*` in particular outranks any
+   * sensible element selector — and the answer ends up with spacing that comes
+   * from two places at once. Every other caller (the terms pages, the document
+   * viewer, the citation reader) has no stylesheet of its own and still wants
+   * the classes, so this is opt-in.
+   */
+  bare?: boolean
 }
 
 /**
@@ -163,12 +184,18 @@ function buildTable(rows: string[]): string {
  */
 const markdownCache = new Map<string, string>()
 
-export function renderMarkdown(text: string): string {
-  const cached = markdownCache.get(text)
+export function renderMarkdown(text: string, options: RenderMarkdownOptions = {}): string {
+  const bare = options.bare === true
+  // The two modes produce different HTML for the same source, so the mode is
+  // part of the key — otherwise a page rendering both would serve one the
+  // other's markup.
+  const key = bare ? `bare:${text}` : text
+
+  const cached = markdownCache.get(key)
   if (cached !== undefined) return cached
 
-  const rendered = renderMarkdownInternal(text)
-  markdownCache.set(text, rendered)
+  const rendered = renderMarkdownInternal(text, bare)
+  markdownCache.set(key, rendered)
   if (markdownCache.size > 200) {
     markdownCache.clear()
   }
@@ -176,17 +203,16 @@ export function renderMarkdown(text: string): string {
   return rendered
 }
 
-function renderMarkdownInternal(text: string): string {
+function renderMarkdownInternal(text: string, bare: boolean): string {
   let html = escapeHtml(text)
   html = fixBrokenPesoSign(html)
   html = stripCodeFencesAndInternalReasoning(html)
   html = removeProtocolMarkers(html)
-  html = transformExportLinks(html)
   html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>')
-  html = html.replace(/^### (.+)$/gm, '<h3 class="mt-4 mb-2 text-base font-semibold">$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2 class="mt-5 mb-2 text-lg font-bold">$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1 class="mt-6 mb-2 text-xl font-bold">$1</h1>')
-  html = transformInline(html)
+  html = html.replace(/^### (.+)$/gm, bare ? '<h3>$1</h3>' : '<h3 class="mt-4 mb-2 text-base font-semibold">$1</h3>')
+  html = html.replace(/^## (.+)$/gm, bare ? '<h2>$1</h2>' : '<h2 class="mt-5 mb-2 text-lg font-bold">$1</h2>')
+  html = html.replace(/^# (.+)$/gm, bare ? '<h1>$1</h1>' : '<h1 class="mt-6 mb-2 text-xl font-bold">$1</h1>')
+  html = transformInline(html, bare)
   html = transformCitations(html)
 
   const lines = html.split('\n')
@@ -249,7 +275,7 @@ function renderMarkdownInternal(text: string): string {
         rows.push(next.trim())
         i++
       }
-      out.push(buildTable(rows))
+      out.push(buildTable(rows, bare))
       continue
     }
 
@@ -263,7 +289,7 @@ function renderMarkdownInternal(text: string): string {
     if (/^[-*]{1,3}$/.test(line.trim())) {
       flushParagraph()
       closeList()
-      out.push('<hr class="my-4 border-border" />')
+      out.push(bare ? '<hr>' : '<hr class="my-4 border-border" />')
       continue
     }
 
@@ -274,7 +300,7 @@ function renderMarkdownInternal(text: string): string {
     if (/^x\s*[-=–—_*]{3,}\s*x$/i.test(line.trim())) {
       flushParagraph()
       closeList()
-      out.push('<hr class="my-4 border-border" />')
+      out.push(bare ? '<hr>' : '<hr class="my-4 border-border" />')
       continue
     }
 
@@ -288,10 +314,11 @@ function renderMarkdownInternal(text: string): string {
         quoteLines.push(next.replace(/^&gt;\s?/, ''))
         i++
       }
-      out.push(
-        `<blockquote class="my-2 rounded-r-md border-l-2 border-primary/60 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">`
-          + `<p>${quoteLines.join('</p><p>')}</p></blockquote>`,
-      )
+      const quoteClass = bare
+        ? ''
+        : ' class="my-2 rounded-r-md border-l-2 border-primary/60 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"'
+
+      out.push(`<blockquote${quoteClass}><p>${quoteLines.join('</p><p>')}</p></blockquote>`)
       continue
     }
 
@@ -299,7 +326,7 @@ function renderMarkdownInternal(text: string): string {
       flushParagraph()
       if (openList !== 'ul') {
         closeList()
-        out.push('<ul class="my-2 ml-4 list-disc space-y-1">')
+        out.push(bare ? '<ul class="list-disc">' : '<ul class="my-2 ml-4 list-disc space-y-1">')
         openList = 'ul'
       }
       out.push(`<li>${line.replace(/^[-*] /, '')}</li>`)
@@ -316,7 +343,11 @@ function renderMarkdownInternal(text: string): string {
         // restart the count.
         const start = Number(ordered[1])
         const startAttr = Number.isFinite(start) && start !== 1 ? ` start="${start}"` : ''
-        out.push(`<ol class="my-2 ml-4 list-decimal space-y-1"${startAttr}>`)
+        out.push(
+          bare
+            ? `<ol class="list-decimal"${startAttr}>`
+            : `<ol class="my-2 ml-4 list-decimal space-y-1"${startAttr}>`,
+        )
         openList = 'ol'
       }
       out.push(`<li>${line.replace(/^\d+[.)]\s+/, '')}</li>`)

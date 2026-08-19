@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ExternalLinkIcon, FileTextIcon, Loader2Icon, ScrollTextIcon, SparklesIcon, XIcon } from '@lucide/vue'
+import { ExternalLinkIcon, FileTextIcon, Loader2Icon, QuoteIcon, ScrollTextIcon, SparklesIcon, XIcon } from '@lucide/vue'
 import { renderMarkdown } from '~/utils/markdown'
-import { citationDate } from '~/utils/citations'
-import type { CitationReading } from '~/types/citations'
+import { citationDate, markCitedHtml, parseDigest } from '~/utils/citations'
+import type { CitationChunk, CitationReading } from '~/types/citations'
 
 /**
  * The whole source, opened over the conversation, with the passages the answer
@@ -35,6 +35,23 @@ const citedCount = computed(
 )
 
 const uploadedLabel = computed(() => citationDate(props.reading?.uploadedAt ?? null))
+
+/**
+ * The digest as labelled sections. Empty when the stored digest predates the
+ * labelled format (or the model ignored it), in which case it is rendered as
+ * plain markdown instead of being forced into a layout it does not fit.
+ */
+const digestSections = computed(() => parseDigest(props.reading?.digest ?? ''))
+
+/**
+ * One passage as rendered HTML, with the highlight applied to its words when
+ * the answer drew on it.
+ */
+function passageHtml(chunk: CitationChunk): string {
+  const html = renderMarkdown(chunk.content)
+
+  return highlighted.value.has(chunk.index) ? markCitedHtml(html) : html
+}
 
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') emit('close')
@@ -115,28 +132,39 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </div>
 
         <!-- Digest / full text -->
-        <div v-if="reading" class="flex items-center gap-1 border-b px-5 py-2">
-          <button
-            v-if="reading.hasDigest"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="view === 'digest' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
-            @click="emit('update:view', 'digest')"
-          >
-            <SparklesIcon class="size-3.5" />
-            Digest
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="view === 'full' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent'"
-            @click="emit('update:view', 'full')"
-          >
-            <ScrollTextIcon class="size-3.5" />
-            Full text
-          </button>
-          <span v-if="view === 'full' && citedCount > 0" class="ml-auto text-[11px] text-muted-foreground">
-            {{ citedCount }} cited {{ citedCount === 1 ? 'passage' : 'passages' }} highlighted
+        <div v-if="reading" class="flex items-center gap-2 border-b px-5 py-2">
+          <div class="inline-flex rounded-lg border bg-muted/50 p-0.5">
+            <button
+              v-if="reading.hasDigest"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+              :class="view === 'digest'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'"
+              @click="emit('update:view', 'digest')"
+            >
+              <SparklesIcon class="size-3.5" />
+              Digest
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+              :class="view === 'full'
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'"
+              @click="emit('update:view', 'full')"
+            >
+              <ScrollTextIcon class="size-3.5" />
+              Full text
+            </button>
+          </div>
+
+          <span class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span class="cite-mark">cited</span>
+            <template v-if="view === 'full' && citedCount > 0">
+              {{ citedCount }} {{ citedCount === 1 ? 'passage' : 'passages' }} highlighted
+            </template>
+            <template v-else>text is highlighted</template>
           </span>
         </div>
 
@@ -151,24 +179,53 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             {{ error }}
           </p>
 
+          <dl v-else-if="reading && view === 'digest' && digestSections.length > 0" class="space-y-3.5">
+            <div v-for="section in digestSections" :key="section.label" class="digest-section">
+              <dt class="digest-section__label">{{ section.label }}</dt>
+              <dd class="digest-section__body">
+                <p v-if="section.body" class="text-[0.95rem] leading-7">{{ section.body }}</p>
+                <ul v-if="section.bullets.length > 0" class="mt-1.5 space-y-1">
+                  <li
+                    v-for="(bullet, i) in section.bullets"
+                    :key="i"
+                    class="relative pl-4 text-[0.95rem] leading-7 before:absolute before:left-0 before:text-muted-foreground before:content-['\\2022']"
+                  >
+                    {{ bullet }}
+                  </li>
+                </ul>
+              </dd>
+            </div>
+          </dl>
+
           <div
             v-else-if="reading && view === 'digest'"
-            class="text-[0.9rem] leading-7"
+            class="batayan-prose text-[0.95rem] leading-7"
             v-html="renderMarkdown(reading.digest ?? '')"
           />
 
-          <div v-else-if="reading && reading.chunks.length > 0" class="space-y-3">
-            <p
+          <div v-else-if="reading && reading.chunks.length > 0" class="space-y-2">
+            <div
               v-for="chunk in reading.chunks"
               :key="chunk.id"
               :data-cited="highlighted.has(chunk.index) ? 'true' : undefined"
-              class="whitespace-pre-wrap rounded-lg px-3 py-2 text-[0.9rem] leading-7 transition-colors"
+              class="cite-passage"
               :class="highlighted.has(chunk.index)
-                ? 'bg-primary/10 ring-1 ring-primary/40'
-                : 'text-muted-foreground'"
+                ? 'cite-passage--cited'
+                : 'cite-passage--dim'"
             >
-              {{ chunk.content }}
-            </p>
+              <span v-if="highlighted.has(chunk.index)" class="cite-passage__tag">
+                <QuoteIcon class="size-3" />
+                Cited
+              </span>
+              <!--
+                Rendered as markdown, not as pre-wrapped text: extraction now
+                keeps the document's own structure, so a decision's headings
+                are headings and its enumerated paragraphs are a list. The
+                cited mark stays on the chunk, which is the unit retrieval
+                cites, so highlighting is unaffected by how it is rendered.
+              -->
+              <div class="batayan-prose" v-html="passageHtml(chunk)" />
+            </div>
           </div>
 
           <div v-else-if="reading" class="flex flex-col items-center gap-2 py-16 text-sm text-muted-foreground">

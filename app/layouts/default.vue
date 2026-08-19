@@ -4,6 +4,7 @@ import {
   CreditCardIcon,
   LogOutIcon,
   MoonIcon,
+  PuzzleIcon,
   Settings2Icon,
   SparklesIcon,
   SunIcon,
@@ -15,6 +16,7 @@ const { isDark, toggle: toggleTheme } = useTheme()
 const billing = useBillingStore()
 const tour = useProductTour()
 const { selectedTodo, closeTodo } = useTaskDetailPanel()
+const { letterDraft, closeLetterDraft } = useLetterDraftPanel()
 
 // Offered once onboarding is done, so a first-time user is not interrupted
 // while still choosing their role. Watched rather than checked on mount: the
@@ -121,6 +123,10 @@ onMounted(() => {
                     <CreditCardIcon />
                     Billing
                   </DropdownMenuItem>
+                  <DropdownMenuItem @click="navigateTo('/settings/addons')">
+                    <PuzzleIcon />
+                    Add-ons
+                  </DropdownMenuItem>
                   <DropdownMenuItem @click="navigateTo('/settings/personalization')">
                     <Settings2Icon />
                     Personalization
@@ -165,6 +171,12 @@ onMounted(() => {
       :todo="selectedTodo"
       :open="!!selectedTodo"
       @close="closeTodo"
+    />
+    <LetterDraftPanel
+      v-if="letterDraft"
+      :draft="letterDraft"
+      :open="!!letterDraft"
+      @close="closeLetterDraft"
     />
     </SidebarProvider>
   </div>

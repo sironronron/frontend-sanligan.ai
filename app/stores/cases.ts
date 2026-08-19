@@ -8,6 +8,8 @@ export interface CaseConversation {
   messages_count: number
   last_message_at: string | null
   tags?: Array<{ id: string; name: string; slug: string; color?: string | null }>
+  /** When the thread was pinned, so pinned threads lead the list. */
+  pinned_at: string | null
   created_at: string
   updated_at: string
 }

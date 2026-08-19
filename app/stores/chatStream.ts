@@ -3,14 +3,20 @@ import { authHeaders } from '~/lib/http'
 import { upgradeMessage } from '~/stores/billing'
 import { useTodoStore } from '~/stores/todos'
 import { useAdvisoryStore } from '~/stores/advisories'
+import { useLetterDraftPanel } from '~/composables/useLetterDraftPanel'
 import { createTextStreamer, type TextStreamer } from '~/composables/useTextStreamer'
-import type { IntakeField } from '~/components/IntakeFormSheet.vue'
+import type { IntakeField } from '~/components/chat/ChatIntakeForm.vue'
 import type { ChoiceQuestion } from '~/components/chat/ChatChoicePrompt.vue'
 import type {
   ChatActivityStep,
   ChatMessage,
   ChatMessageAttachment,
+  ChatToolNotice,
+  ChatToolReceipt,
+  ChatWebSearch,
+  ChatWebSource,
 } from '~/types/chat'
+import type { LetterDraftPayload, TiptapDoc } from '~/types/tiptap'
 
 /**
  * The in-flight half of a conversation, owned by the store rather than by the
@@ -50,6 +56,15 @@ export interface ChatTurn {
   awaitingIntake: boolean
   intakeFields: IntakeField[] | null
   intakeDefaults: Record<string, string> | null
+  /**
+   * What the user has typed into the form so far.
+   *
+   * Held on the turn rather than inside the form component, which unmounts the
+   * moment the form is dismissed — closing it to re-read the conversation used
+   * to throw away everything already entered. It also survives navigating away
+   * from the thread and back, since the turn does.
+   */
+  intakeDraft: Record<string, string>
   intakeDismissed: boolean
   /**
    * The decisions the model put to the user, held until they answer. Unlike the
@@ -64,6 +79,30 @@ export interface ChatTurn {
   streaming: boolean
   /** The model called `create_todo`, so the text fallback must not run. */
   todoToolCalled: boolean
+  /**
+   * The search happening right now, or null between searches. Deliberately not
+   * a history: the trail is what is being read at this moment, and the sources
+   * that survive into the answer become citation cards instead.
+   */
+  webSearch: ChatWebSearch | null
+  /**
+   * Corrections raised against the finished reply. They also land on the
+   * persisted message, so these are only for the window between the stream
+   * ending and the thread being re-fetched.
+   */
+  notices: ChatToolNotice[]
+  /**
+   * What this turn actually wrote — tasks filed, points flagged. Shown under
+   * the answer as confirmation, and sourced from the tool results rather than
+   * from anything the reply says about itself.
+   */
+  receipts: ChatToolReceipt[]
+  /**
+   * The letter this turn is drafting or drafted, so the thread can offer the
+   * editor back even while the answer is still streaming — after the turn
+   * settles it is persisted on the assistant message and this copy is dropped.
+   */
+  letterDraft: LetterDraftPayload | null
   /** Bumped whenever the store refreshes todos, for pages that open a panel. */
   todosUpdatedAt: number
   /** Bumped when the model flags caveats, so the review pill can appear live. */
@@ -218,6 +257,16 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       return
     }
 
+    if (payload.name === 'draft_letter') {
+      // The agent started drafting a letter. Open the shared editor panel
+      // right away in its "Drafting…" state; the letter_draft event fills it
+      // in a moment later with the finished document. The draft is also kept
+      // on the turn so a user who closed the panel can reopen it mid-stream.
+      turn.letterDraft = { content: null, title: null, drafting: true }
+      useLetterDraftPanel().beginLetterDraft()
+      return
+    }
+
     if (payload.name !== 'request_intake_form' || !Array.isArray(payload.arguments?.fields)) return
 
     // An empty form is a dead end: it opens with nothing to answer and the
@@ -231,6 +280,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
 
     turn.intakeFields = payload.arguments.fields as IntakeField[]
     turn.intakeDefaults = payload.arguments.default_values ?? null
+    turn.intakeDraft = {}
     turn.awaitingIntake = true
     turn.intakeDismissed = false
     completeActiveSteps(turn)
@@ -238,6 +288,88 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     // The document is drafted only after the intake form is submitted. Drop
     // the streaming bubble so no partial draft appears before the form.
     turn.assistantMessage = null
+  }
+
+  /**
+   * Merge one phase of the delegated web search into the turn's live trail.
+   *
+   * The phases arrive in order but not necessarily one per frame — a search is
+   * a single blocking tool call, so `reading`, `read`, and `done` can land
+   * together the moment the model resumes. Rows are therefore merged by url
+   * rather than replaced, and the reveal animation is the client's own
+   * (`ChatWebSearchTrail` staggers them), which keeps the trail readable
+   * whether the frames trickle or arrive as a batch.
+   */
+  function handleWebSearch(turn: ChatTurn, payload: Record<string, any>) {
+    const phase = payload.phase
+
+    if (phase === 'start') {
+      turn.webSearch = {
+        query: typeof payload.query === 'string' ? payload.query : '',
+        sources: [],
+        phase: 'start',
+      }
+
+      return
+    }
+
+    if (phase === 'done') {
+      // Cleared, not kept: these are the sites that were read, and the ones
+      // the answer actually leans on are already citation cards. Leaving the
+      // trail up would read as a second, contradictory source list.
+      turn.webSearch = null
+
+      return
+    }
+
+    if (!turn.webSearch || !Array.isArray(payload.sources)) return
+
+    const search = turn.webSearch
+
+    for (const raw of payload.sources) {
+      if (typeof raw?.url !== 'string' || raw.url === '') continue
+
+      const source: ChatWebSource = {
+        url: raw.url,
+        domain: typeof raw.domain === 'string' ? raw.domain : null,
+        title: typeof raw.title === 'string' && raw.title !== '' ? raw.title : null,
+        index: Number.isFinite(Number(raw.index)) ? Number(raw.index) : null,
+      }
+
+      const existing = search.sources.find((s) => s.url === source.url)
+
+      if (!existing) {
+        search.sources.push(source)
+        continue
+      }
+
+      // A later phase only ever adds detail — the title the page turned out to
+      // have, the number the card was given — so nothing already known is
+      // overwritten with a null.
+      existing.title ??= source.title
+      existing.index ??= source.index
+      existing.domain ??= source.domain
+    }
+
+    search.phase = phase === 'read' ? 'read' : 'reading'
+  }
+
+  /**
+   * Drop `[Web N]` markers the answer has no source for.
+   *
+   * The persisted copy is cleaned server-side, but the text this client
+   * streamed is whatever the model wrote, so a marker numbered past the
+   * sources that came back would sit in the answer as a badge that resolves to
+   * nothing. Applied once, when the turn ends and the final count is known.
+   */
+  function dropUnsupportedWebMarkers(turn: ChatTurn, count: number) {
+    const target = turn.assistantMessage
+    if (!target || !target.content.includes('[Web ')) return
+
+    target.content = target.content.replace(
+      /\s*\[Web\s+(\d+)\]/gi,
+      (match, index: string) => (Number(index) >= 1 && Number(index) <= count ? match : ''),
+    )
   }
 
   function handleFrame(turn: ChatTurn, frame: string) {
@@ -300,27 +432,68 @@ export const useChatStreamStore = defineStore('chatStream', () => {
           excerpt: typeof payload.excerpt === 'string' ? payload.excerpt : undefined,
         })
       }
+    } else if (event === 'web_search') {
+      handleWebSearch(turn, payload)
+    } else if (event === 'notice' && typeof payload.message === 'string') {
+      if (!turn.notices.some((n) => n.kind === payload.kind)) {
+        turn.notices.push({ kind: String(payload.kind ?? 'notice'), message: payload.message })
+      }
     } else if (event === 'tool_call') {
       handleToolCall(turn, payload)
+    } else if (event === 'letter_draft' && payload.content && payload.content.type === 'doc') {
+      // The draft_letter tool finished and the document is ready. Fill the
+      // shared letter editor panel (opened on the tool call) so the user can
+      // edit, sign, save, and export it. messageId is where edits are saved.
+      const draft: LetterDraftPayload = {
+        content: payload.content as TiptapDoc,
+        title: typeof payload.title === 'string' && payload.title !== '' ? payload.title : null,
+        messageId: typeof payload.message_id === 'string' ? payload.message_id : null,
+      }
+      turn.letterDraft = draft
+      useLetterDraftPanel().fillLetterDraft(draft)
     } else if (event === 'tool_result' && payload.name === 'create_todo') {
+      // The frame is a signal and a count, never the tool's own payload: the
+      // todos themselves come back from the endpoint that owns them.
       turn.todoToolCalled = true
+      recordReceipt(turn, 'tasks', payload.count)
       void refreshTodos(turn)
       completeStep(turn, 'create_todo')
     } else if (event === 'tool_result' && payload.name === 'flag_advisories') {
+      recordReceipt(turn, 'advisories', payload.count)
       void refreshAdvisories(turn)
       completeStep(turn, 'flag_advisories')
     } else if (event === 'done') {
       streamers.get(turn.conversationId)?.flush()
       completeActiveSteps(turn)
+      turn.webSearch = null
+      if (Number.isFinite(Number(payload.web_citations))) {
+        dropUnsupportedWebMarkers(turn, Number(payload.web_citations))
+      }
       if (turn.intakeFields === null) turn.awaitingIntake = false
     } else if (event === 'error') {
       streamers.get(turn.conversationId)?.flush()
       turn.error = String(payload.message ?? 'The AI provider could not complete the response.')
       turn.awaitingIntake = false
+      turn.webSearch = null
       // A failed turn's question, if one was asked, is unanswerable: the retry
       // starts the turn over.
       turn.choiceQuestions = null
     }
+  }
+
+  /**
+   * Note what a tool wrote, merging with anything the same tool already
+   * reported this turn — the server's own fallback can file tasks after the
+   * tool did, and two separate receipts would read as two separate batches.
+   */
+  function recordReceipt(turn: ChatTurn, kind: ChatToolReceipt['kind'], count: unknown) {
+    const written = Number(count)
+    if (!Number.isFinite(written) || written <= 0) return
+
+    const existing = turn.receipts.find((receipt) => receipt.kind === kind)
+
+    if (existing) existing.count += written
+    else turn.receipts.push({ kind, count: written })
   }
 
   async function refreshTodos(turn: ChatTurn) {
@@ -370,12 +543,17 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       awaitingIntake: false,
       intakeFields: null,
       intakeDefaults: null,
+      intakeDraft: {},
       intakeDismissed: false,
       choiceQuestions: null,
       error: '',
       sending: true,
       streaming: false,
       todoToolCalled: false,
+      webSearch: null,
+      notices: [],
+      receipts: [],
+      letterDraft: null,
       todosUpdatedAt: 0,
       advisoriesUpdatedAt: 0,
       startedAt: Date.now(),
@@ -471,6 +649,9 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       live.streaming = false
       live.status = null
       live.statusLabel = null
+      // However the turn ended — finished, aborted, or thrown — nothing is
+      // being read any more, so the trail must not outlive it.
+      live.webSearch = null
       live.finishedAt = Date.now()
     }
   }
@@ -486,6 +667,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     turn.status = null
     turn.statusLabel = null
     turn.awaitingIntake = false
+    turn.webSearch = null
     turn.error = ''
   }
 
@@ -566,8 +748,22 @@ export const useChatStreamStore = defineStore('chatStream', () => {
 
     turn.intakeFields = null
     turn.intakeDefaults = null
+    turn.intakeDraft = {}
     turn.awaitingIntake = false
     turn.intakeDismissed = false
+  }
+
+  /**
+   * Keep what the user has typed into the intake form.
+   *
+   * Called as they answer, so closing the form to re-read the thread — or
+   * leaving the page entirely — costs them nothing.
+   */
+  function saveIntakeDraft(conversationId: string, values: Record<string, string>) {
+    const turn = turnFor(conversationId)
+    if (!turn) return
+
+    turn.intakeDraft = { ...values }
   }
 
   function clearError(conversationId: string) {
@@ -591,6 +787,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     dismissIntake,
     reopenIntake,
     clearIntake,
+    saveIntakeDraft,
     clearChoices,
     clearError,
   }

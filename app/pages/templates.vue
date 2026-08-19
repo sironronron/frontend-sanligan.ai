@@ -209,10 +209,11 @@ onMounted(loadTemplates)
   <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <PageHeader
       title="Templates"
+      :icon="ScaleIcon"
       description="Upload your own letter templates, then pick them from &quot;Draft a letter&quot; to guide a draft."
     >
       <template #actions>
-        <Button :aria-expanded="showForm" @click="showForm = !showForm">
+        <Button class="bg-brand-gradient border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" :aria-expanded="showForm" @click="showForm = !showForm">
           <PlusIcon v-if="!showForm" class="size-4" />
           <XIcon v-else class="size-4" />
           {{ showForm ? 'Cancel' : 'Upload template' }}
@@ -284,7 +285,7 @@ onMounted(loadTemplates)
 
           <div class="flex justify-end gap-2">
             <Button type="button" variant="outline" @click="showForm = false">Cancel</Button>
-            <Button type="submit" :loading="creating">
+            <Button type="submit" class="bg-brand-gradient border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" :loading="creating">
               {{ creating ? 'Saving…' : 'Save template' }}
             </Button>
           </div>
@@ -293,7 +294,10 @@ onMounted(loadTemplates)
     </Card>
 
     <section class="mb-8">
-      <h2 class="mb-2 text-sm font-medium text-muted-foreground">Your templates</h2>
+      <h2 class="relative mb-3 flex items-center gap-2 pl-3 text-sm font-semibold text-foreground">
+        <span class="bg-brand-gradient absolute left-0 h-4 w-1 rounded-full" />
+        Your templates
+      </h2>
 
       <div v-if="loading && ownTemplates.length === 0" class="space-y-2">
         <Skeleton v-for="i in 2" :key="i" class="h-20 w-full rounded-xl" />
@@ -301,13 +305,13 @@ onMounted(loadTemplates)
 
       <div
         v-else-if="ownTemplates.length === 0"
-        class="surface p-8 text-center text-sm text-muted-foreground"
+        class="hero-gradient surface p-8 text-center text-sm text-muted-foreground"
       >
         No custom templates yet. Upload your own above to use them when drafting a letter.
       </div>
 
       <div v-else class="space-y-2">
-        <Card v-for="template in ownTemplates" :key="template.id">
+        <Card v-for="(template, i) in ownTemplates" :key="template.id" class="tile-interactive batayan-row-in" :style="{ '--row-delay': `${i * 45}ms` }">
           <CardContent class="p-4">
             <div class="flex items-start gap-3">
               <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -339,18 +343,21 @@ onMounted(loadTemplates)
     </section>
 
     <section>
-      <h2 class="mb-2 text-sm font-medium text-muted-foreground">System templates</h2>
+      <h2 class="relative mb-3 flex items-center gap-2 pl-3 text-sm font-semibold text-foreground">
+        <span class="bg-brand-gradient absolute left-0 h-4 w-1 rounded-full" />
+        System templates
+      </h2>
 
       <div v-if="loading && systemTemplates.length === 0" class="space-y-2">
         <Skeleton v-for="i in 2" :key="i" class="h-20 w-full rounded-xl" />
       </div>
 
-      <div v-else-if="systemTemplates.length === 0" class="surface p-8 text-center text-sm text-muted-foreground">
+      <div v-else-if="systemTemplates.length === 0" class="hero-gradient surface p-8 text-center text-sm text-muted-foreground">
         No system templates yet.
       </div>
 
       <div v-else class="space-y-2">
-        <Card v-for="group in groupedSystem" :key="group.category">
+        <Card v-for="(group, i) in groupedSystem" :key="group.category" class="tile-interactive batayan-row-in" :style="{ '--row-delay': `${i * 45}ms` }">
           <CardContent class="p-4">
             <p class="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               <ScaleIcon v-if="group.category === 'legal'" class="size-3.5 text-primary" />

@@ -13,7 +13,6 @@ import AdvisoryReview from '~/components/AdvisoryReview.vue'
 import { extractTodoItems } from '~/utils/todos'
 import { useBillingStore } from '~/stores/billing'
 import { useAuthStore } from '~/stores/auth'
-import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
 import ChatThread from '~/components/chat/ChatThread.vue'
 import { formatChoiceSubmission, type ChoiceAnswer } from '~/components/chat/ChatChoicePrompt.vue'
@@ -24,7 +23,6 @@ import { useStarterSuggestions, type SuggestionContext } from '~/composables/use
 import ChatConversationList from '~/components/chat/ChatConversationList.vue'
 import CitationsPanel from '~/components/chat/CitationsPanel.vue'
 import { citationMarkFrom, collectCitations, findCitation, type CitationMark } from '~/utils/citations'
-import { deriveDocumentTitle } from '~/utils/documentTitle'
 import type { ChatMessage } from '~/types/chat'
 import type { CitationTarget } from '~/types/citations'
 import ChatScrollToBottom from '~/components/chat/ChatScrollToBottom.vue'
@@ -140,6 +138,19 @@ const rightPanel = ref<RightPanel | null>(null)
 const showTodos = computed(() => rightPanel.value === 'tasks')
 const showCitations = computed(() => rightPanel.value === 'citations')
 
+const advisoryReviewRef = useTemplateRef<{ reveal: () => void }>('advisoryReviewRef')
+
+/**
+ * A receipt under the answer was clicked: take the reader to what it counted.
+ *
+ * The tasks live in the right rail, the flags in their own review sheet, so
+ * "open what this refers to" is two different actions behind one affordance.
+ */
+function openReceiptPanel(panel: 'tasks' | 'advisories') {
+  if (panel === 'tasks') rightPanel.value = 'tasks'
+  else advisoryReviewRef.value?.reveal()
+}
+
 function togglePanel(panel: RightPanel) {
   rightPanel.value = rightPanel.value === panel ? null : panel
 }
@@ -172,8 +183,6 @@ const threadContent = computed<HTMLElement | null>(() => (threadRef.value?.$el a
  */
 const { scrollToBottom } = useStickToBottom(messagesContainer, threadContent)
 
-const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
-
 /**
  * Files attached from the composer are ordinary uploads: they go through
  * POST /documents and the usual ingestion queue, then retrieval picks them up
@@ -182,24 +191,6 @@ const { previewDoc, previewWidth, startResize, openExport, closePreview } = useD
 const attachmentsState = useChatAttachments()
 
 const mainChatEl = ref<HTMLElement | null>(null)
-
-// Reserve a minimum comfortable chat width so the PDF preview resize can never
-// cross into the conversation area.
-const CHAT_MIN_WIDTH = 400
-
-function previewMaxWidth(): number {
-  const chatWidth = mainChatEl.value?.getBoundingClientRect().width ?? 0
-
-  // The chat section and the preview panel are flex siblings, so only their SUM
-  // is stable while dragging — see the same guard on the case view.
-  return Math.max(chatWidth + previewWidth.value - CHAT_MIN_WIDTH, MIN_PREVIEW_WIDTH)
-}
-
-// The preview is the widest panel and is resizable, so it takes the rail rather
-// than opening beside it.
-watch(previewDoc, (doc) => {
-  if (doc) rightPanel.value = null
-})
 
 const todoStore = useTodoStore()
 const advisoryStore = useAdvisoryStore()
@@ -370,6 +361,17 @@ async function handleChoiceAnswer(answers: ChoiceAnswer[]) {
   await send(formatChoiceSubmission(answers))
 }
 
+/**
+ * Keep what has been typed into the intake form.
+ *
+ * The form component unmounts whenever it is closed, so without this every
+ * answer entered so far is destroyed by the act of closing it to re-read the
+ * conversation the answers come from.
+ */
+function saveIntakeDraft(values: Record<string, string>) {
+  if (activeId.value) chatStream.saveIntakeDraft(activeId.value, values)
+}
+
 function handleIntakeCancel() {
   if (activeId.value) chatStream.dismissIntake(activeId.value)
 }
@@ -392,15 +394,7 @@ function handleMarkdownClick(event: MouseEvent, msg: Message) {
   if (mark !== null) {
     event.preventDefault()
     revealCitation(mark, msg as ChatMessage)
-    return
   }
-
-  const link = (event.target as HTMLElement).closest('a[data-export-url]')
-  if (!link) return
-  event.preventDefault()
-  const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
-  const title = deriveDocumentTitle(msg.content)
-  void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
 }
 
 /**
@@ -456,11 +450,6 @@ async function rateMessage(m: Message, feedback: 'up' | 'down') {
   } finally {
     ratingBusy.value = null
   }
-}
-
-function handleExport(m: Message, type: 'word' | 'pdf') {
-  const title = deriveDocumentTitle(m.content)
-  void openExport(m.content, type, title, m.template_id ? m.id : undefined)
 }
 
 /**
@@ -656,7 +645,6 @@ watch(activeId, async (id) => {
     <section
       ref="mainChatEl"
       class="surface flex min-w-0 flex-1 flex-col overflow-hidden"
-      :class="previewDoc ? 'lg:min-w-[400px]' : ''"
     >
       <div class="flex items-center justify-between border-b px-2 py-2.5 sm:px-4">
           <div class="flex min-w-0 items-center gap-1.5">
@@ -753,6 +741,9 @@ watch(activeId, async (id) => {
           :awaiting-intake="awaitingIntake"
           :intake-dismissed="intakeDismissed"
           :has-intake-fields="intakeFields !== null"
+          :intake-fields="intakeFields"
+          :intake-defaults="intakeDefaults"
+          :intake-draft="turn?.intakeDraft ?? {}"
           :choice-questions="choiceQuestions"
           :last-question="lastQuestion"
           :busy="busy"
@@ -763,12 +754,21 @@ watch(activeId, async (id) => {
           :active-search-occurrence="searchActiveOccurrence"
           :experience-level="experienceLevel"
           :suggestion-context="suggestionContext"
+          :letter-draft="turn?.letterDraft ?? null"
+          :web-search="turn?.webSearch ?? null"
+          :stream-notices="turn?.notices ?? []"
+          :receipts="turn?.receipts ?? []"
+          :turn-started-at="turn?.startedAt ?? null"
           @markdown-click="handleMarkdownClick"
           @rate="rateMessage"
-          @export="handleExport"
           @retry="retryLast"
+          @regenerate="(question: string) => send(question)"
+          @open-panel="openReceiptPanel"
           @abandon-intake="abandonIntake"
           @reopen-intake="reopenIntake"
+          @submit-intake="handleIntakeSubmit"
+          @cancel-intake="handleIntakeCancel"
+          @save-intake-draft="saveIntakeDraft"
           @answer-choice="handleChoiceAnswer"
           @select-suggestion="(prompt) => input = prompt"
         />
@@ -780,7 +780,7 @@ watch(activeId, async (id) => {
           Anchored to the conversation column, not the viewport, so it stays
           clear of whichever panel is open in the right rail.
         -->
-        <AdvisoryReview :conversation-id="activeId" />
+        <AdvisoryReview ref="advisoryReviewRef" :conversation-id="activeId" />
       </div>
 
       <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
@@ -824,32 +824,6 @@ watch(activeId, async (id) => {
       :messages="(thread as ChatMessage[])"
       :target="citationTarget"
       @close="rightPanel = null"
-    />
-
-    <DocumentPreviewPanel
-      v-if="previewDoc && previewDoc.type !== 'word'"
-      :preview="previewDoc"
-      :width="previewWidth"
-      resizable
-      @start-resize="startResize($event, previewMaxWidth)"
-      @close="closePreview"
-    />
-
-    <WordPreviewDialog
-      v-if="previewDoc?.type === 'word'"
-      :title="previewDoc.title"
-      :blob-url="previewDoc.blobUrl"
-      :loading="previewDoc.loading"
-      :error="previewDoc.error"
-      @close="closePreview"
-    />
-
-    <IntakeFormSheet
-      v-if="intakeFields && !intakeDismissed"
-      :fields="intakeFields"
-      :initial-values="intakeDefaults ?? {}"
-      @submit="handleIntakeSubmit"
-      @cancel="handleIntakeCancel"
     />
 
     <Teleport to="body">

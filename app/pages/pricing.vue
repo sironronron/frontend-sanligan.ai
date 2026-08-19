@@ -118,6 +118,37 @@ async function joinWorkspace(invite: OrgInvitation) {
   }
 }
 
+/**
+ * The payment gateway is being finalised, so the price list is shown but
+ * blocked: it is blurred underneath an overlay that still lets someone with a
+ * referral code in. Keeping the table visible (rather than hidden) reassures
+ * the reader the pricing exists; the blur makes clear it is not live yet.
+ */
+const gatewayFinalizing = ref(true)
+const referralCode = ref('')
+const referralError = ref('')
+const redeemingReferral = ref(false)
+
+const canRedeemReferral = computed(
+  () => referralCode.value.trim().length > 0 && !redeemingReferral.value,
+)
+
+async function submitReferralCode() {
+  if (!canRedeemReferral.value) return
+
+  referralError.value = ''
+  redeemingReferral.value = true
+
+  try {
+    await billing.redeemTrialCode(referralCode.value.trim())
+    await navigateTo({ path: '/welcome', query: { next: '/chat' } })
+  } catch (err) {
+    referralError.value = parseApiError(err, 'That code could not be redeemed.').message
+  } finally {
+    redeemingReferral.value = false
+  }
+}
+
 const onTrial = computed(() => billing.subscription?.trial.on_trial === true)
 const trialDaysRemaining = computed(() => billing.subscription?.trial.days_remaining ?? null)
 
@@ -579,7 +610,76 @@ onMounted(async () => {
         The Pro column inverts onto pine end to end; the feature column is
         sticky so its labels stay in view while the table scrolls sideways.
       -->
-      <div class="surface overflow-x-auto">
+      <div class="relative">
+        <div
+          v-if="gatewayFinalizing"
+          class="absolute inset-0 z-30 flex items-center justify-center p-4"
+        >
+          <div
+            class="w-full max-w-4xl overflow-hidden rounded-3xl border border-cream/15 bg-pine text-cream shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gateway-notice-title"
+          >
+            <div class="grid divide-y divide-cream/15 md:grid-cols-2 md:divide-x md:divide-y-0">
+              <div class="flex flex-col items-center justify-center gap-4 px-10 py-14 text-center">
+                <div class="flex size-14 items-center justify-center rounded-full bg-cream/10">
+                  <ClockIcon class="size-6 text-peach" />
+                </div>
+                <h2 id="gateway-notice-title" class="font-heading text-2xl font-medium tracking-tight text-cream">
+                  Sorry — our checkout is still in its pajamas
+                </h2>
+                <p class="max-w-md text-base leading-relaxed text-cream/80">
+                  We're putting the finishing touches on our payment gateway, so paid
+                  plans are taking a short nap. Our apologies for the wait — we'll have
+                  you subscribing in no time.
+                </p>
+              </div>
+
+              <div class="flex flex-col items-center justify-center gap-4 px-10 py-14 text-center">
+                <p class="text-base font-medium text-cream">
+                  Already have a referral code?
+                </p>
+                <p class="max-w-md text-sm leading-relaxed text-cream/80">
+                  Enter it below to claim your access.
+                </p>
+
+                <form class="mt-2 flex w-full max-w-sm gap-2" novalidate @submit.prevent="submitReferralCode">
+                  <Input
+                    v-model="referralCode"
+                    placeholder="BETA-2026"
+                    autocapitalize="characters"
+                    autocomplete="off"
+                    spellcheck="false"
+                    class="h-11 font-mono tracking-wider uppercase"
+                    :aria-invalid="referralError ? true : undefined"
+                    :aria-describedby="referralError ? 'referral-code-error' : undefined"
+                  />
+                  <Button type="submit" class="h-11 shrink-0" :loading="redeemingReferral" :disabled="!canRedeemReferral">
+                    <CheckIcon v-if="!redeemingReferral" class="size-4" />
+                    Redeem
+                  </Button>
+                </form>
+
+                <p
+                  v-if="referralError"
+                  id="referral-code-error"
+                  role="alert"
+                  class="mt-2 flex items-start justify-center gap-1.5 text-xs text-peach"
+                >
+                  <CircleAlertIcon class="mt-px size-3.5 shrink-0" />
+                  <span>{{ referralError }}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          :class="gatewayFinalizing ? 'pointer-events-none select-none blur-[6px] saturate-50' : ''"
+          aria-hidden="true"
+        >
+        <div class="surface overflow-x-auto">
         <table class="w-full min-w-[52rem] border-separate border-spacing-0 text-left">
           <thead>
             <tr>
@@ -717,8 +817,13 @@ onMounted(async () => {
           </tfoot>
         </table>
       </div>
+        </div>
+      </div>
 
-      <p class="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-[0.8125rem] text-muted-foreground">
+      <p
+        v-if="!gatewayFinalizing"
+        class="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-center text-[0.8125rem] text-muted-foreground"
+      >
         <span>No contract, cancel any time</span>
         <span aria-hidden="true" class="text-muted-foreground/40">·</span>
         <span>Secure checkout via PayMongo</span>
@@ -726,7 +831,9 @@ onMounted(async () => {
         <span>All prices in Philippine pesos</span>
       </p>
 
-      <TrialCodeRedeem v-if="auth.user && !hasActiveSubscription && !onTrial" />
+      <TrialCodeRedeem
+        v-if="!gatewayFinalizing && auth.user && !hasActiveSubscription && !onTrial"
+      />
     </template>
 
     <template v-else>

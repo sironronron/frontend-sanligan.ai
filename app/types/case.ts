@@ -1,6 +1,7 @@
 /** Shapes shared between the case page and the panels it hands data to. */
 
 import type { AppliedLabel } from '~/stores/labels'
+import type { TiptapDoc } from '~/types/tiptap'
 
 export interface CaseDocument {
   id: string
@@ -25,6 +26,10 @@ export interface GeneratedDocument {
   conversation_title: string | null
   title: string
   content: string
+  letter_draft?: {
+    content: TiptapDoc
+    title: string | null
+  } | null
   created_at: string
 }
 

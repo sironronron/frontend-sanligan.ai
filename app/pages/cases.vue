@@ -38,6 +38,8 @@ const creating = ref(false)
  */
 const preparing = ref<CaseIntakePayload | null>(null)
 const prepared = ref<LegalCase | null>(null)
+/** Flips once the case page is mounted, so the overlay fades over it. */
+const dismiss = ref(false)
 
 /**
  * Sorting is client-side: the list is already fully in memory after the
@@ -241,10 +243,16 @@ async function handlePrepared() {
   showIntake.value = false
   await router.push({ path: `/cases/${created.id}` })
 
+  // The case page is now mounted underneath; only now is it safe to fade the
+  // "ready" overlay out over it, instead of cutting the animation short before
+  // the redirect lands.
+  dismiss.value = true
+
   setTimeout(() => {
     preparing.value = null
     prepared.value = null
     creating.value = false
+    dismiss.value = false
   }, 400)
 }
 
@@ -268,7 +276,7 @@ onMounted(async () => {
 <template>
   <div>
     <div v-if="!isDetail" class="mx-auto w-full max-w-5xl px-4 py-6">
-      <PageHeader title="Cases" :description="summary">
+      <PageHeader title="Cases" :description="summary" :icon="FolderOpenIcon">
         <template #actions>
           <Button
             variant="outline"
@@ -280,7 +288,7 @@ onMounted(async () => {
             <component :is="archived ? ArchiveIcon : FolderOpenIcon" class="size-4" />
             {{ archived ? 'Archived' : 'Active' }}
           </Button>
-          <Button data-tour="cases-new" class="gap-1.5" @click="showIntake = true">
+          <Button data-tour="cases-new" class="bg-brand-gradient gap-1.5 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="showIntake = true">
             <PlusIcon class="size-4" />
             New Case
           </Button>
@@ -401,20 +409,20 @@ onMounted(async () => {
           A filtered-to-nothing list and a genuinely empty workspace need
           different offers: one wants its filters back, the other wants a case.
         -->
-        <div v-else-if="sortedCases.length === 0 && isFiltered" class="surface-inset border-dashed py-14 text-center">
+        <div v-else-if="sortedCases.length === 0 && isFiltered" class="hero-gradient surface-inset border-dashed py-14 text-center">
           <SearchIcon class="mx-auto size-7 text-muted-foreground" />
           <p class="mt-3 text-sm font-medium">No cases match these filters</p>
           <p class="mt-1 text-xs text-muted-foreground">Try a broader search, or clear the filters to see everything.</p>
           <Button variant="outline" size="sm" class="mt-4" @click="clearFilters">Clear filters</Button>
         </div>
 
-        <div v-else-if="sortedCases.length === 0" class="surface-inset border-dashed py-14 text-center">
+        <div v-else-if="sortedCases.length === 0" class="hero-gradient surface-inset border-dashed py-14 text-center">
           <FolderOpenIcon class="mx-auto size-7 text-muted-foreground" />
           <p class="mt-3 text-sm font-medium">{{ archived ? 'No archived cases' : 'No cases yet' }}</p>
           <p class="mt-1 text-xs text-muted-foreground">
             {{ archived ? 'Restore a case from the archive to keep working on it.' : 'Create your first case to start tracking it.' }}
           </p>
-          <Button v-if="!archived" class="mt-4 gap-1.5" @click="showIntake = true">
+          <Button v-if="!archived" class="bg-brand-gradient mt-4 gap-1.5 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="showIntake = true">
             <PlusIcon class="size-4" />
             New Case
           </Button>
@@ -422,24 +430,34 @@ onMounted(async () => {
 
         <!-- List: the dense row this page has always used. -->
         <div v-else-if="view === 'list'" class="space-y-2">
-          <CaseListItem
-            v-for="c in sortedCases"
+          <div
+            v-for="(c, i) in sortedCases"
             :key="c.id"
-            :case="c"
-            @open="openCase"
-            @progress="openProgress"
-          />
+            class="batayan-row-in"
+            :style="{ '--row-delay': `${i * 35}ms` }"
+          >
+            <CaseListItem
+              :case="c"
+              @open="openCase"
+              @progress="openProgress"
+            />
+          </div>
         </div>
 
         <!-- Card: fewer per screen, but the title and the roster get room. -->
         <div v-else-if="view === 'card'" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <CaseCardItem
-            v-for="c in sortedCases"
+          <div
+            v-for="(c, i) in sortedCases"
             :key="c.id"
-            :case="c"
-            @open="openCase"
-            @progress="openProgress"
-          />
+            class="batayan-row-in"
+            :style="{ '--row-delay': `${i * 45}ms` }"
+          >
+            <CaseCardItem
+              :case="c"
+              @open="openCase"
+              @progress="openProgress"
+            />
+          </div>
         </div>
 
         <!--
@@ -462,13 +480,15 @@ onMounted(async () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              <CaseTableRow
-                v-for="c in sortedCases"
-                :key="c.id"
-                :case="c"
-                @open="openCase"
-                @progress="openProgress"
-              />
+            <CaseTableRow
+              v-for="(c, i) in sortedCases"
+              :key="c.id"
+              class="batayan-row-in"
+              :style="{ '--row-delay': `${i * 30}ms` }"
+              :case="c"
+              @open="openCase"
+              @progress="openProgress"
+            />
             </TableBody>
           </Table>
         </div>
@@ -498,6 +518,7 @@ onMounted(async () => {
       :status="preparing.status"
       :priority="preparing.priority"
       :done="!!prepared"
+      :dismiss="dismiss"
       @finished="handlePrepared"
     />
   </div>

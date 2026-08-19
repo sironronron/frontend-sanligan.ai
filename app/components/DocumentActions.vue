@@ -91,7 +91,7 @@ const iconClass = computed(() => (props.compact ? 'size-3.5' : 'size-4'))
     <Button
       variant="ghost"
       size="icon"
-      :class="[sizeClass, 'text-muted-foreground hover:text-foreground', attaching ? 'bg-accent text-foreground' : '']"
+      :class="[sizeClass, 'text-muted-foreground hover:text-foreground', attaching ? 'bg-accent text-accent-foreground' : '']"
       :aria-label="`Attach ${document.title} to a case`"
       @click="emit('toggleAttach')"
     >

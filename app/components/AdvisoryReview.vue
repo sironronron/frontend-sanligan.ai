@@ -41,6 +41,17 @@ const props = withDefaults(defineProps<{
 const store = useAdvisoryStore()
 
 const open = ref(false)
+
+/**
+ * Open the review from outside — the receipt chip under the answer that filed
+ * these, which is where the reader is looking when they are first told the
+ * flags exist.
+ */
+function reveal() {
+  if (items.value.length > 0) open.value = true
+}
+
+defineExpose({ reveal })
 const busyId = ref<string | null>(null)
 const noteFor = ref<string | null>(null)
 const noteDraft = ref('')

@@ -40,7 +40,7 @@ export function formatChoiceSubmission(answers: ChoiceAnswer[]): string {
 </script>
 
 <script setup lang="ts">
-import { CheckIcon, PencilLineIcon } from '@lucide/vue'
+import { AlertCircleIcon, ArrowRightIcon, CheckIcon, PencilLineIcon } from '@lucide/vue'
 
 const props = withDefaults(defineProps<{
   questions: ChoiceQuestion[]
@@ -112,6 +112,29 @@ const answered = computed(() =>
   props.questions.every((question) => selectionsFor(question).length > 0),
 )
 
+/**
+ * Arrow keys move between the options of one question, the way a native radio
+ * group does. These are buttons rather than inputs — each carries a label and
+ * a description, which a radio cannot — so the behaviour a reader expects from
+ * a group of choices has to be supplied.
+ */
+function onOptionKeydown(event: KeyboardEvent, question: ChoiceQuestion, position: number) {
+  const keys = ['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft']
+  if (!keys.includes(event.key)) return
+
+  event.preventDefault()
+
+  // The escape hatch is the last stop in the ring, so every answer to the
+  // question is reachable without leaving the keyboard.
+  const total = question.options.length + 1
+  const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : -1
+  const next = (position + step + total) % total
+
+  const group = (event.currentTarget as HTMLElement).closest('[data-options]')
+
+  group?.querySelectorAll<HTMLElement>('[data-option]')[next]?.focus()
+}
+
 function handleSubmit() {
   const unanswered = props.questions.filter((question) => selectionsFor(question).length === 0)
 
@@ -151,29 +174,49 @@ function handleSubmit() {
 </script>
 
 <template>
-  <div class="flex items-start gap-3">
-    <div class="w-full max-w-[85%] space-y-3 rounded-2xl border bg-card px-4 py-3.5 shadow-sm">
-      <div v-for="question in questions" :key="question.id" class="space-y-2">
-        <div class="space-y-1.5">
-          <span class="inline-flex items-center rounded-full border border-primary/25 bg-primary/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+  <section class="batayan-turn-in w-full space-y-4 rounded-2xl border bg-card px-4 py-3.5 shadow-sm">
+    <div
+      v-for="(question, questionIndex) in questions"
+      :key="question.id"
+      role="group"
+      :aria-label="question.question"
+      class="space-y-2"
+      :class="questionIndex > 0 ? 'border-t pt-4' : ''"
+    >
+      <div class="space-y-1.5">
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center rounded-full border border-primary/25 bg-primary/[0.07] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
             {{ question.header }}
           </span>
-          <p class="text-sm font-medium leading-snug">{{ question.question }}</p>
-          <p v-if="question.multi_select" class="text-[11px] text-muted-foreground">
-            Pick as many as apply
-          </p>
+          <!-- Answered state is worth showing on a multi-question set, where
+               the reader has to keep track of which ones are still open. -->
+          <span
+            v-if="questions.length > 1 && selectionsFor(question).length > 0"
+            class="inline-flex items-center gap-1 text-[10px] font-medium text-primary"
+          >
+            <CheckIcon class="size-2.5" />
+            Answered
+          </span>
         </div>
+        <p class="text-sm font-medium leading-snug">{{ question.question }}</p>
+        <p v-if="question.multi_select" class="text-[11px] text-muted-foreground">
+          Pick as many as apply
+        </p>
+      </div>
 
-        <div class="space-y-1.5">
+      <div class="space-y-1.5" data-options>
           <button
-            v-for="option in question.options"
+            v-for="(option, position) in question.options"
             :key="option.label"
             type="button"
-            :aria-pressed="isPicked(question, option.label)"
+            data-option
+            :role="question.multi_select ? 'checkbox' : 'radio'"
+            :aria-checked="isPicked(question, option.label)"
             :disabled="busy"
-            class="flex w-full items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-60"
-            :class="isPicked(question, option.label) ? 'border-primary bg-primary/5' : 'border-border'"
+            class="flex w-full items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+            :class="isPicked(question, option.label) ? 'border-primary bg-primary/[0.07]' : 'border-border'"
             @click="toggle(question, option.label)"
+            @keydown="onOptionKeydown($event, question, position)"
           >
             <span
               class="mt-0.5 flex size-4 shrink-0 items-center justify-center border transition-colors"
@@ -196,11 +239,14 @@ function handleSubmit() {
                the user's own, and it overrides the options above. -->
           <button
             type="button"
-            :aria-pressed="choseOther(question)"
+            data-option
+            :role="question.multi_select ? 'checkbox' : 'radio'"
+            :aria-checked="choseOther(question)"
             :disabled="busy"
-            class="flex w-full items-start gap-2.5 rounded-xl border border-dashed px-3 py-2.5 text-left transition-colors hover:bg-accent/50 disabled:pointer-events-none disabled:opacity-60"
-            :class="choseOther(question) ? 'border-primary bg-primary/5' : 'border-border'"
+            class="flex w-full items-start gap-2.5 rounded-xl border border-dashed px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+            :class="choseOther(question) ? 'border-primary bg-primary/[0.07]' : 'border-border'"
             @click="toggle(question, OTHER)"
+            @keydown="onOptionKeydown($event, question, question.options.length)"
           >
             <span
               class="mt-0.5 flex size-4 shrink-0 items-center justify-center border transition-colors"
@@ -222,26 +268,34 @@ function handleSubmit() {
             </span>
           </button>
 
-          <Textarea
-            v-if="choseOther(question)"
-            v-model="explanations[question.id]"
-            rows="2"
-            :disabled="busy"
-            class="resize-none text-sm"
-            :placeholder="`What would you rather I do about ${question.header.toLowerCase()}?`"
-          />
-        </div>
-      </div>
-
-      <p v-if="validationError" class="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-        {{ validationError }}
-      </p>
-
-      <div class="flex justify-end pt-0.5">
-        <Button size="sm" class="h-8 px-4 text-xs" :disabled="busy || !answered" @click="handleSubmit">
-          {{ busy ? 'Working…' : 'Continue' }}
-        </Button>
+        <Textarea
+          v-if="choseOther(question)"
+          v-model="explanations[question.id]"
+          rows="2"
+          :disabled="busy"
+          class="resize-none text-sm"
+          :placeholder="`What would you rather I do about ${question.header.toLowerCase()}?`"
+        />
       </div>
     </div>
-  </div>
+
+    <p
+      v-if="validationError"
+      class="flex items-center gap-1.5 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive"
+      role="alert"
+    >
+      <AlertCircleIcon class="size-3.5 shrink-0" />
+      {{ validationError }}
+    </p>
+
+    <div class="flex items-center justify-between gap-3 border-t pt-3">
+      <p class="min-w-0 text-[11px] text-muted-foreground">
+        {{ answered ? 'Ready to continue' : 'Pick an answer to carry on' }}
+      </p>
+      <Button size="sm" class="h-8 gap-1.5 px-4 text-xs" :disabled="busy || !answered" @click="handleSubmit">
+        {{ busy ? 'Working…' : 'Continue' }}
+        <ArrowRightIcon v-if="!busy" class="size-3.5" />
+      </Button>
+    </div>
+  </section>
 </template>

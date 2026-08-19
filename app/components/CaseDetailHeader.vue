@@ -139,8 +139,15 @@ const scheduleSummary = computed(() => {
 
       <div class="flex flex-wrap items-center gap-1.5">
         <DropdownMenu v-if="editable">
-          <DropdownMenuTrigger class="shrink-0 rounded-4xl" :aria-label="`Case status: ${props.case.status}`">
-            <CaseStatusBadge :status="props.case.status" interactive>
+          <DropdownMenuTrigger
+            class="inline-flex h-8 shrink-0 items-center rounded-lg border border-border bg-card px-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            :aria-label="`Case status: ${props.case.status}`"
+          >
+            <CaseStatusBadge
+              :status="props.case.status"
+              interactive
+              class="h-auto rounded-lg border-0 bg-transparent p-0 px-1"
+            >
               <ChevronDownIcon class="size-3 opacity-60" />
             </CaseStatusBadge>
           </DropdownMenuTrigger>
@@ -158,9 +165,13 @@ const scheduleSummary = computed(() => {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <CaseStatusBadge v-else :status="props.case.status" />
+        <CaseStatusBadge v-else :status="props.case.status" class="h-8 rounded-lg" />
 
-        <CasePriorityBadge :priority="props.case.priority" show-quiet />
+        <CasePriorityBadge
+          :priority="props.case.priority"
+          show-quiet
+          class="h-8 rounded-lg px-2.5"
+        />
 
         <span
           v-if="readOnly"
@@ -178,7 +189,7 @@ const scheduleSummary = computed(() => {
           <PopoverTrigger as-child>
             <button
               type="button"
-              class="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              class="flex h-8 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               :class="dueStripClass"
               :aria-label="`Case schedule: ${scheduleSummary}`"
             >
@@ -207,7 +218,7 @@ const scheduleSummary = computed(() => {
           :title="canManageAssignees ? 'Manage who is on this case' : 'People on this case'"
           @click="peopleOpen = true"
         >
-          <CaseMemberAvatars :owner="props.case.owner" :assignees="props.case.assignees" />
+          <CaseMemberAvatars :owner="props.case.owner" :assignees="props.case.assignees" size="md" />
           <UserPlusIcon v-if="canManageAssignees" class="size-3.5 text-muted-foreground" />
         </button>
 

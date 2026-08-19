@@ -6,6 +6,7 @@ import {
   FileTextIcon,
   ListChecksIcon,
   Loader2Icon,
+  PinIcon,
   PlusIcon,
   QuoteIcon,
   SearchIcon,
@@ -16,13 +17,11 @@ import { useAdvisoryStore } from '~/stores/advisories'
 import { extractTodoItems } from '~/utils/todos'
 import { useLabelStore } from '~/stores/labels'
 import { useAuthStore } from '~/stores/auth'
-import { useDocumentExport } from '~/composables/useDocumentExport'
 import DocumentViewer from '~/components/DocumentViewer.vue'
 import CaseIntakeForm, { type CaseIntakePayload } from '~/components/CaseIntakeForm.vue'
 import TemplatePicker, { type TemplateOption } from '~/components/TemplatePicker.vue'
 import TaskPanel from '~/components/TaskPanel.vue'
 import AdvisoryReview from '~/components/AdvisoryReview.vue'
-import IntakeFormSheet from '~/components/IntakeFormSheet.vue'
 import ChatThread from '~/components/chat/ChatThread.vue'
 import { formatChoiceSubmission, type ChoiceAnswer } from '~/components/chat/ChatChoicePrompt.vue'
 import ChatComposer from '~/components/chat/ChatComposer.vue'
@@ -37,7 +36,6 @@ import type { PanelToggle } from '~/components/CaseDetailHeader.vue'
 import type { ScheduleEvent } from '~/components/CaseMiniCalendar.vue'
 import type { ChatMessage, ChatMessageAttachment } from '~/types/chat'
 import { citationMarkFrom, collectCitations, findCitation, type CitationMark } from '~/utils/citations'
-import { deriveDocumentTitle } from '~/utils/documentTitle'
 import type { CitationTarget } from '~/types/citations'
 import type { CaseDocument, GeneratedDocument } from '~/types/case'
 import { THREAD_ICONS, threadPurposeKind } from '~/lib/threads'
@@ -91,7 +89,6 @@ const labelStore = useLabelStore()
 const auth = useAuthStore()
 
 const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
-const { downloadExport } = useDocumentExport()
 const { download: downloadDocument } = useDocumentFile()
 
 const caseDetail = ref<LegalCase | null>(null)
@@ -169,6 +166,14 @@ const rightPanel = ref<RightPanel | null>('tasks')
 const showTasks = computed(() => rightPanel.value === 'tasks')
 const showCitations = computed(() => rightPanel.value === 'citations')
 
+const advisoryReviewRef = useTemplateRef<{ reveal: () => void }>('advisoryReviewRef')
+
+/** A receipt under the answer was clicked: take the reader to what it counted. */
+function openReceiptPanel(panel: 'tasks' | 'advisories') {
+  if (panel === 'tasks') rightPanel.value = 'tasks'
+  else advisoryReviewRef.value?.reveal()
+}
+
 function togglePanel(panel: RightPanel) {
   rightPanel.value = rightPanel.value === panel ? null : panel
 }
@@ -217,6 +222,17 @@ const newThreadPurpose = ref('')
 const creating = ref(false)
 const quickPurposes = ['Draft a letter', 'Legal research', 'Summarize facts']
 
+/** Pinned threads lead the chips; within each rank the newest activity wins. */
+const sortedThreads = computed(() =>
+  [...threads.value].sort((a, b) => {
+    const aPinned = a.pinned_at ? 0 : 1
+    const bPinned = b.pinned_at ? 0 : 1
+    if (aPinned !== bPinned) return aPinned - bPinned
+    return new Date(b.last_message_at ?? b.created_at).getTime()
+      - new Date(a.last_message_at ?? a.created_at).getTime()
+  }),
+)
+
 /** What the server has for the open thread; the live turn is added on top. */
 const messages = ref<Message[]>([])
 const input = ref('')
@@ -250,7 +266,6 @@ let documentPollTimer: ReturnType<typeof setInterval> | null = null
 
 const generatedDocuments = ref<GeneratedDocument[]>([])
 const generatedLoading = ref(false)
-const exporting = ref<string | null>(null)
 
 function hasPendingDocuments() {
   return caseDocuments.value.some((doc) => doc.status === 'queued' || doc.status === 'processing')
@@ -312,17 +327,14 @@ async function loadGeneratedDocuments() {
   }
 }
 
-async function downloadGenerated(doc: GeneratedDocument, type: 'word' | 'pdf') {
-  const key = `${doc.id}:${type}`
-  if (exporting.value === key) return
-  exporting.value = key
-  try {
-    await downloadExport(doc.content, type, doc.title)
-  } catch (err: any) {
-    toast.error(err?.message ?? 'Could not download the document')
-  } finally {
-    exporting.value = null
-  }
+async function openGeneratedLetter(doc: GeneratedDocument) {
+  const draft = doc.letter_draft
+  if (!draft || !draft.content) return
+  useLetterDraftPanel().openLetterDraft({
+    content: draft.content,
+    title: doc.title,
+    messageId: doc.id,
+  })
 }
 
 async function uploadCaseDocuments(files: File[]) {
@@ -396,8 +408,6 @@ async function updateDocumentCategories(doc: CaseDocument, ids: string[]) {
   }
 }
 
-const { previewDoc, previewWidth, startResize, openExport, closePreview } = useDocumentExport()
-
 /**
  * Composer attachments take the same path as the case's upload panel — POST
  * /documents with this case's id, then the usual ingestion queue — so they land
@@ -408,26 +418,7 @@ const attachmentsState = useChatAttachments({
   onUploaded: loadCaseDocuments,
 })
 
-watch(previewDoc, (doc) => {
-  if (doc) rightPanel.value = null
-})
-
 const mainChatEl = ref<HTMLElement | null>(null)
-
-// Reserve a minimum comfortable chat width so the PDF preview resize can never
-// cross into the conversation area.
-const CHAT_MIN_WIDTH = 400
-
-function previewMaxWidth(): number {
-  const chatWidth = mainChatEl.value?.getBoundingClientRect().width ?? 0
-
-  // The chat section and the preview panel are flex siblings, so the chat
-  // shrinks by exactly what the panel gains: only their SUM is stable while
-  // dragging. Subtracting the reserve from the chat width alone made the limit
-  // fall as the panel grew, so the panel was clamped back, the chat grew, the
-  // limit rose, and the panel grew again — the stutter at the boundary.
-  return Math.max(chatWidth + previewWidth.value - CHAT_MIN_WIDTH, MIN_PREVIEW_WIDTH)
-}
 
 const conversationId = computed(() => activeConversationId.value ?? caseDetail.value?.conversation_id ?? null)
 
@@ -805,6 +796,17 @@ function handleChoiceAnswer(answers: ChoiceAnswer[]) {
   void send(formatChoiceSubmission(answers))
 }
 
+/**
+ * Keep what has been typed into the intake form.
+ *
+ * The form component unmounts whenever it is closed, so without this every
+ * answer entered so far is destroyed by the act of closing it to re-read the
+ * conversation the answers come from.
+ */
+function saveIntakeDraft(values: Record<string, string>) {
+  if (conversationId.value) chatStream.saveIntakeDraft(conversationId.value, values)
+}
+
 function handleIntakeCancel() {
   if (conversationId.value) chatStream.dismissIntake(conversationId.value)
 }
@@ -823,15 +825,7 @@ async function handleMarkdownClick(event: MouseEvent, msg: Message) {
   if (mark !== null) {
     event.preventDefault()
     revealCitation(mark, msg as ChatMessage)
-    return
   }
-
-  const link = (event.target as HTMLElement).closest('a[data-export-url]')
-  if (!link) return
-  event.preventDefault()
-  const type = (link.getAttribute('data-export-type') as 'word' | 'pdf') ?? 'word'
-  const title = deriveDocumentTitle(msg.content)
-  void openExport(msg.content, type, title, msg.template_id ? msg.id : undefined)
 }
 
 /**
@@ -874,11 +868,6 @@ async function rateMessage(m: Message, feedback: 'up' | 'down') {
 function retryLast() {
   if (!conversationId.value || !lastQuestion.value || busy.value) return
   void chatStream.retry(conversationId.value, handleUpgradeRequired)
-}
-
-function handleExport(m: Message, type: 'word' | 'pdf') {
-  const title = deriveDocumentTitle(m.content)
-  void openExport(m.content, type, title, m.template_id ? m.id : undefined)
 }
 
 function openEdit() {
@@ -980,6 +969,33 @@ async function updateThreadTags(threadId: string, ids: string[]) {
   } catch {
     thread.tags = previous
     toast.error('Could not update the tags')
+  }
+}
+
+/** Pin or unpin a thread, keeping the list ordered as the API returns it. */
+async function toggleThreadPin(threadId: string) {
+  const thread = threads.value.find((t) => t.id === threadId)
+  if (!thread) return
+
+  const pinning = !thread.pinned_at
+  thread.pinned_at = pinning ? new Date().toISOString() : null
+
+  try {
+    const { data } = await api<{ data: { pinned_at?: string | null } }>(
+      `/conversations/${threadId}/${pinning ? 'pin' : 'unpin'}`,
+      { method: 'POST' },
+    )
+    thread.pinned_at = data.pinned_at ?? null
+    threads.value = [...threads.value].sort((a, b) => {
+      const aPinned = a.pinned_at ? 0 : 1
+      const bPinned = b.pinned_at ? 0 : 1
+      if (aPinned !== bPinned) return aPinned - bPinned
+      return new Date(b.last_message_at ?? b.created_at).getTime()
+        - new Date(a.last_message_at ?? a.created_at).getTime()
+    })
+  } catch {
+    thread.pinned_at = pinning ? null : new Date().toISOString()
+    toast.error('Could not update the pin')
   }
 }
 
@@ -1095,12 +1111,12 @@ watch(
 </script>
 
 <template>
-  <!--
-    The same shell as the chat page: the columns are detached panels floating
-    on the page ground with a gutter between them, so fullscreen drops the
-    padding rather than leaving one panel inset inside a blank frame.
-  -->
   <div class="flex h-[calc(100dvh-4.5rem)] flex-col overflow-hidden">
+    <!--
+      The same shell as the chat page: the columns are detached panels floating
+      on the page ground with a gutter between them, so fullscreen drops the
+      padding rather than leaving one panel inset inside a blank frame.
+    -->
     <!--
       The overview band sits above the workspace, spanning its full width: it
       owns case identity, the deadline (and the calendar behind it) and the
@@ -1135,7 +1151,6 @@ watch(
       :uploading="uploadingDocument"
       :generated="generatedDocuments"
       :generated-loading="generatedLoading"
-      :exporting="exporting"
       :streaming-thread-ids="chatStream.streamingIds"
       :readonly="readOnly"
       :case="caseDetail"
@@ -1149,15 +1164,16 @@ watch(
       @delete-document="removeCaseDocument"
       @retry-document="retryCaseDocument"
       @update-document-categories="updateDocumentCategories"
-      @download-generated="downloadGenerated"
+      @open-generated="openGeneratedLetter"
       @update-thread-tags="updateThreadTags"
+      @toggle-pin-thread="toggleThreadPin"
       @update-tags="saveCaseTags"
     />
 
     <section
       ref="mainChatEl"
       class="surface flex min-w-0 flex-1 flex-col overflow-hidden"
-      :class="[previewDoc ? 'lg:min-w-[400px]' : '', fullscreen ? 'rounded-none border-0 shadow-none' : '']"
+      :class="fullscreen ? 'rounded-none border-0 shadow-none' : ''"
     >
       <template v-if="loading">
         <div class="space-y-3 p-6">
@@ -1198,12 +1214,13 @@ watch(
         <template v-else>
         <div class="flex items-center gap-1.5 overflow-x-auto border-b px-3 py-2 md:hidden">
           <button
-            v-for="thread in threads"
+            v-for="thread in sortedThreads"
             :key="thread.id"
             class="flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors"
             :class="thread.id === activeConversationId ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'"
             @click="selectConversation(thread.id)"
           >
+            <PinIcon v-if="thread.pinned_at" class="size-3.5 -rotate-[15deg] text-primary" />
             <component :is="THREAD_ICONS[threadPurposeKind(thread.purpose)]" class="size-3.5" />
             {{ thread.purpose || thread.title || 'Untitled' }}
           </button>
@@ -1276,6 +1293,9 @@ watch(
               :awaiting-intake="awaitingIntake"
               :intake-dismissed="intakeDismissed"
               :has-intake-fields="intakeFields !== null"
+              :intake-fields="intakeFields"
+              :intake-defaults="intakeDefaults"
+              :intake-draft="turn?.intakeDraft ?? {}"
               :choice-questions="choiceQuestions"
               :last-question="lastQuestion"
               :busy="busy"
@@ -1286,12 +1306,21 @@ watch(
               :active-search-occurrence="searchActiveOccurrence"
               :experience-level="experienceLevel"
               :suggestion-context="suggestionContext"
+              :letter-draft="turn?.letterDraft ?? null"
+              :web-search="turn?.webSearch ?? null"
+              :stream-notices="turn?.notices ?? []"
+              :receipts="turn?.receipts ?? []"
+              :turn-started-at="turn?.startedAt ?? null"
               @markdown-click="handleMarkdownClick"
               @rate="rateMessage"
-              @export="handleExport"
               @retry="retryLast"
+              @regenerate="(question: string) => send(question)"
+              @open-panel="openReceiptPanel"
               @abandon-intake="abandonIntake"
               @reopen-intake="reopenIntake"
+              @submit-intake="handleIntakeSubmit"
+              @cancel-intake="handleIntakeCancel"
+              @save-intake-draft="saveIntakeDraft"
               @answer-choice="handleChoiceAnswer"
               @select-suggestion="(prompt) => input = prompt"
             />
@@ -1303,7 +1332,7 @@ watch(
             Anchored to the conversation column, not the viewport, so it stays
             clear of whichever panel is open in the right rail.
           -->
-          <AdvisoryReview :conversation-id="conversationId" :readonly="readOnly" />
+          <AdvisoryReview ref="advisoryReviewRef" :conversation-id="conversationId" :readonly="readOnly" />
         </div>
 
         <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
@@ -1342,15 +1371,6 @@ watch(
         </template>
       </template>
     </section>
-
-    <DocumentPreviewPanel
-      v-if="previewDoc && !fullscreen && previewDoc.type !== 'word'"
-      :preview="previewDoc"
-      :width="previewWidth"
-      resizable
-      @start-resize="startResize($event, previewMaxWidth)"
-      @close="closePreview"
-    />
 
     <div
       v-if="!fullscreen"
@@ -1401,23 +1421,6 @@ watch(
       :templates="templates"
       @select="draftLetter"
       @cancel="pickerOpen = false"
-    />
-
-    <IntakeFormSheet
-      v-if="intakeFields && !intakeDismissed"
-      :fields="intakeFields"
-      :initial-values="intakeDefaults ?? {}"
-      @submit="handleIntakeSubmit"
-      @cancel="handleIntakeCancel"
-    />
-
-    <WordPreviewDialog
-      v-if="previewDoc?.type === 'word'"
-      :title="previewDoc.title"
-      :blob-url="previewDoc.blobUrl"
-      :loading="previewDoc.loading"
-      :error="previewDoc.error"
-      @close="closePreview"
     />
   </div>
 </template>

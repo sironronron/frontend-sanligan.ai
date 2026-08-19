@@ -144,6 +144,7 @@ async function handleSubmit() {
       body.append('property_value', form.property_value.trim())
     }
     if (file.value) body.append('file', file.value)
+    if (draft.value?.id) body.append('letter_draft_message_id', draft.value.id)
 
     const res = await api<{ data: VettingRequestRecord, checkout_url: string | null }>('/vetting-requests', {
       method: 'POST',

@@ -931,12 +931,17 @@ async function bulkDelete() {
     <!-- Main content -->
     <div class="min-w-0 flex-1">
       <!-- Header -->
-      <div class="mb-5 flex items-center justify-between">
-        <div>
-          <h1 class="text-lg font-semibold">Files</h1>
-          <p class="text-sm text-muted-foreground">Upload and organize your legal documents.</p>
+      <div class="mb-5 flex items-center justify-between gap-3">
+        <div class="flex min-w-0 items-center gap-3">
+          <span class="bg-brand-gradient flex size-11 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-sm">
+            <FileUpIcon class="size-5" />
+          </span>
+          <div class="min-w-0">
+            <h1 class="font-heading text-xl font-semibold tracking-tight">Files</h1>
+            <p class="text-sm text-muted-foreground">Upload and organize your legal documents.</p>
+          </div>
         </div>
-        <Button @click="pickFile">
+        <Button class="bg-brand-gradient shrink-0 gap-1.5 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="pickFile">
           <FileUpIcon class="size-4" />
           Upload
         </Button>
@@ -1028,7 +1033,7 @@ async function bulkDelete() {
             :key="opt.key"
             type="button"
             class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="sortKey === opt.key ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'"
+            :class="sortKey === opt.key ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'"
             @click="setSort(opt.key)"
           >
             <component :is="opt.icon" class="size-3.5" />
@@ -1110,6 +1115,7 @@ async function bulkDelete() {
 
         <EmptyState
           v-else-if="sortedDocuments.length === 0 && selectedFolderId"
+          class="hero-gradient"
           :icon="FolderIcon"
           title="No files in this folder"
           description="Move files here or upload new ones."
@@ -1117,15 +1123,17 @@ async function bulkDelete() {
 
         <EmptyState
           v-else-if="sortedDocuments.length === 0"
+          class="hero-gradient"
           :icon="FileIcon"
           title="No files yet"
           description="Upload your first file to get started."
         />
 
         <div
-          v-for="doc in sortedDocuments"
+          v-for="(doc, i) in sortedDocuments"
           :key="doc.id"
-          class="group surface flex cursor-pointer items-center gap-3 px-4 py-3 transition-shadow"
+          class="batayan-row-in group surface flex cursor-pointer items-center gap-3 px-4 py-3 transition-shadow"
+          :style="{ '--row-delay': `${i * 30}ms` }"
           :class="[
             dragDocId === doc.id ? 'opacity-40' : '',
             selectedDocIds.has(doc.id) ? 'ring-1 ring-primary/30 bg-primary/5 shadow-sm' : 'hover:shadow-sm',

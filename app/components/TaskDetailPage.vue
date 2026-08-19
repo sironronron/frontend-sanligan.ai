@@ -72,6 +72,7 @@ const {
   clearDueDate,
   activeTab,
   moreOpen,
+  copied,
   copyLink,
   deleteTask,
   save,
@@ -148,8 +149,9 @@ async function onDelete() {
           {{ saving ? 'Saving…' : 'Save changes' }}
         </Button>
         <Button variant="outline" size="sm" class="gap-2" @click="copyLink(todo?.id ?? '')">
-          <LinkIcon class="size-4" />
-          Copy link
+          <CheckIcon v-if="copied" class="size-4 text-primary" />
+          <LinkIcon v-else class="size-4" />
+          {{ copied ? 'Copied!' : 'Copy link' }}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>

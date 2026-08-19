@@ -1,3 +1,5 @@
+import type { LetterDraftPayload } from '~/types/tiptap'
+
 /** A case-file category an uploaded document is filed under. */
 export interface ChatSourceTag {
   id: string
@@ -50,7 +52,68 @@ export interface ChatMessage {
   attachments?: ChatMessageAttachment[]
   feedback?: string | null
   template_id?: string | null
+  /** The Tiptap letter this turn drafted through `draft_letter`, if any. */
+  letter_draft?: LetterDraftPayload | null
+  /**
+   * Claims the reply made about actions the turn never took — a search it did
+   * not run, a task it did not write. Persisted with the message, so the
+   * caveat is still there when the answer is read back weeks later.
+   */
+  tool_notices?: ChatToolNotice[]
+  /**
+   * How this answer was arrived at — the steps, the time taken, the sources
+   * read. Persisted with the message so the "how this was worked out" line
+   * under the reply survives the thread being re-fetched.
+   */
+  activity?: ChatTurnActivity | null
   created_at: string
+}
+
+/** The persisted account of how one assistant turn was produced. */
+export interface ChatTurnActivity {
+  steps: { key: string, label: string }[]
+  duration_ms: number
+  web_sources: number
+}
+
+/**
+ * Confirmation that a tool actually wrote something, shown under the answer
+ * that triggered it.
+ *
+ * Tasks and flags land in side panels the reader may not have open, so without
+ * this the only evidence a turn did anything is the reply's own claim that it
+ * did — which is exactly the claim that cannot be trusted on its own.
+ */
+export interface ChatToolReceipt {
+  kind: 'tasks' | 'advisories'
+  count: number
+}
+
+/** A correction shown with an assistant message; see `ToolClaimGuard`. */
+export interface ChatToolNotice {
+  kind: string
+  message: string
+}
+
+/** One site the delegated web search read, as it is being read. */
+export interface ChatWebSource {
+  url: string
+  domain: string | null
+  title: string | null
+  /** The citation card number this source became, once it has one. */
+  index: number | null
+}
+
+/**
+ * The live web search, held only while it runs. Cleared on `done` — these are
+ * the sites being consulted, not the sources the answer ended up citing, and
+ * leaving them on screen under a finished answer would conflate the two.
+ */
+export interface ChatWebSearch {
+  query: string
+  sources: ChatWebSource[]
+  /** `read` means every row has been fetched and named. */
+  phase: 'start' | 'reading' | 'read' | 'done'
 }
 
 export interface ChatActivityStep {

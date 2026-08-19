@@ -10,6 +10,8 @@ import {
   Loader2Icon,
   MessagesSquareIcon,
   MoreHorizontalIcon,
+  PenLineIcon,
+  PinIcon,
   PlusIcon,
   RotateCcwIcon,
   SearchIcon,
@@ -60,7 +62,6 @@ const props = withDefaults(defineProps<{
   uploading: boolean
   generated: GeneratedDocument[]
   generatedLoading: boolean
-  exporting: string | null
   /**
    * Threads whose answer is still being generated. A thread keeps working after
    * the user leaves it, so this rail is where they see it is still going — and
@@ -85,8 +86,9 @@ const emit = defineEmits<{
   deleteDocument: [doc: CaseDocument]
   retryDocument: [doc: CaseDocument]
   updateDocumentCategories: [doc: CaseDocument, ids: string[]]
-  downloadGenerated: [doc: GeneratedDocument, type: 'word' | 'pdf']
+  openGenerated: [doc: GeneratedDocument]
   updateThreadTags: [threadId: string, ids: string[]]
+  togglePinThread: [threadId: string]
   updateTags: [tags: string[]]
 }>()
 
@@ -123,6 +125,17 @@ const showFilter = computed(() => totalItems.value > 8)
 const visibleThreads = computed(() => (filtering.value
   ? props.threads.filter((thread) => threadName(thread).toLowerCase().includes(needle.value))
   : props.threads))
+
+/** Pinned threads lead the list; within each rank the newest activity wins. */
+const sortedThreads = computed(() =>
+  [...visibleThreads.value].sort((a, b) => {
+    const aPinned = a.pinned_at ? 0 : 1
+    const bPinned = b.pinned_at ? 0 : 1
+    if (aPinned !== bPinned) return aPinned - bPinned
+    return new Date(b.last_message_at ?? b.created_at).getTime()
+      - new Date(a.last_message_at ?? a.created_at).getTime()
+  }),
+)
 
 const visibleDocuments = computed(() => (filtering.value
   ? props.documents.filter((doc) => `${doc.title} ${doc.original_filename}`.toLowerCase().includes(needle.value))
@@ -472,7 +485,7 @@ const threadRows = computed<ThreadRow[]>(() => {
   const rows: ThreadRow[] = []
   const byTagId = new Map<string, CaseConversation[]>()
 
-  for (const thread of visibleThreads.value) {
+  for (const thread of sortedThreads.value) {
     for (const tag of thread.tags ?? []) {
       const list = byTagId.get(tag.id) ?? []
       list.push(thread)
@@ -497,7 +510,7 @@ const threadRows = computed<ThreadRow[]>(() => {
     }
   }
 
-  const untagged = visibleThreads.value.filter((t) => (t.tags ?? []).length === 0)
+  const untagged = sortedThreads.value.filter((t) => (t.tags ?? []).length === 0)
   if (untagged.length === 0) return rows
 
   if (groups.length > 0) {
@@ -731,11 +744,23 @@ onMounted(() => {
                   <component :is="THREAD_ICONS[threadPurposeKind(row.thread.purpose)]" class="size-4" />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span
-                    class="block truncate text-sm leading-5"
-                    :class="row.thread.id === props.activeConversationId ? 'font-medium text-primary' : 'text-foreground'"
-                  >
-                    {{ threadName(row.thread) }}
+                  <span class="flex min-w-0 items-center gap-1">
+                    <button
+                      v-if="row.thread.pinned_at"
+                      type="button"
+                      class="-ml-0.5 inline-flex size-4 shrink-0 items-center justify-center text-primary transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                      :aria-label="`Unpin ${threadName(row.thread)}`"
+                      title="Unpin thread"
+                      @click.stop="emit('togglePinThread', row.thread.id)"
+                    >
+                      <PinIcon class="size-3.5 -rotate-[15deg] fill-primary" />
+                    </button>
+                    <span
+                      class="truncate text-sm leading-5"
+                      :class="row.thread.id === props.activeConversationId ? 'font-medium text-primary' : 'text-foreground'"
+                    >
+                      {{ threadName(row.thread) }}
+                    </span>
                   </span>
                   <span
                     v-if="isStreaming(row.thread.id)"
@@ -754,6 +779,16 @@ onMounted(() => {
               </button>
 
               <div v-if="!props.readonly" :class="ROW_ACTIONS">
+                <button
+                  v-if="!row.thread.pinned_at"
+                  type="button"
+                  :class="ROW_ACTION_BUTTON"
+                  :aria-label="`Pin ${threadName(row.thread)}`"
+                  title="Pin thread"
+                  @click="emit('togglePinThread', row.thread.id)"
+                >
+                  <PinIcon class="size-4 -rotate-[15deg]" />
+                </button>
                 <LabelPicker
                   kind="thread_tag"
                   trigger-label=""
@@ -940,7 +975,7 @@ onMounted(() => {
                   <span class="min-w-0 flex-1">
                     <span class="block truncate text-sm leading-5">{{ row.doc.title }}</span>
                     <span class="mt-0.5 flex items-center gap-1 overflow-hidden">
-                      <span class="min-w-0 truncate text-xs leading-4" :class="DOC_TONE[row.doc.status]">
+                      <span :class="['min-w-0 truncate text-xs leading-4', DOC_TONE[row.doc.status]]">
                         {{ docMeta(row.doc) }}
                       </span>
                       <span
@@ -1066,14 +1101,15 @@ onMounted(() => {
           </p>
 
           <p v-else-if="props.generated.length === 0" class="px-2 py-3 text-xs leading-relaxed text-muted-foreground">
-            Nothing drafted yet. Ask Batayan for a letter, then export it from the conversation.
+            Nothing drafted yet. Ask Batayan for a letter, then edit and export it from the letter editor.
           </p>
 
           <!--
             Same row grammar as threads and files — tile, name, one line of
             detail, actions on reach. Each draft used to carry two full "Word"
             and "PDF" buttons, which made a list of three drafts louder than a
-            list of thirty files.
+            list of thirty files. Export lives inside the letter editor now, so
+            the row just reopens it.
           -->
           <div
             v-for="doc in visibleDrafts"
@@ -1102,31 +1138,15 @@ onMounted(() => {
               >
                 <FileSearchIcon class="size-4" />
               </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  :class="ROW_ACTION_BUTTON"
-                  :disabled="props.exporting !== null"
-                  :aria-label="`Download ${doc.title}`"
-                >
-                  <Loader2Icon
-                    v-if="props.exporting === `${doc.id}:word` || props.exporting === `${doc.id}:pdf`"
-                    class="size-4 animate-spin"
-                  />
-                  <DownloadIcon v-else class="size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-40">
-                  <DropdownMenuLabel class="text-xs text-muted-foreground">Download as</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem @click="emit('downloadGenerated', doc, 'word')">
-                    <DownloadIcon class="size-4" />
-                    Word
-                  </DropdownMenuItem>
-                  <DropdownMenuItem @click="emit('downloadGenerated', doc, 'pdf')">
-                    <DownloadIcon class="size-4" />
-                    PDF
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <button
+                type="button"
+                :class="ROW_ACTION_BUTTON"
+                :aria-label="`Edit ${doc.title} in the letter editor`"
+                title="Edit in the letter editor"
+                @click="emit('openGenerated', doc)"
+              >
+                <PenLineIcon class="size-4" />
+              </button>
             </div>
           </div>
         </div>

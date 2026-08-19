@@ -50,9 +50,9 @@ onMounted(async () => {
 <template>
   <div>
     <div v-if="!isChild" class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
-    <PageHeader title="Document vetting" description="Have a Philippine lawyer review and notarize your documents.">
+    <PageHeader title="Document vetting" :icon="FileSearchIcon" description="Have a Philippine lawyer review and notarize your documents.">
       <template #actions>
-        <Button class="gap-2" @click="navigateTo('/vetting/new')">
+        <Button class="bg-brand-gradient gap-2 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="navigateTo('/vetting/new')">
           <FilePlus2Icon class="size-4" />
           New request
         </Button>
@@ -63,18 +63,20 @@ onMounted(async () => {
 
     <EmptyState
       v-else-if="requests.length === 0"
+      class="hero-gradient"
       :icon="FileSearchIcon"
       title="No requests yet"
       description="Upload a document to have a verified lawyer review it, and notarize it if you need a notarial act."
     >
-      <Button @click="navigateTo('/vetting/new')">Start a request</Button>
+      <Button class="bg-brand-gradient border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="navigateTo('/vetting/new')">Start a request</Button>
     </EmptyState>
 
     <div v-else class="space-y-2">
       <div
-        v-for="r in requests"
+        v-for="(r, i) in requests"
         :key="r.id"
-        class="surface-interactive group flex cursor-pointer items-center gap-4 p-4"
+        class="batayan-row-in surface-interactive group flex cursor-pointer items-center gap-4 p-4"
+        :style="{ '--row-delay': `${i * 40}ms` }"
         @click="navigateTo(`/vetting/${r.id}`)"
       >
         <div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">

@@ -20,14 +20,23 @@
  */
 import { CheckIcon, MessageSquareIcon } from '@lucide/vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   caseType: string
   status: string
   priority?: string | null
   /** True once the server has answered and the case exists. */
   done: boolean
-}>()
+  /**
+   * Set by the parent once the case page has actually arrived underneath. The
+   * overlay holds its sealed "ready" state through the navigation and only
+   * fades when this flips — otherwise the seal would vanish while the route is
+   * still changing and briefly reveal the list behind it.
+   */
+  dismiss?: boolean
+}>(), {
+  dismiss: false,
+})
 
 const emit = defineEmits<{ finished: [] }>()
 
@@ -57,8 +66,8 @@ const SETTLE_MS = 980
 
 const active = ref(0)
 const sealed = ref(false)
-/** Set once the handover has been announced, to fade out over the new page. */
-const leaving = ref(false)
+/** The parent flips this once the case page is mounted, so we fade over it. */
+const leaving = computed(() => props.dismiss)
 
 const timers: ReturnType<typeof setTimeout>[] = []
 
@@ -126,9 +135,8 @@ function finish() {
   later(() => { sealed.value = true }, sealAt)
   later(() => {
     emit('finished')
-    // The parent is now navigating; fading rather than cutting means the case's
-    // own page arrives underneath instead of replacing this in one frame.
-    leaving.value = true
+    // Hold the sealed "ready" state; the parent fades us out only once the case
+    // page has arrived, so the animation never cuts out before the redirect.
   }, sealAt + SETTLE_MS)
 }
 

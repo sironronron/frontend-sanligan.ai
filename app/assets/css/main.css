@@ -1,6 +1,9 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
 
+/* The cursive script used for typed signatures inside the capture dialog. */
+@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&display=swap');
+
 @import 'tailwindcss';
 @import "tw-animate-css";
 @import "shadcn-vue/tailwind.css";
@@ -13,6 +16,13 @@
   --peach: #F9D2BA;
   --espresso: #5E3122;
   --pine: #0F2A1E;
+
+  /*
+   * The citation accent. Used to highlight cited *text* — by colour and
+   * underline, never by filling a background — so a marked passage reads as
+   * "quoted / grounded" without the block changing colour behind it.
+   */
+  --cite: #1C7A4E;
 }
 
 @theme inline {
@@ -54,11 +64,15 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-forest: var(--forest);
   --color-cream: var(--cream);
   --color-peach: var(--peach);
   --color-espresso: var(--espresso);
   --color-pine: var(--pine);
+  /* Exposed as the citation highlighter palette (see citation section). */
+  --color-cite: var(--cite);
   /* Exposed as shadow-raised / shadow-float utilities. */
   --shadow-raised: var(--elevation-raised);
   --shadow-float: var(--elevation-float);
@@ -94,6 +108,14 @@
   --accent-foreground: #4A2317;
   --destructive: #A93F26;
   --destructive-foreground: #FDF7F2;
+  /*
+   * Caution, distinct from destructive. Referenced by the letter editor's
+   * unfilled-placeholder highlight and by the chat's tool-claim notices — both
+   * of which were rendering against an undefined variable. Amber pulled warm
+   * enough to sit on the cream page without reading as a browser alert.
+   */
+  --warning: #B26B12;
+  --warning-foreground: #FDF7F2;
   --border: #D9BCA0;
   --input: #D9BCA0;
   --ring: #2F6650;
@@ -152,6 +174,8 @@ body {
   --accent-foreground: #0E1A15;
   --destructive: #E0705A;
   --destructive-foreground: #0E1A15;
+  --warning: #E0A55A;
+  --warning-foreground: #0E1A15;
   --border: #35493E;
   --input: #35493E;
   --ring: #5CAC86;
@@ -161,6 +185,10 @@ body {
   --chart-4: #35493E;
   --chart-5: #E0705A;
   --sidebar: #13211B;
+
+  /* In dark mode the accent lightens so cited text stays legible on the
+     near-black page without any fill behind it. */
+  --cite: #74C79A;
   --sidebar-foreground: #F2E4D8;
   --sidebar-primary: #5CAC86;
   --sidebar-primary-foreground: #0B1610;
@@ -379,45 +407,63 @@ body {
 /*
  * The inline citation marks inside an answer. Styled here rather than in the
  * component because they are produced as raw HTML by the markdown renderer,
- * which scoped component styles do not reach — and a global rule is what lets
- * them carry hover and focus states, now that pressing one opens the source.
+ * which scoped component styles do not reach.
+ *
+ * The mark is highlighted *text*, not a filled chip: the citation number is
+ * set in the citation colour and underlined, so it reads as "this word is
+ * sourced" without any block changing colour behind it. Hovering or focusing
+ * it lights the matching card on the right and the passage in the reader.
  */
 .saligan-citation {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.15em;
-  height: 1.15em;
-  padding: 0 0.35em;
-  font-size: 0.68em;
+  display: inline;
+  vertical-align: super;
+  margin: 0 0.1em;
+  padding: 0;
+  font: inherit;
+  font-size: 0.7em;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 0.02em;
-  border-radius: 9999px;
-  vertical-align: super;
-  margin: 0 0.12em;
+  letter-spacing: 0.01em;
+  color: var(--cite);
+  background: none;
+  border: none;
+  border-radius: 0;
   cursor: pointer;
   user-select: none;
-  color: var(--primary);
-  background: color-mix(in oklab, var(--primary) 12%, transparent);
-  border: 1px solid color-mix(in oklab, var(--primary) 35%, transparent);
-  transition: background-color 120ms ease, border-color 120ms ease;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--cite) 55%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+  transition: text-decoration-color 130ms ease, color 130ms ease;
 }
 
-.saligan-citation:hover {
-  background: color-mix(in oklab, var(--primary) 24%, transparent);
-  border-color: color-mix(in oklab, var(--primary) 60%, transparent);
+.saligan-citation:hover,
+.saligan-citation:focus-visible {
+  color: var(--primary);
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 2px;
+  outline: none;
 }
 
 .saligan-citation:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
+  text-decoration-thickness: 2.5px;
 }
 
 /*
- * The card the reader arrived at from an inline mark. It fades out on its own
- * so the panel does not keep a stale selection lit after the reader has moved
- * on to reading it.
+ * Lit while the matching source is hovered on the right, or while this mark is
+ * hovered in the answer — the underline thickens so the two surfaces stay
+ * visibly linked for as long as the reader dwells on either, with no fill.
+ */
+.saligan-citation--active {
+  color: var(--primary);
+  text-decoration-color: var(--primary);
+  text-decoration-thickness: 3px;
+}
+
+/*
+ * The card the reader arrived at from an inline mark, or the card under the
+ * pointer. It fades out on its own so the panel does not keep a stale
+ * selection lit after the reader has moved on to reading it.
  */
 .saligan-citation-target {
   animation: saligan-citation-flash 2s ease-out;
@@ -434,3 +480,930 @@ body {
   }
 }
 
+/* The same card, held lit while it is the active citation rather than flashing
+   once. Used for hover-linking between the answer and the panel. */
+.saligan-citation-active {
+  border-color: color-mix(in oklab, var(--primary) 55%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--primary) 26%, transparent),
+    var(--elevation-float);
+}
+
+/*
+ * A passage the answer actually drew from, shown in the sources panel. The
+ * highlight is the text itself — set in the citation colour with a thin spine
+ * — so the excerpt reads as the quoted part without any fill behind it.
+ */
+.cite-excerpt {
+  margin-top: 0.625rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--cite);
+  color: var(--foreground);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  transition: border-color 150ms ease;
+}
+
+.cite-excerpt:hover {
+  border-color: var(--primary);
+}
+
+/*
+ * A paragraph of the opened source in the reader. The cited passages are
+ * highlighted by the text itself — coloured and underlined, with nothing
+ * filled behind them — while the rest of the document recedes, so the eye
+ * lands on what the answer leaned on. Switching between digest and full text
+ * never loses which passages are marked.
+ */
+.cite-passage {
+  position: relative;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  transition: color 160ms ease, opacity 160ms ease;
+}
+
+.cite-passage--cited {
+  color: var(--foreground);
+}
+
+.cite-passage--dim {
+  color: var(--muted-foreground);
+  opacity: 0.8;
+}
+
+.cite-passage--dim:hover {
+  color: var(--foreground);
+  opacity: 1;
+}
+
+/*
+ * A passage is rendered markdown now, so the document's own structure survives
+ * into the reader. The prose block inside it inherits the passage's colour and
+ * drops its outer margins — the passage already owns the spacing between
+ * paragraphs, and doubling it pulls the document apart.
+ */
+.cite-passage .batayan-prose {
+  color: inherit;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.cite-passage .batayan-prose > :first-child {
+  margin-block-start: 0;
+}
+
+.cite-passage .batayan-prose > :last-child {
+  margin-block-end: 0;
+}
+
+/*
+ * A digest is laid out as a digest: each label set apart from what follows it,
+ * so the eye finds "Ruling" or "Doctrine" without reading the rest. Running
+ * the labels together as prose is what made a digest read as a summary.
+ */
+.digest-section {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  padding-block-end: 0.85rem;
+  border-block-end: 1px solid var(--border);
+}
+
+.digest-section:last-child {
+  padding-block-end: 0;
+  border-block-end: none;
+}
+
+.digest-section__label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.digest-section__body {
+  min-width: 0;
+  color: var(--foreground);
+}
+
+/* Stacked on a narrow screen: two columns leave the body too little room. */
+@media (max-width: 640px) {
+  .digest-section {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+}
+
+/* The little "Cited" tag pinned to a marked passage in the reader — bordered,
+   never filled, so it marks without changing any background. */
+.cite-passage__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-block-end: 0.4rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 9999px;
+  border: 1px solid var(--cite);
+  color: var(--cite);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/*
+ * A real highlighter-pen stroke behind the text. It follows the words — drawn
+ * only across each line of glyphs (box-decoration-break: clone), never filling
+ * the block behind them — so a cited passage reads as "marked" like a printout
+ * with a marker, while the surface itself keeps its own colour.
+ */
+.cite-mark {
+  background-image: linear-gradient(
+    transparent 52%,
+    color-mix(in oklab, var(--cite) 32%, transparent) 52%
+  );
+  border-radius: 1px;
+  padding-inline: 0.1em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saligan-citation,
+  .cite-excerpt,
+  .cite-passage {
+    transition: none;
+  }
+  .saligan-citation:hover,
+  .saligan-citation:focus-visible,
+  .saligan-citation--active {
+    transform: none;
+  }
+}
+
+/*
+ * The letter editor reads as a sheet of paper: a raised, white page with the
+ * typography of a printed letter rather than an app surface. The ProseMirror
+ * content element is a child of EditorContent, so the page styles hang off
+ * `.letter-editor-content` and the scroll/toolbar chrome off `.letter-editor`.
+ */
+.letter-editor {
+  --editor-page: var(--card);
+  --editor-ink: var(--foreground);
+  min-height: 100%;
+}
+
+.dark .letter-editor {
+  --editor-page: color-mix(in oklab, var(--card) 88%, white 4%);
+}
+
+.letter-editor .ProseMirror {
+  width: 100%;
+  min-height: calc(100dvh - 9.5rem);
+  padding: 2.5rem 3rem;
+  background: var(--editor-page);
+  color: var(--editor-ink);
+  outline: none;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.letter-editor .ProseMirror > * + * {
+  margin-top: 0.75rem;
+}
+
+.letter-editor .ProseMirror h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 0.25rem;
+}
+
+.letter-editor .ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.letter-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: color-mix(in oklab, var(--editor-ink) 40%, transparent);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.letter-editor .ProseMirror ul,
+.letter-editor .ProseMirror ol {
+  padding-left: 1.5rem;
+}
+
+.letter-editor .ProseMirror ul {
+  list-style: disc;
+}
+
+.letter-editor .ProseMirror ol {
+  list-style: decimal;
+}
+
+.letter-editor .ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Unfilled bracket placeholders the AI still has to fill in, tinted so the
+   user can spot every `[Your Full Name]`-style token at a glance. */
+.letter-editor .ProseMirror .letter-placeholder {
+  background: color-mix(in oklab, var(--warning) 22%, transparent);
+  border-radius: 4px;
+  padding: 0 1px;
+  box-decoration-break: clone;
+}
+
+/* The highlight mark (toolbar "marker" button) reads as a marker pen over
+   the text — yellow with near-black ink in both themes, never a dark-mode
+   inverted box. */
+.letter-editor .ProseMirror mark {
+  background-color: rgba(250, 204, 21, 0.45);
+  color: #1c1917;
+  border-radius: 3px;
+  padding: 0 1px;
+  box-decoration-break: clone;
+}
+
+/* The letter editor slides in at half the viewport instead of the default
+   narrow sheet width, and full-width on small screens. Pinned via a dedicated
+   class so it always beats the shadcn `sm:max-w-sm` default. */
+[data-slot="sheet-content"][data-side="right"].letter-sheet {
+  width: 100%;
+  max-width: 100%;
+  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    max-width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 640px) {
+  [data-slot="sheet-content"][data-side="right"].letter-sheet {
+    width: 50vw;
+    min-width: 520px;
+    max-width: 720px;
+  }
+
+  /*
+   * Full screen. A letter is a page, and at half a viewport its paragraphs
+   * wrap three times over — it stops resembling the document it will be
+   * printed as. The `!important` is load-bearing: the base rule above is the
+   * same specificity, and the sheet's own utilities also set a width.
+   */
+  [data-slot="sheet-content"][data-side="right"].letter-sheet--full {
+    width: 100vw !important;
+    min-width: 0 !important;
+    max-width: 100vw !important;
+  }
+}
+
+/* While dragging the left edge, kill the easing so the sheet tracks the
+   pointer 1:1 instead of lagging a beat behind. */
+[data-slot="sheet-content"][data-side="right"].letter-sheet--dragging {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sheet-content"][data-side="right"].letter-sheet {
+    transition: none;
+  }
+}
+
+/*
+ * The page grows with the sheet, but only so far: a line of body text that
+ * runs the full width of a 27-inch display is unreadable, and the whole point
+ * of full screen is to see the document's real proportions.
+ */
+.letter-editor--full .ProseMirror {
+  max-width: 60rem;
+  margin-inline: auto;
+  padding-inline: 4rem;
+}
+
+/*
+ * The span the assistant is working on.
+ *
+ * This is the answer to "which words did I just ask about?" — a question the
+ * selection cannot answer once focus moves to the suggestion panel. The
+ * treatment is a tinted underlay plus a light sweep, deliberately the same
+ * beat as the panel's own placeholder shimmer so the two read as one action.
+ */
+.letter-editor .ProseMirror .letter-ai-working {
+  position: relative;
+  border-radius: 3px;
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 14%, transparent) 0%,
+    color-mix(in oklab, var(--primary) 26%, transparent) 45%,
+    color-mix(in oklab, var(--primary) 14%, transparent) 90%
+  );
+  background-size: 200% 100%;
+  box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--primary) 45%, transparent);
+  animation: letter-ai-sweep 1.7s linear infinite;
+}
+
+@keyframes letter-ai-sweep {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/*
+ * The same range once a suggestion is waiting on the reader. Still marked —
+ * it is what "Replace" would overwrite — but no longer moving, because nothing
+ * is happening any more.
+ */
+.letter-editor .ProseMirror .letter-ai-preview {
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--primary) 12%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--primary) 55%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter-editor .ProseMirror .letter-ai-working {
+    animation: none;
+    background-image: none;
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+  }
+}
+
+
+/*
+ * ===========================================================================
+ * Chat: the assistant's answer
+ * ===========================================================================
+ * The reply is the product. Everything in this block exists to make a long,
+ * cited, legal answer read like a document rather than like chat output.
+ *
+ * Three commitments:
+ *
+ * 1. The answer has no container. An assistant turn is prose on the page —
+ *    no bubble, no card, no border — because a bubble caps how long an answer
+ *    can be before it looks wrong, and these answers are long. Only the user's
+ *    own messages keep a bubble, which is what makes the two sides legible at
+ *    a glance without either being labelled.
+ * 2. Vertical rhythm is set once, here, on `.batayan-prose`. The markdown
+ *    renderer emits utility classes for structure; these element rules are one
+ *    step more specific, so spacing and type scale are decided in one place
+ *    instead of drifting per block type.
+ * 3. Motion belongs to the machine, never to the reader's text. Anything that
+ *    pulses, sweeps, or travels is chrome that leaves when the turn settles;
+ *    finished prose only ever fades in, once. Every keyframe collapses under
+ *    prefers-reduced-motion at the end of the block, and each animation's end
+ *    state is its resting state, so nothing vanishes when motion does.
+ */
+
+/* ---------------------------------------------------------------- prose --- */
+
+.batayan-prose {
+  font-size: 0.9625rem;
+  line-height: 1.75;
+  color: var(--foreground);
+  overflow-wrap: break-word;
+}
+
+/*
+ * Blocks space themselves off the block above rather than carrying symmetric
+ * margins, so the first block sits flush against whatever precedes it and the
+ * gaps between blocks never double up.
+ */
+.batayan-prose > * + * {
+  margin-block-start: 0.85em;
+}
+
+.batayan-prose p {
+  margin: 0;
+}
+
+.batayan-prose h1,
+.batayan-prose h2,
+.batayan-prose h3 {
+  margin: 0;
+  color: var(--foreground);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.011em;
+  text-wrap: balance;
+}
+
+.batayan-prose > * + :is(h1, h2, h3) {
+  margin-block-start: 1.6em;
+}
+
+.batayan-prose h1 {
+  font-size: 1.3rem;
+}
+
+.batayan-prose h2 {
+  font-size: 1.12rem;
+}
+
+.batayan-prose h3 {
+  font-size: 1rem;
+}
+
+/*
+ * A hairline under the top two levels. Legal answers are section-heavy and
+ * run long; without a rule the reader has only a weight change to find the
+ * next section by, which is not enough at a glance on a page of dense text.
+ */
+.batayan-prose :is(h1, h2) {
+  padding-block-end: 0.3em;
+  border-block-end: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+.batayan-prose ul,
+.batayan-prose ol {
+  margin: 0;
+  padding-inline-start: 1.35em;
+}
+
+.batayan-prose li + li {
+  margin-block-start: 0.3em;
+}
+
+.batayan-prose li::marker {
+  color: color-mix(in oklab, var(--primary) 70%, transparent);
+  font-weight: 600;
+}
+
+.batayan-prose blockquote {
+  margin: 0;
+  padding: 0.6em 0.95em;
+  border-inline-start: 2px solid color-mix(in oklab, var(--primary) 55%, transparent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in oklab, var(--primary) 5%, transparent);
+  color: color-mix(in oklab, var(--foreground) 82%, transparent);
+}
+
+.batayan-prose blockquote p + p {
+  margin-block-start: 0.5em;
+}
+
+.batayan-prose code {
+  padding: 0.12em 0.36em;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--muted) 75%, transparent);
+  font-size: 0.875em;
+}
+
+.batayan-prose hr {
+  margin-block: 1.5em;
+  border: 0;
+  border-block-start: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+}
+
+/* Tables scroll inside their own well; the page never scrolls sideways. */
+.batayan-prose table {
+  font-size: 0.9em;
+}
+
+.batayan-prose :is(th, td) {
+  border-color: color-mix(in oklab, var(--border) 65%, transparent);
+}
+
+.batayan-prose thead th {
+  background: color-mix(in oklab, var(--muted) 45%, transparent);
+  font-weight: 600;
+}
+
+.batayan-prose tbody tr:last-child :is(th, td) {
+  border-block-end: 0;
+}
+
+.batayan-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
+}
+
+.batayan-prose a:hover {
+  text-decoration-color: var(--primary);
+}
+
+/*
+ * Streaming reveal. Each finished block fades up as it lands, so a long answer
+ * assembles itself instead of jerking down the page. Applied to blocks that
+ * are already complete — the one still being written is the last child and is
+ * excluded, since re-triggering its animation on every delta would strobe.
+ */
+.batayan-prose > *:not(:last-child) {
+  animation: batayan-block-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes batayan-block-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * While streaming, the prose is re-rendered via v-html on every delta. Without
+ * this, each replacement recreates every block as a new DOM node and re-runs
+ * `batayan-block-in` on all prior blocks, which reads as a jitter of already
+ * visible text. Suppressed during writing; finished answers still animate.
+ */
+.batayan-prose[data-writing='true'] > *:not(:last-child) {
+  animation: none;
+}
+
+/*
+ * The caret trails the very end of the answer while it is being written.
+ * It is rendered inline at the end of the last block's text so it follows
+ * the actual insertion point rather than sitting in the block's margin below
+ * the paragraph (which is what `> *:last-child::after` on a list/table did —
+ * it appeared beneath the whole block instead of after the last word).
+ */
+.batayan-prose[data-writing='true'] > *:last-child::after {
+  content: '';
+  display: inline-block;
+  inline-size: 2px;
+  block-size: 1.1em;
+  margin-inline-start: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--primary);
+  animation: batayan-caret 1.05s steps(1, end) infinite;
+}
+
+/* When the last block is a list the container's ::after would sit below
+   the whole block. Hide it and show the caret inline on the last item
+   instead so it trails the text. Tables keep no caret (rare mid-stream). */
+.batayan-prose[data-writing='true'] > ul:last-child::after,
+.batayan-prose[data-writing='true'] > ol:last-child::after {
+  display: none;
+  content: none;
+}
+
+.batayan-prose[data-writing='true'] > ul:last-child > li:last-child::after,
+.batayan-prose[data-writing='true'] > ol:last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  inline-size: 2px;
+  block-size: 1.1em;
+  margin-inline-start: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--primary);
+  animation: batayan-caret 1.05s steps(1, end) infinite;
+}
+
+/* Blockquote's text lives in its inner <p>; the outer ::after would appear
+   below the quote. Move the caret onto the last inner paragraph. */
+.batayan-prose[data-writing='true'] > blockquote:last-child::after {
+  display: none;
+  content: none;
+}
+
+.batayan-prose[data-writing='true'] > blockquote:last-child > p:last-child::after,
+.batayan-prose[data-writing='true'] > blockquote:last-child p:last-child::after {
+  content: '';
+  display: inline-block;
+  inline-size: 2px;
+  block-size: 1.1em;
+  margin-inline-start: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--primary);
+  animation: batayan-caret 1.05s steps(1, end) infinite;
+}
+
+@keyframes batayan-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0.12;
+  }
+}
+
+/* ---------------------------------------------------- working indicators --- */
+
+/*
+ * Light travelling through a label. Used only on text that names work in
+ * progress, never on the answer.
+ */
+@keyframes batayan-text-shimmer {
+  to {
+    background-position: -200% center;
+  }
+}
+
+.batayan-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--foreground) 62%, transparent),
+    var(--primary),
+    color-mix(in oklab, var(--foreground) 62%, transparent)
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: batayan-text-shimmer 2.6s linear infinite;
+}
+
+/* A slow sheen across a surface that is waiting on something. */
+@keyframes batayan-sheen {
+  0% {
+    transform: translateX(-120%);
+  }
+  55%,
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.batayan-sheen {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.batayan-sheen::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inline-size: 35%;
+  inset-inline-start: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 11%, transparent),
+    transparent
+  );
+  animation: batayan-sheen 2.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/*
+ * The assistant's mark while it is working: a forest disc that breathes. This
+ * is the one piece of motion that is always on screen during a turn, so it is
+ * slow and low-contrast on purpose — a heartbeat, not a spinner.
+ */
+@keyframes batayan-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.88);
+    opacity: 0.72;
+  }
+}
+
+.batayan-breathe {
+  animation: batayan-breathe 2.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes batayan-pulse-ring {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.75);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+
+.batayan-pulse-ring {
+  animation: batayan-pulse-ring 2.1s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+/* Three dots, for a wait with no nameable step. */
+@keyframes batayan-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.batayan-dot {
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: batayan-dot 1.25s ease-in-out infinite;
+  animation-delay: var(--dot-delay, 0s);
+}
+
+/*
+ * Rows entering a list one after the next. The delay is set per row by the
+ * component, so a batch that arrived in a single frame still reads as having
+ * been gathered one at a time — which is what actually happened.
+ */
+@keyframes batayan-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.batayan-row-in {
+  animation: batayan-row-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) var(--row-delay, 0s) both;
+}
+
+/* A whole turn arriving. Runs once and is done. */
+@keyframes batayan-turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.batayan-turn-in {
+  animation: batayan-turn-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/*
+ * A panel opening or closing. Grid-template-rows is what lets an unknown
+ * content height animate without measuring it in script; the child must carry
+ * `min-height: 0` and `overflow: hidden` for the collapse to actually clip.
+ */
+.batayan-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.batayan-collapse[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.batayan-collapse > * {
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .batayan-shimmer-text {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: inherit;
+  }
+
+  .batayan-prose > *:not(:last-child),
+  .batayan-prose[data-writing='true'] > *:last-child::after,
+  .batayan-sheen::after,
+  .batayan-breathe,
+  .batayan-pulse-ring,
+  .batayan-dot,
+  .batayan-row-in,
+  .batayan-turn-in {
+    animation: none;
+  }
+
+  .batayan-collapse {
+    transition: none;
+  }
+
+  .batayan-pulse-ring {
+    opacity: 0;
+  }
+
+  .batayan-dot {
+    opacity: 0.55;
+  }
+
+  .batayan-prose[data-writing='true'] > *:last-child::after {
+    opacity: 0.5;
+  }
+}
+
+/*
+ * ===========================================================================
+ * Page surfaces: gradients, hero treatment, and motion helpers
+ * ===========================================================================
+ * These are the sanctioned, token-only ways to add a gradient or a soft
+ * entrance to the six list/detail pages (cases, files, drafts, vetting,
+ * templates, todos). Everything pulls from CSS variables, so the same class
+ * renders correctly in light and dark — no hardcoded hex behind a media
+ * query, which is what produces the "wrong colour in dark mode" drift.
+ */
+
+@layer components {
+  /*
+   * A brand gradient used for icon chips and primary accents. The stop mixes
+   * --primary toward --secondary in oklab so the blend stays warm in both
+   * themes instead of going muddy.
+   */
+  .bg-brand-gradient {
+    background-image: linear-gradient(
+      135deg,
+      var(--primary),
+      color-mix(in oklab, var(--primary) 58%, var(--secondary))
+    );
+  }
+
+  /* Gradient clip text — for section eyebrows and stat numbers. */
+  .text-brand-gradient {
+    background-image: linear-gradient(
+      120deg,
+      var(--primary),
+      color-mix(in oklab, var(--primary) 55%, var(--secondary))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /*
+   * A soft decorative blob. Token-tinted and blurred, sat behind content via
+   * z-index and killed under reduced-motion. Place inside a `relative` parent
+   * with `overflow-hidden` so it never escapes the section it decorates.
+   */
+  .gradient-blob {
+    position: absolute;
+    z-index: 0;
+    border-radius: 9999px;
+    filter: blur(46px);
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
+  /* A hero panel: gradient wash behind the page title, token-tinted. */
+  .hero-gradient {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--primary) 12%, var(--card)) 0%,
+      var(--card) 70%
+    );
+  }
+
+  /* Lift any direct content above the decorative wash. */
+  .hero-gradient > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .hero-gradient::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(40rem 22rem at 88% -30%, color-mix(in oklab, var(--primary) 14%, transparent), transparent 60%),
+      radial-gradient(34rem 20rem at 0% -10%, color-mix(in oklab, var(--secondary) 22%, transparent), transparent 60%);
+  }
+
+  /* A surface that lifts on hover with a faint ring — used for clickable
+     tiles that are not plain rows. Reuses the elevation ladder. */
+  .tile-interactive {
+    transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  }
+
+  .tile-interactive:hover {
+    border-color: color-mix(in srgb, var(--ring) 45%, var(--border));
+    box-shadow: var(--elevation-float);
+    transform: translateY(-2px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tile-interactive,
+    .tile-interactive:hover {
+      transition: none;
+      transform: none;
+    }
+    .gradient-blob {
+      display: none;
+    }
+  }
+}

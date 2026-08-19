@@ -11,6 +11,7 @@ import {
 import { cn } from '~/lib/utils'
 import { citationDate, collectCitations, documentTypeLabel, faviconUrl } from '~/utils/citations'
 import CitationReaderDialog from '~/components/chat/CitationReaderDialog.vue'
+import { useCitationFocus } from '~/composables/useCitationFocus'
 import type { ChatMessage } from '~/types/chat'
 import type { CitationEntry, CitationTarget } from '~/types/citations'
 
@@ -47,6 +48,13 @@ const {
 } = useCitationReader()
 
 const citations = computed(() => collectCitations(props.messages))
+
+const { focusMark, clearFocus, isActive } = useCitationFocus()
+
+/** Light the matching inline mark while the card is hovered or focused. */
+function focusEntry(entry: CitationEntry) {
+  focusMark({ kind: entry.type, token: entry.token, index: entry.index })
+}
 
 const grounded = computed(() => citations.value.filter((entry) => entry.type !== 'web'))
 const web = computed(() => citations.value.filter((entry) => entry.type === 'web'))
@@ -167,7 +175,14 @@ function readableUrl(url: string | null): string {
             :key="entry.key"
             :data-citation-key="entry.key"
             class="rounded-xl border bg-card p-3 shadow-sm"
-            :class="{ 'saligan-citation-target': revealed === entry.key }"
+            :class="{
+              'saligan-citation-target': revealed === entry.key,
+              'saligan-citation-active': isActive({ kind: entry.type, token: entry.token, index: entry.index }),
+            }"
+            @mouseenter="focusEntry(entry)"
+            @mouseleave="clearFocus()"
+            @focusin="focusEntry(entry)"
+            @focusout="clearFocus()"
           >
             <div class="flex items-start gap-2.5">
               <!--
@@ -208,13 +223,13 @@ function readableUrl(url: string | null): string {
             </div>
 
             <!-- What the answer actually took from it -->
-            <blockquote
+            <p
               v-for="(excerpt, i) in entry.excerpts"
               :key="i"
-              class="mt-2.5 break-words border-l-2 border-primary/40 pl-2.5 text-[12px] leading-relaxed text-muted-foreground"
+              class="cite-excerpt break-words"
             >
-              {{ excerpt }}
-            </blockquote>
+              <span class="cite-mark">{{ excerpt }}</span>
+            </p>
 
             <ul v-if="entry.tags.length > 0" class="mt-2.5 flex flex-wrap gap-1">
               <li
@@ -279,7 +294,14 @@ function readableUrl(url: string | null): string {
             :key="entry.key"
             :data-citation-key="entry.key"
             class="rounded-xl border bg-card p-3 shadow-sm"
-            :class="{ 'saligan-citation-target': revealed === entry.key }"
+            :class="{
+              'saligan-citation-target': revealed === entry.key,
+              'saligan-citation-active': isActive({ kind: entry.type, token: entry.token, index: entry.index }),
+            }"
+            @mouseenter="focusEntry(entry)"
+            @mouseleave="clearFocus()"
+            @focusin="focusEntry(entry)"
+            @focusout="clearFocus()"
           >
             <div class="flex items-start gap-2.5">
               <img
@@ -298,13 +320,13 @@ function readableUrl(url: string | null): string {
               </div>
             </div>
 
-            <blockquote
+            <p
               v-for="(excerpt, i) in entry.excerpts"
               :key="i"
-              class="mt-2.5 break-words border-l-2 border-primary/40 pl-2.5 text-[12px] leading-relaxed text-muted-foreground"
+              class="cite-excerpt break-words"
             >
-              {{ excerpt }}
-            </blockquote>
+              <span class="cite-mark">{{ excerpt }}</span>
+            </p>
 
             <div class="mt-3">
               <a

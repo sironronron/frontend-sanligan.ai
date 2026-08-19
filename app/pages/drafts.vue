@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import {
-  DownloadIcon,
-  EyeIcon,
   FileSearchIcon,
   FileTextIcon,
+  PenLineIcon,
 } from '@lucide/vue'
-import { useDocumentExport } from '~/composables/useDocumentExport'
+import type { TiptapDoc } from '~/types/tiptap'
 
 definePageMeta({
   middleware: ['auth', 'onboarding', 'subscription'],
@@ -19,6 +18,10 @@ interface GeneratedDocument {
   case_title: string | null
   title: string
   content: string
+  letter_draft?: {
+    content: TiptapDoc
+    title: string | null
+  } | null
   created_at: string
 }
 
@@ -26,7 +29,6 @@ const api = useApi()
 
 const documents = ref<GeneratedDocument[]>([])
 const loading = ref(false)
-const { previewDoc, openExport, closePreview } = useDocumentExport()
 
 const view = useViewMode('drafts', 'list')
 
@@ -38,12 +40,14 @@ function formatDate(value: string) {
   })
 }
 
-function download(doc: GeneratedDocument, type: 'word' | 'pdf') {
-  void openExport(doc.content, type, doc.title)
-}
-
-function preview(doc: GeneratedDocument) {
-  void openExport(doc.content, 'pdf', doc.title)
+function edit(doc: GeneratedDocument) {
+  const draft = doc.letter_draft
+  if (!draft || !draft.content) return
+  useLetterDraftPanel().openLetterDraft({
+    content: draft.content,
+    title: doc.title,
+    messageId: doc.id,
+  })
 }
 
 function requestVetting(doc: GeneratedDocument) {
@@ -69,7 +73,8 @@ onMounted(loadDocuments)
   <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <PageHeader
       title="Drafts"
-      description="Revisit the letters, pleadings, and forms the assistant drafted for you, and download them again."
+      :icon="FileTextIcon"
+      description="Revisit the letters, pleadings, and forms the assistant drafted for you, edit them, and export them from the letter editor."
     >
       <template #actions>
         <Button class="gap-2" @click="navigateTo('/vetting')">
@@ -83,11 +88,12 @@ onMounted(loadDocuments)
 
     <EmptyState
       v-else-if="documents.length === 0"
+      class="hero-gradient"
       :icon="FileTextIcon"
       title="No drafts yet"
-      description="Ask the assistant to draft a letter or pleading, then export it from the chat."
+      description="Ask the assistant to draft a letter or pleading, then edit and export it from the letter editor."
     >
-      <Button @click="navigateTo('/chat')">Start a draft</Button>
+      <Button class="bg-brand-gradient border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="navigateTo('/chat')">Start a draft</Button>
     </EmptyState>
 
     <div v-else class="space-y-2">
@@ -100,7 +106,7 @@ onMounted(loadDocuments)
 
       <!-- List: one dense row each, the layout this page has always had. -->
       <template v-if="view === 'list'">
-        <div v-for="doc in documents" :key="doc.id" class="surface overflow-hidden">
+        <div v-for="(doc, i) in documents" :key="doc.id" class="batayan-row-in surface overflow-hidden" :style="{ '--row-delay': `${i * 35}ms` }">
           <div class="flex items-center gap-3 p-4">
             <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <FileTextIcon class="size-4 text-primary" />
@@ -138,17 +144,15 @@ onMounted(loadDocuments)
                 <FileSearchIcon class="size-3.5" />
                 Vetting
               </Button>
-              <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="preview(doc)">
-                <EyeIcon class="size-3.5" />
-                Preview
-              </Button>
-              <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="download(doc, 'word')">
-                <DownloadIcon class="size-3.5" />
-                Word
-              </Button>
-              <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="download(doc, 'pdf')">
-                <DownloadIcon class="size-3.5" />
-                PDF
+              <Button
+                variant="outline"
+                size="sm"
+                class="h-7 gap-1.5 px-2.5 text-xs"
+                :aria-label="`Edit ${doc.title} in the letter editor`"
+                @click="edit(doc)"
+              >
+                <PenLineIcon class="size-3.5" />
+                Edit
               </Button>
             </div>
           </div>
@@ -161,7 +165,7 @@ onMounted(loadDocuments)
         title happens to push them.
       -->
       <div v-else-if="view === 'card'" class="grid gap-3 sm:grid-cols-2">
-        <div v-for="doc in documents" :key="doc.id" class="surface flex flex-col gap-3 p-4">
+        <div v-for="(doc, i) in documents" :key="doc.id" class="batayan-row-in surface flex flex-col gap-3 p-4" :style="{ '--row-delay': `${i * 45}ms` }">
           <div class="flex items-start gap-3">
             <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <FileTextIcon class="size-4 text-primary" />
@@ -200,17 +204,15 @@ onMounted(loadDocuments)
               <FileSearchIcon class="size-3.5" />
               Vetting
             </Button>
-            <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="preview(doc)">
-              <EyeIcon class="size-3.5" />
-              Preview
-            </Button>
-            <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="download(doc, 'word')">
-              <DownloadIcon class="size-3.5" />
-              Word
-            </Button>
-            <Button variant="outline" size="sm" class="h-7 gap-1.5 px-2.5 text-xs" @click="download(doc, 'pdf')">
-              <DownloadIcon class="size-3.5" />
-              PDF
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-7 gap-1.5 px-2.5 text-xs"
+              :aria-label="`Edit ${doc.title} in the letter editor`"
+              @click="edit(doc)"
+            >
+              <PenLineIcon class="size-3.5" />
+              Edit
             </Button>
           </div>
         </div>
@@ -232,7 +234,7 @@ onMounted(loadDocuments)
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-for="doc in documents" :key="doc.id">
+            <TableRow v-for="(doc, i) in documents" :key="doc.id" class="batayan-row-in" :style="{ '--row-delay': `${i * 30}ms` }">
               <TableCell class="max-w-[18rem]">
                 <div class="flex items-center gap-2">
                   <FileTextIcon class="size-3.5 shrink-0 text-primary" />
@@ -277,16 +279,15 @@ onMounted(loadDocuments)
                   >
                     <FileSearchIcon class="size-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" class="size-7" :aria-label="`Preview ${doc.title}`" @click="preview(doc)">
-                    <EyeIcon class="size-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" :aria-label="`Download ${doc.title} as Word`" @click="download(doc, 'word')">
-                    <DownloadIcon class="size-3.5" />
-                    Word
-                  </Button>
-                  <Button variant="ghost" size="sm" class="h-7 gap-1 px-2 text-xs" :aria-label="`Download ${doc.title} as PDF`" @click="download(doc, 'pdf')">
-                    <DownloadIcon class="size-3.5" />
-                    PDF
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-7"
+                    :aria-label="`Edit ${doc.title} in the letter editor`"
+                    title="Edit in the letter editor"
+                    @click="edit(doc)"
+                  >
+                    <PenLineIcon class="size-3.5" />
                   </Button>
                 </div>
               </TableCell>
@@ -295,21 +296,5 @@ onMounted(loadDocuments)
         </Table>
       </div>
     </div>
-
-    <DocumentPreviewPanel
-      v-if="previewDoc && previewDoc.type !== 'word'"
-      :preview="previewDoc"
-      dialog
-      @close="closePreview"
-    />
-
-    <WordPreviewDialog
-      v-if="previewDoc?.type === 'word'"
-      :title="previewDoc.title"
-      :blob-url="previewDoc.blobUrl"
-      :loading="previewDoc.loading"
-      :error="previewDoc.error"
-      @close="closePreview"
-    />
   </div>
 </template>

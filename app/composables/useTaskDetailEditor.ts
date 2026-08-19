@@ -9,7 +9,8 @@ import {
   XIcon,
 } from '@lucide/vue'
 import { useTodoStore, type Todo } from '~/stores/todos'
-import { useOrganizationStore } from '~/stores/organization'
+import { useOrganizationStore, type OrgMember } from '~/stores/organization'
+import { useAuthStore } from '~/stores/auth'
 
 /**
  * Shared state + actions for editing a single task detail. Used by the
@@ -21,6 +22,7 @@ import { useOrganizationStore } from '~/stores/organization'
 export function useTaskDetailEditor(todo: MaybeRefOrGetter<Todo | null>) {
   const todoStore = useTodoStore()
   const orgStore = useOrganizationStore()
+  const auth = useAuthStore()
   const api = useApi()
 
   // --- Task resources (subtasks, comments, activities, attachments) ---
@@ -154,17 +156,41 @@ export function useTaskDetailEditor(todo: MaybeRefOrGetter<Todo | null>) {
   }
 
   // --- Members ---
+  /**
+   * The signed-in user as an assignee candidate. Kept out of the org list for
+   * a solo account (no organization, so /organizations/members answers empty),
+   * but they still need to be assignable to their own task — so they are added
+   * back here.
+   */
+  const meAsMember = computed<OrgMember | null>(() => {
+    const u = auth.user
+    if (!u) return null
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      org_role: u.org_role ?? 'member',
+      org_status: u.org_status ?? 'active',
+    }
+  })
+
+  const assigneeCandidates = computed<OrgMember[]>(() => {
+    const members = orgStore.members.filter(m => m.org_status === 'active')
+    const me = meAsMember.value
+    if (!me || members.some(m => m.id === me.id)) return members
+    return [me, ...members]
+  })
+
   const filteredMembers = computed(() => {
     const needle = assigneeSearch.value.trim().toLowerCase()
-    if (needle === '') return orgStore.members.filter(m => m.org_status === 'active')
-    return orgStore.members.filter(
-      m => m.org_status === 'active'
-        && (m.name.toLowerCase().includes(needle) || m.email.toLowerCase().includes(needle)),
+    if (needle === '') return assigneeCandidates.value
+    return assigneeCandidates.value.filter(
+      m => m.name.toLowerCase().includes(needle) || m.email.toLowerCase().includes(needle),
     )
   })
 
   const selectedMember = computed(() =>
-    orgStore.members.find(m => m.name === assignee.value) ?? null,
+    assigneeCandidates.value.find(m => m.name === assignee.value) ?? null,
   )
 
   function initials(name: string) {
@@ -186,11 +212,22 @@ export function useTaskDetailEditor(todo: MaybeRefOrGetter<Todo | null>) {
 
   // --- Header actions ---
   const moreOpen = ref(false)
+  const copied = ref(false)
+  let copyTimer: ReturnType<typeof setTimeout> | undefined
 
-  function copyLink(todoId: string) {
+  async function copyLink(todoId: string) {
     const url = `${window.location.origin}/tasks/${todoId}`
-    navigator.clipboard.writeText(url)
-    toast.success('Link copied to clipboard')
+    try {
+      await navigator.clipboard.writeText(url)
+      copied.value = true
+      toast.success('Link copied successfully')
+      if (copyTimer) clearTimeout(copyTimer)
+      copyTimer = setTimeout(() => {
+        copied.value = false
+      }, 2000)
+    } catch {
+      toast.error('Could not copy link')
+    }
   }
 
   async function deleteTask() {
@@ -302,6 +339,7 @@ export function useTaskDetailEditor(todo: MaybeRefOrGetter<Todo | null>) {
     clearDueDate,
     activeTab,
     moreOpen,
+    copied,
     copyLink,
     deleteTask,
     save,

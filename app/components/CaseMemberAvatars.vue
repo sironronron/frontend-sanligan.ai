@@ -56,7 +56,7 @@ const summary = computed(() => {
   return `On this case: ${names.join(', ')}`
 })
 
-const sizeClass = computed(() => (props.size === 'md' ? 'size-7 text-[11px]' : 'size-6 text-[10px]'))
+const sizeClass = computed(() => (props.size === 'md' ? 'size-8 text-xs' : 'size-6 text-[10px]'))
 </script>
 
 <template>

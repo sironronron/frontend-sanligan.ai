@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 /**
  * Filled, so it cuts through a list of neutral status pills — but only for
  * high and urgent unless the caller asks for all of them. A "medium" badge on
@@ -9,6 +10,8 @@ const props = withDefaults(
     priority: string | null | undefined
     /** Detail views show the value whatever it is; lists opt out. */
     showQuiet?: boolean
+    /** Lets the caller override height, radius and spacing to align with neighbours. */
+    class?: HTMLAttributes['class']
   }>(),
   { showQuiet: false },
 )
@@ -22,7 +25,7 @@ const visible = computed(() => {
 </script>
 
 <template>
-  <Badge v-if="visible" variant="outline" :class="priorityClass(props.priority!)">
+  <Badge v-if="visible" variant="outline" :class="[priorityClass(props.priority!), props.class]">
     {{ priorityLabel(props.priority!) }}
   </Badge>
 </template>

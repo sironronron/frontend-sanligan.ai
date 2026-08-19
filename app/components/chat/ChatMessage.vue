@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import {
-  CheckIcon,
-  ClipboardCheckIcon,
-  CopyIcon,
-  FileDownIcon,
-  FileTextIcon,
-  FileTypeIcon,
-  Loader2Icon,
-  ThumbsDownIcon,
-  ThumbsUpIcon,
-} from '@lucide/vue'
-import { toast } from '~/components/ui/sonner'
-import { renderMarkdown } from '~/utils/markdown'
-import { vHighlight } from '~/directives/highlight'
-import ActivityTimeline from '~/components/ActivityTimeline.vue'
-import type { ChatActivityStep, ChatMessage, ChatMessageAttachment } from '~/types/chat'
+import ChatAssistantMessage from '~/components/chat/ChatAssistantMessage.vue'
+import ChatUserMessage from '~/components/chat/ChatUserMessage.vue'
+import type {
+  ChatActivityStep,
+  ChatMessage,
+  ChatToolNotice,
+  ChatToolReceipt,
+  ChatWebSearch,
+} from '~/types/chat'
+import type { LetterDraftPayload } from '~/types/tiptap'
 
+/**
+ * One turn in the thread.
+ *
+ * The two roles are laid out on entirely different principles — a contained
+ * question against an uncontained answer — so each owns its own component and
+ * this one only routes between them and carries the thread-level concerns
+ * (in-thread search highlighting) that apply to both.
+ */
 const props = defineProps<{
   message: ChatMessage
   displayContent: string
@@ -27,135 +29,38 @@ const props = defineProps<{
   searchQuery?: string
   activeSearchId?: string | null
   activeSearchOccurrence?: number
+  /** The letter this turn is still drafting; offers the editor back mid-stream. */
+  letterDraft?: LetterDraftPayload | null
+  /** The web search running right now, shown as a live trail of sites read. */
+  webSearch?: ChatWebSearch | null
+  /** Corrections raised against this turn while it is still streaming. */
+  streamNotices?: ChatToolNotice[]
+  /** Wall-clock time the live turn has taken, for the folded work summary. */
+  elapsedMs?: number | null
+  /** A question behind this answer can be re-asked. */
+  canRegenerate?: boolean
+  /** What this turn actually wrote — tasks filed, points flagged. */
+  receipts?: ChatToolReceipt[]
 }>()
 
 const emit = defineEmits<{
   'markdown-click': [event: MouseEvent, message: ChatMessage]
   rate: [message: ChatMessage, feedback: 'up' | 'down']
-  export: [message: ChatMessage, type: 'word' | 'pdf']
+  regenerate: [message: ChatMessage]
+  'open-panel': [panel: 'tasks' | 'advisories']
 }>()
 
-const persisted = computed(() => !props.message.id.startsWith('local-'))
-const copied = ref(false)
+const query = computed(() => props.searchQuery?.trim().toLowerCase() ?? '')
 
-const { download: downloadDocument } = useDocumentFile()
-const { fileIcon } = useFileTypeIcon()
-
-const attachments = computed<ChatMessageAttachment[]>(() => props.message.attachments ?? [])
-
-const downloading = ref<string | null>(null)
-
-async function openAttachment(attachment: ChatMessageAttachment) {
-  if (downloading.value) return
-  downloading.value = attachment.id
-  try {
-    await downloadDocument(attachment.id, attachment.original_filename)
-  } catch {
-    toast.error(`Could not open "${attachment.original_filename}"`)
-  } finally {
-    downloading.value = null
-  }
-}
-
-interface IntakePair {
-  key: string
-  label: string
-  value: string
-}
-
-function intakePairs(content: string): IntakePair[] | null {
-  if (!content.startsWith('[Intake Form Submission]')) return null
-  const pairs: IntakePair[] = []
-  for (const line of content.split('\n').slice(1)) {
-    const idx = line.indexOf(': ')
-    if (idx === -1) continue
-    const key = line.slice(0, idx).trim()
-    pairs.push({
-      key,
-      label: key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-      value: line.slice(idx + 2).trim(),
-    })
-  }
-  return pairs.length > 0 ? pairs : null
-}
-
-interface ChoiceSelection {
-  question: string
-  answer: string
-}
-
-/**
- * The answers to an ask_user_question call, shown as the decision that was made
- * rather than as the `Q:`/`A:` transport the model receives.
- */
-function choiceSelections(content: string): ChoiceSelection[] | null {
-  if (!content.startsWith('[Choice Selection]')) return null
-
-  const selections: ChoiceSelection[] = []
-  let question = ''
-
-  for (const line of content.split('\n').slice(1)) {
-    const text = line.trim()
-
-    if (text.startsWith('Q: ')) question = text.slice(3).trim()
-    else if (text.startsWith('A: ') && question !== '') {
-      selections.push({ question, answer: text.slice(3).trim() })
-      question = ''
-    }
-  }
-
-  return selections.length > 0 ? selections : null
-}
-
-async function copyContent() {
-  try {
-    await navigator.clipboard.writeText(props.message.content)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = props.message.content
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    textarea.remove()
-  }
-  copied.value = true
-  setTimeout(() => {
-    copied.value = false
-  }, 1500)
-}
-
-const showThinking = computed(
-  () =>
-    props.message.role === 'assistant'
-    && props.isStreaming
-    && !props.message.content
-    && !props.awaitingIntake,
-)
-
-const showStreamingStatus = computed(
-  () =>
-    props.message.role === 'assistant'
-    && props.isStreaming
-    && props.message.content
-    && props.statusLabel
-    && !props.awaitingIntake,
-)
-
-function canExport(m: ChatMessage): boolean {
-  return m.content.trim().includes('/export/')
-}
-
-const searchQuery = computed(() => props.searchQuery?.trim().toLowerCase() ?? '')
 const matchesSearch = computed(
-  () => searchQuery.value !== '' && props.message.content.toLowerCase().includes(searchQuery.value),
+  () => query.value !== '' && props.message.content.toLowerCase().includes(query.value),
 )
+
 const isActiveSearch = computed(
   () => matchesSearch.value && props.activeSearchId === props.message.id,
 )
 
-const highlightValue = computed(() => ({
+const highlight = computed(() => ({
   query: props.searchQuery ?? '',
   active: isActiveSearch.value ? props.activeSearchOccurrence ?? 0 : null,
 }))
@@ -163,191 +68,40 @@ const highlightValue = computed(() => ({
 
 <template>
   <div
-    class="group flex items-start gap-3 transition-all"
+    class="rounded-2xl transition-[background-color,box-shadow] duration-300"
     :class="[
-      message.role === 'user' ? 'flex-row-reverse' : '',
-      matchesSearch ? 'rounded-xl ring-1 ring-primary/40' : '',
-      isActiveSearch ? 'bg-primary/10 ring-2 ring-primary' : '',
-      searchQuery !== '' && !matchesSearch ? 'opacity-40' : '',
+      isActiveSearch ? 'bg-primary/[0.07] shadow-[0_0_0_2px_var(--primary)]' : '',
+      matchesSearch && !isActiveSearch ? 'shadow-[0_0_0_1px_color-mix(in_oklab,var(--primary)_35%,transparent)]' : '',
+      query !== '' && !matchesSearch ? 'opacity-40' : '',
+      matchesSearch ? 'px-2 py-1.5' : '',
     ]"
   >
-    <div
+    <ChatUserMessage
       v-if="message.role === 'user'"
-      class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground"
-    >
-      You
-    </div>
+      :message="message"
+      :highlight="highlight"
+    />
 
-    <div class="flex min-w-0 flex-1 flex-col" :class="message.role === 'user' ? 'items-end' : 'items-start'">
-      <!-- Streaming "thinking" card before any content arrives -->
-      <div
-        v-if="showThinking"
-        class="thinking-card w-full max-w-[85%] rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-card to-card px-4 py-3.5 text-sm shadow-sm"
-      >
-        <div class="flex items-center gap-2.5">
-          <span class="relative flex size-5 items-center justify-center">
-            <span class="absolute size-full animate-ping rounded-full bg-primary/20" />
-            <Loader2Icon class="size-3.5 animate-spin text-primary" />
-          </span>
-          <!--
-            The heading names the subject once. The per-step detail lives in
-            the timeline below, so the two no longer say the same sentence.
-          -->
-          <span class="min-w-0 font-medium text-foreground/90">
-            <template v-if="topic">Researching <span class="text-primary">{{ topic }}</span></template>
-            <template v-else>{{ statusLabel ?? 'Thinking…' }}</template>
-          </span>
-        </div>
-        <ActivityTimeline v-if="activitySteps.length > 0" :steps="activitySteps" class="mt-3" />
-      </div>
-
-      <!-- Message body -->
-      <div v-else class="flex min-w-0 max-w-[85%] flex-col">
-        <!-- User -->
-        <template v-if="message.role === 'user'">
-          <!-- Files sent with this message -->
-          <ul v-if="attachments.length > 0" class="mb-1.5 flex flex-wrap justify-end gap-1.5">
-            <li v-for="attachment in attachments" :key="attachment.id">
-              <button
-                type="button"
-                class="flex max-w-full items-center gap-1.5 rounded-lg border bg-card px-2 py-1 text-xs transition-colors hover:bg-accent disabled:opacity-60"
-                :title="`Download ${attachment.original_filename}`"
-                :disabled="downloading === attachment.id"
-                @click="openAttachment(attachment)"
-              >
-                <Loader2Icon v-if="downloading === attachment.id" class="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                <component :is="fileIcon(attachment.original_filename, attachment.mime_type)" v-else class="size-3.5 shrink-0 text-muted-foreground" />
-                <span class="min-w-0 truncate font-medium">{{ attachment.original_filename }}</span>
-                <span v-if="attachment.status === 'failed'" class="shrink-0 text-destructive">· Failed</span>
-              </button>
-            </li>
-          </ul>
-
-          <template v-if="intakePairs(message.content)">
-            <div class="w-full rounded-2xl border bg-card/80 px-4 py-3 shadow-sm">
-              <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-                <ClipboardCheckIcon class="size-3.5" />
-                Intake Form Submitted
-              </p>
-              <dl class="mt-2.5 space-y-2">
-                <div v-for="pair in intakePairs(message.content)" :key="pair.key">
-                  <dt class="text-[10px] uppercase tracking-wide text-muted-foreground/80">{{ pair.label }}</dt>
-                  <dd v-highlight="highlightValue" class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ pair.value || '—' }}</dd>
-                </div>
-              </dl>
-            </div>
-          </template>
-          <template v-else-if="choiceSelections(message.content)">
-            <div class="w-full rounded-2xl border bg-card/80 px-4 py-3 shadow-sm">
-              <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-                <CheckIcon class="size-3.5" />
-                Your choice
-              </p>
-              <dl class="mt-2.5 space-y-2">
-                <div v-for="selection in choiceSelections(message.content)" :key="selection.question">
-                  <dt class="text-[10px] uppercase tracking-wide text-muted-foreground/80">{{ selection.question }}</dt>
-                  <dd v-highlight="highlightValue" class="mt-0.5 whitespace-pre-wrap break-words text-[13px]">{{ selection.answer || '—' }}</dd>
-                </div>
-              </dl>
-            </div>
-          </template>
-          <template v-else>
-            <div v-highlight="highlightValue" class="whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
-              {{ message.content }}
-            </div>
-          </template>
-        </template>
-
-        <!-- Assistant -->
-        <template v-else>
-          <div
-            v-if="showStreamingStatus"
-            class="mb-2.5 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
-          >
-            <span class="relative flex size-3.5 items-center justify-center">
-              <span class="absolute size-full animate-ping rounded-full bg-primary/25" />
-              <Loader2Icon class="size-2.5 animate-spin text-primary" />
-            </span>
-            <span class="font-medium">{{ statusLabel }}</span>
-          </div>
-          <div
-            v-highlight="highlightValue"
-            class="break-words text-[0.95rem] leading-7"
-            v-html="renderMarkdown(displayContent)"
-            @click="emit('markdown-click', $event, message)"
-          />
-
-          <!-- Hover actions -->
-          <div
-            v-if="persisted && !showThinking"
-            class="-mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-lg:opacity-100"
-          >
-            <Button variant="ghost" size="icon" class="size-7 text-muted-foreground" title="Copy" @click="copyContent">
-              <CheckIcon v-if="copied" class="size-3.5 text-forest dark:text-peach" />
-              <CopyIcon v-else class="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="size-7 text-muted-foreground"
-              :class="{ 'bg-primary/10 text-primary': message.feedback === 'up' }"
-              :title="message.feedback === 'up' ? 'Remove rating' : 'Helpful'"
-              @click="emit('rate', message, 'up')"
-            >
-              <ThumbsUpIcon class="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="size-7 text-muted-foreground"
-              :class="{ 'bg-destructive/10 text-destructive': message.feedback === 'down' }"
-              :title="message.feedback === 'down' ? 'Remove rating' : 'Not helpful'"
-              @click="emit('rate', message, 'down')"
-            >
-              <ThumbsDownIcon class="size-3.5" />
-            </Button>
-          </div>
-
-          <!-- Export actions -->
-          <div v-if="persisted && canExport(message)" class="mt-2.5">
-            <div class="inline-flex items-stretch overflow-hidden rounded-lg border bg-card shadow-sm">
-              <span
-                class="inline-flex items-center gap-1 border-r bg-muted/40 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
-                aria-hidden="true"
-              >
-                <FileDownIcon class="size-3" />
-                Export
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-7 gap-1.5 rounded-none px-2.5 text-xs text-foreground/80 transition-colors hover:bg-primary/10 hover:text-primary"
-                title="Download as Word document (.docx)"
-                @click="emit('export', message, 'word')"
-              >
-                <FileTypeIcon class="size-3.5" />
-                Word
-                <span class="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">.docx</span>
-              </Button>
-              <span class="my-1.5 w-px bg-border" />
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-7 gap-1.5 rounded-none px-2.5 text-xs text-foreground/80 transition-colors hover:bg-primary/10 hover:text-primary"
-                title="Download as PDF document (.pdf)"
-                @click="emit('export', message, 'pdf')"
-              >
-                <FileTextIcon class="size-3.5" />
-                PDF
-                <span class="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">.pdf</span>
-              </Button>
-            </div>
-          </div>
-        </template>
-      </div>
-
-      <!-- Cited sources: the inline numbers in the answer text are the only
-           citation affordance now — no cards, panels, or popovers. -->
-    </div>
+    <ChatAssistantMessage
+      v-else
+      :message="message"
+      :display-content="displayContent"
+      :is-streaming="isStreaming"
+      :status-label="statusLabel"
+      :topic="topic"
+      :activity-steps="activitySteps"
+      :awaiting-intake="awaitingIntake"
+      :highlight="highlight"
+      :letter-draft="letterDraft"
+      :web-search="webSearch"
+      :stream-notices="streamNotices"
+      :elapsed-ms="elapsedMs"
+      :can-regenerate="canRegenerate"
+      :receipts="receipts"
+      @markdown-click="(event, m) => emit('markdown-click', event, m)"
+      @rate="(m, feedback) => emit('rate', m, feedback)"
+      @regenerate="(m) => emit('regenerate', m)"
+      @open-panel="(panel) => emit('open-panel', panel)"
+    />
   </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
 /**
  * Status reads as neutral chrome plus a colored dot. Tinting the whole pill
  * per status put four different backgrounds in one row and made priority —
@@ -8,6 +9,8 @@ const props = defineProps<{
   status: string
   /** Renders the chevron affordance when the badge doubles as a menu trigger. */
   interactive?: boolean
+  /** Lets the caller override height, radius and spacing to align with neighbours. */
+  class?: HTMLAttributes['class']
 }>()
 
 const { statusLabel, statusDotClass } = useCasePresentation()
@@ -17,7 +20,10 @@ const { statusLabel, statusDotClass } = useCasePresentation()
   <Badge
     variant="outline"
     class="gap-1.5 bg-card"
-    :class="props.interactive ? 'pr-1.5 transition-colors hover:bg-muted' : ''"
+    :class="[
+      props.interactive ? 'pr-1.5 transition-colors hover:bg-muted' : '',
+      props.class,
+    ]"
   >
     <span class="size-1.5 shrink-0 rounded-full" :class="statusDotClass(props.status)" aria-hidden="true" />
     {{ statusLabel(props.status) }}

@@ -12,6 +12,8 @@ const notificationStore = useNotificationStore()
 const kindLabel: Record<string, string> = {
   case: 'Case',
   task: 'Task',
+  task_assigned: 'Assignment',
+  task_comment: 'Comment',
   vetting_request: 'Vetting request',
   vetting_message: 'Message',
   lawyer_verification: 'Verification',
