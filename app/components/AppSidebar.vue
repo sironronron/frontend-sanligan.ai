@@ -41,6 +41,7 @@ const billing = useBillingStore()
 const org = useOrganizationStore()
 
 const navItems = computed(() => [
+  { to: '/dashboard', label: 'Dashboard', icon: GaugeIcon, gated: false },
   { to: '/chat', label: 'Chat', icon: MessageSquareIcon, gated: true },
   { to: '/cases', label: 'Cases', icon: FolderIcon, gated: true },
   { to: '/files', label: 'Files', icon: FileTextIcon, gated: true },
