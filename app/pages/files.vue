@@ -930,22 +930,14 @@ async function bulkDelete() {
 
     <!-- Main content -->
     <div class="min-w-0 flex-1">
-      <!-- Header -->
-      <div class="mb-5 flex items-center justify-between gap-3">
-        <div class="flex min-w-0 items-center gap-3">
-          <span class="bg-brand-gradient flex size-11 shrink-0 items-center justify-center rounded-xl text-primary-foreground shadow-sm">
-            <FileUpIcon class="size-5" />
-          </span>
-          <div class="min-w-0">
-            <h1 class="font-heading text-xl font-semibold tracking-tight">Files</h1>
-            <p class="text-sm text-muted-foreground">Upload and organize your legal documents.</p>
-          </div>
-        </div>
-        <Button class="bg-brand-gradient shrink-0 gap-1.5 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="pickFile">
-          <FileUpIcon class="size-4" />
-          Upload
-        </Button>
-      </div>
+      <AppPageHeader title="Files" description="Upload and organize your legal documents." :icon="FileUpIcon">
+        <template #actions>
+          <Button class="bg-brand-gradient shrink-0 gap-1.5 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="pickFile">
+            <FileUpIcon class="size-4" />
+            Upload
+          </Button>
+        </template>
+      </AppPageHeader>
 
       <!-- Upload zone -->
       <div

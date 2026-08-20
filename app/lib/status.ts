@@ -45,6 +45,8 @@ const STATUS_TONE: Record<string, StatusTone> = {
   scheduled: 'info',
   submitted: 'pending',
   awaiting_payment: 'warning',
+  payment_pending: 'warning',
+  waiting: 'pending',
   in_review: 'warning',
   offered: 'info',
   declined: 'danger',
