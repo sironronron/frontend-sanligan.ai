@@ -22,6 +22,7 @@ definePageMeta({
 
 const auth = useAuthStore()
 const todos = useTodoStore()
+const caseStore = useCaseStore()
 const { openTodo } = useTaskDetailPanel()
 const { openLetterDraft: openDraft } = useLetterDraftPanel()
 
@@ -46,6 +47,17 @@ const org = computed(() => summary.value?.organization ?? null)
 const tasks = computed(() => summary.value?.tasks ?? null)
 const drafts = computed(() => summary.value?.drafts ?? null)
 const vetting = computed(() => summary.value?.vetting ?? null)
+
+/**
+ * Active cases ranked by how many tasks are still open, so the rail surfaces
+ * the matters that actually need a human — not the ones already wrapped up.
+ */
+const attentionCases = computed(() =>
+  caseStore.cases
+    .filter(c => c.status !== 'closed')
+    .sort((a, b) => (b.open_tasks_count ?? 0) - (a.open_tasks_count ?? 0))
+    .slice(0, 5),
+)
 
 const recentDrafts = computed(() => drafts.value?.recent ?? [])
 const vettingStatuses = computed(() =>
@@ -74,6 +86,7 @@ onMounted(async () => {
   await load()
   if (summary.value) {
     await todos.fetchTodos()
+    await caseStore.fetchCases()
   }
 })
 </script>
@@ -272,11 +285,11 @@ onMounted(async () => {
               </Button>
             </template>
 
-            <div v-if="(cases?.open ?? 0) === 0" class="p-5">
+            <div v-if="attentionCases.length === 0" class="p-5">
               <EmptyState
                 :icon="FolderIcon"
-                title="No open cases"
-                description="Create a case to organize a matter, its documents, and the tasks around it."
+                title="No cases need attention"
+                description="Active cases with open tasks will show up here so you can pick up where you left off."
                 action-label="Create a case"
                 to="/cases"
               />
@@ -284,13 +297,18 @@ onMounted(async () => {
 
             <ul v-else class="divide-y divide-border/70">
               <li
+                v-for="c in attentionCases"
+                :key="c.id"
                 class="flex cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/50"
-                @click="navigateTo('/cases')"
+                @click="navigateTo(`/cases/${c.id}`)"
               >
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-medium">{{ cases?.open }} open case{{ cases?.open === 1 ? '' : 's' }}</span>
-                  <span class="text-caption text-muted-foreground">{{ cases?.total }} total</span>
+                  <span class="block truncate text-sm font-medium">{{ c.title }}</span>
+                  <span class="text-caption text-muted-foreground">
+                    {{ c.open_tasks_count ?? 0 }} open task{{ (c.open_tasks_count ?? 0) === 1 ? '' : 's' }}
+                  </span>
                 </span>
+                <CaseStatusBadge :status="c.status" />
                 <ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
               </li>
             </ul>
