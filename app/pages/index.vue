@@ -4,7 +4,7 @@ definePageMeta({
 })
 
 const auth = useAuthStore()
-await navigateTo(auth.isVerifiedLawyer ? '/lawyer/dashboard' : '/chat', { replace: true })
+await navigateTo(auth.isVerifiedLawyer ? '/lawyer/dashboard' : '/dashboard', { replace: true })
 </script>
 
 <template>

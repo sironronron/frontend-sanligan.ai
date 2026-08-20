@@ -95,6 +95,8 @@ onMounted(loadPages)
   <div class="mx-auto w-full max-w-6xl px-4 py-6">
     <AdminNav />
 
+    <AppPageHeader title="Crawled pages" description="Pages pulled from allowlisted legal sources into the knowledge base." />
+
     <div class="surface mb-6 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
       <p class="text-sm text-muted-foreground">
         {{ meta?.total ?? 0 }} pages crawled

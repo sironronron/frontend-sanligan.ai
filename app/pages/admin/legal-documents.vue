@@ -235,6 +235,8 @@ onBeforeUnmount(() => {
   <div class="mx-auto w-full max-w-6xl px-4 py-6">
     <AdminNav />
 
+    <AppPageHeader title="Legal documents" description="Documents in the shared knowledge base the assistant retrieves and cites." />
+
     <Card class="mb-6">
       <CardHeader>
         <CardTitle class="text-base">Upload a legal document</CardTitle>
