@@ -372,6 +372,17 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     )
   }
 
+  function resetUnfinishedLetterDraft(turn: ChatTurn) {
+    if (turn.letterDraft?.drafting !== true || turn.letterDraft.content !== null) return
+
+    turn.letterDraft = null
+
+    const panel = useLetterDraftPanel()
+    if (panel.letterDraft.value?.drafting === true && panel.letterDraft.value.content === null) {
+      panel.closeLetterDraft()
+    }
+  }
+
   function handleFrame(turn: ChatTurn, frame: string) {
     let event = 'message'
     const dataLines: string[] = []
@@ -464,6 +475,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       completeStep(turn, 'flag_advisories')
     } else if (event === 'done') {
       streamers.get(turn.conversationId)?.flush()
+      resetUnfinishedLetterDraft(turn)
       completeActiveSteps(turn)
       turn.webSearch = null
       if (Number.isFinite(Number(payload.web_citations))) {
@@ -472,6 +484,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       if (turn.intakeFields === null) turn.awaitingIntake = false
     } else if (event === 'error') {
       streamers.get(turn.conversationId)?.flush()
+      resetUnfinishedLetterDraft(turn)
       turn.error = String(payload.message ?? 'The AI provider could not complete the response.')
       turn.awaitingIntake = false
       turn.webSearch = null
@@ -652,6 +665,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       // However the turn ended — finished, aborted, or thrown — nothing is
       // being read any more, so the trail must not outlive it.
       live.webSearch = null
+      resetUnfinishedLetterDraft(live)
       live.finishedAt = Date.now()
     }
   }
