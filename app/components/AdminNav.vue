@@ -4,9 +4,9 @@
 const route = useRoute()
 
 const tabs = [
-  { to: '/admin/legal-sources', label: 'Legal sources' },
-  { to: '/admin/crawled-pages', label: 'Crawled pages' },
-  { to: '/admin/legal-documents', label: 'Uploaded documents' },
+  { to: '/admin/legal-sources', label: 'Knowledge sources' },
+  { to: '/admin/crawled-pages', label: 'Indexed pages' },
+  { to: '/admin/legal-documents', label: 'Knowledge documents' },
   { to: '/admin/system-prompts', label: 'System prompts' },
   { to: '/admin/lawyers', label: 'Lawyers' },
   { to: '/admin/vetting', label: 'Vetting & payouts' },

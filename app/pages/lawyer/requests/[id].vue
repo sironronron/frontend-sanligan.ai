@@ -227,18 +227,6 @@ async function openBlob() {
   }
 }
 
-const statusTone: Record<string, string> = {
-  payment_pending: 'bg-muted text-muted-foreground',
-  matched: 'bg-primary/10 text-primary',
-  accepted: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  under_review: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  vetted: 'bg-primary/10 text-primary',
-  notarized: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  completed: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  cancelled: 'bg-muted text-muted-foreground',
-  declined: 'bg-destructive/10 text-destructive',
-}
-
 function formatFee(value: number) {
   if (!value) return '—'
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value / 100)
@@ -269,9 +257,7 @@ onMounted(() => {
     <template v-else-if="request">
       <PageHeader :title="request.document_type" :description="request.summary">
         <template #actions>
-          <Badge :class="statusTone[request.status] ?? 'bg-muted text-muted-foreground'">
-            {{ request.status_label }}
-          </Badge>
+          <StatusBadge :status="request.status" :label="request.status_label" />
         </template>
       </PageHeader>
 

@@ -36,7 +36,7 @@ definePageMeta({
 })
 
 interface Source {
-  type: 'legal' | 'document' | 'web'
+  type: 'legal' | 'standard' | 'document' | 'web'
   index?: number
   token?: string
   id?: string
@@ -46,6 +46,13 @@ interface Source {
   law_name?: string | null
   gr_number?: string | null
   promulgation_date?: string | null
+  standard_code?: string | null
+  standard_edition?: string | null
+  standard_issuer?: string | null
+  standard_status?: string | null
+  standard_publication_date?: string | null
+  standard_review_date?: string | null
+  rights_basis?: string | null
   source_name?: string | null
   url?: string | null
   title?: string | null

@@ -72,7 +72,7 @@ function transformInline(text: string, bare: boolean): string {
     .replace(/`(.+?)`/g, code)
 }
 
-type CitationKind = 'legal' | 'document' | 'web'
+type CitationKind = 'legal' | 'standard' | 'document' | 'web'
 
 function citationKindOf(word: string): CitationKind {
   if (word === 'Source') return 'legal'
@@ -81,8 +81,8 @@ function citationKindOf(word: string): CitationKind {
 }
 
 /**
- * Turn inline `[SRC <token>]` / `[DOC <token>]` / `[Source N]` / `[User Doc N]`
- * / `[Web N]` markers into small citation badges.
+ * Turn inline `[SRC <token>]` / `[STD <token>]` / `[DOC <token>]` /
+ * `[Source N]` / `[User Doc N]` / `[Web N]` markers into small citation badges.
  *
  * Each badge keeps the marker's source id (`data-cite-kind` /
  * `data-cite-token` / `data-cite-index`), which is what the page's click
@@ -93,11 +93,15 @@ function citationKindOf(word: string): CitationKind {
  */
 function transformCitations(text: string): string {
   return text.replace(
-    /\[(SRC|DOC)\s+([A-Z0-9]+)\]|\[(Source|User\s+Doc|Web)\s+(\d+)\]/gi,
+    /\[(SRC|STD|DOC)\s+([A-Z0-9]+)\]|\[(Source|User\s+Doc|Web)\s+(\d+)\]/gi,
     (_match, tokenKind: string, token: string, legacyKind: string, index: string) => {
       if (tokenKind !== undefined) {
-        const kind = tokenKind === 'SRC' ? 'legal' : 'document'
-        return `<button type="button" class="saligan-citation cite-mark" data-cite-kind="${kind}" data-cite-token="${token}" title="Show source [${tokenKind} ${token}]" aria-label="Show source ${token}">${token}</button>`
+        const normalizedTokenKind = tokenKind.toUpperCase()
+        const kind = normalizedTokenKind === 'SRC'
+          ? 'legal'
+          : normalizedTokenKind === 'STD' ? 'standard' : 'document'
+        const label = kind === 'standard' ? 'Show standard source' : 'Show source'
+        return `<button type="button" class="saligan-citation cite-mark" data-cite-kind="${kind}" data-cite-token="${token}" title="${label} [${normalizedTokenKind} ${token}]" aria-label="${label} ${token}">${token}</button>`
       }
 
       const kind = citationKindOf(legacyKind)

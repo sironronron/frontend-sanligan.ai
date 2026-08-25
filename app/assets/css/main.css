@@ -52,7 +52,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: 'Inter', sans-serif;
-  --font-heading: 'Fraunces', serif;
+  --font-heading: 'Fraunces', sans-serif;
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-chart-5: var(--chart-5);
@@ -76,6 +76,63 @@
   /* Exposed as shadow-raised / shadow-float utilities. */
   --shadow-raised: var(--elevation-raised);
   --shadow-float: var(--elevation-float);
+}
+
+/*
+ * Type scale. Pages stop hand-rolling sizes: one ramp from display down to
+ * caption, each set in Inter (same as the body) where it carries a heading's
+ * weight. Used by AppPageHeader, StatTile, SectionCard and the revamped
+ * surfaces.
+ */
+@utility text-display {
+  font-family: var(--font-heading);
+  font-size: clamp(2.25rem, 1.5rem + 2.6vw, 3rem);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+@utility text-h1 {
+  font-family: var(--font-heading);
+  font-size: 1.875rem;
+  line-height: 1.12;
+  letter-spacing: -0.018em;
+  font-weight: 600;
+}
+
+@utility text-h2 {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  line-height: 1.18;
+  letter-spacing: -0.014em;
+  font-weight: 600;
+}
+
+@utility text-h3 {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  line-height: 1.22;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+@utility text-body {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+@utility text-label {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility text-caption {
+  font-size: 0.8125rem;
+  line-height: 1.45;
 }
 
 /*
@@ -1367,8 +1424,9 @@ body {
     );
   }
 
-  /* Lift any direct content above the decorative wash. */
-  .hero-gradient > * {
+  /* Lift any direct content above the decorative wash. The blob stays
+     absolutely positioned so it doesn't take up layout space. */
+  .hero-gradient > :not(.gradient-blob) {
     position: relative;
     z-index: 1;
   }

@@ -95,6 +95,8 @@ onMounted(loadPrompts)
   <div class="mx-auto w-full max-w-4xl px-4 py-6">
     <AdminNav />
 
+    <AppPageHeader title="System prompts" description="The instruction set the assistant follows; activate one to enable chat." />
+
     <div class="surface mb-4 px-4 py-3 text-sm">
       <span class="font-medium">Active prompt:</span>
       <span v-if="activePrompt">

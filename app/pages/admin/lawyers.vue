@@ -46,14 +46,6 @@ const TABS = [
   { value: 'all', label: 'All' },
 ] as const
 
-const statusTone: Record<string, string> = {
-  pending: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  verified: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  rejected: 'bg-destructive/10 text-destructive',
-  suspended: 'bg-muted text-muted-foreground',
-  revoked: 'bg-destructive/10 text-destructive',
-}
-
 const statusLabel: Record<string, string> = {
   pending: 'Pending',
   verified: 'Verified',
@@ -197,9 +189,10 @@ onMounted(loadProfiles)
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <p class="text-sm font-medium">{{ p.full_name }}</p>
-              <Badge :class="statusTone[p.verification_status] ?? 'bg-muted text-muted-foreground'">
-                {{ statusLabel[p.verification_status] ?? p.verification_status }}
-              </Badge>
+              <StatusBadge
+                :status="p.verification_status"
+                :label="statusLabel[p.verification_status] ?? p.verification_status"
+              />
               <Badge v-if="p.is_notary" variant="outline" class="text-muted-foreground">Notary</Badge>
               <Badge v-if="p.available" variant="secondary" class="text-forest dark:text-peach">Available</Badge>
             </div>

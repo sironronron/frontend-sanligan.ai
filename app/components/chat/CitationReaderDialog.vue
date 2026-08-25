@@ -2,6 +2,7 @@
 import { ExternalLinkIcon, FileTextIcon, Loader2Icon, QuoteIcon, ScrollTextIcon, SparklesIcon, XIcon } from '@lucide/vue'
 import { renderMarkdown } from '~/utils/markdown'
 import { citationDate, markCitedHtml, parseDigest } from '~/utils/citations'
+import { rightsBasisLabel, standardStatusLabel } from '~/lib/standards'
 import type { CitationChunk, CitationReading } from '~/types/citations'
 
 /**
@@ -112,6 +113,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <span v-if="uploadedLabel" class="text-[10px] text-muted-foreground">
                 Uploaded {{ uploadedLabel }}
               </span>
+            </div>
+            <div v-if="reading?.kind === 'standard'" class="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+              <span v-if="reading.standard_code" translate="no">{{ reading.standard_code }}</span>
+              <span v-if="reading.standard_edition">Edition {{ reading.standard_edition }}</span>
+              <span v-if="reading.standard_issuer">Issuer {{ reading.standard_issuer }}</span>
+              <span v-if="reading.standard_status">Status {{ standardStatusLabel(reading.standard_status) }}</span>
+              <span v-if="reading.standard_publication_date">Published {{ citationDate(reading.standard_publication_date) }}</span>
+              <span v-if="reading.standard_review_date">Reviewed {{ citationDate(reading.standard_review_date) }}</span>
+              <span v-if="reading.rights_basis">Rights {{ rightsBasisLabel(reading.rights_basis) }}</span>
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-1">

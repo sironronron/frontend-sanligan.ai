@@ -21,20 +21,6 @@ const loading = ref(true)
  */
 const isChild = computed(() => route.path !== '/vetting')
 
-const statusTone: Record<string, string> = {
-  payment_pending: 'bg-muted text-muted-foreground',
-  pending: 'bg-muted text-muted-foreground',
-  waiting: 'bg-muted text-muted-foreground',
-  matched: 'bg-primary/10 text-primary',
-  accepted: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  under_review: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
-  vetted: 'bg-primary/10 text-primary',
-  notarized: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  completed: 'bg-forest/10 text-forest dark:bg-cream/10 dark:text-peach',
-  cancelled: 'bg-muted text-muted-foreground',
-  declined: 'bg-destructive/10 text-destructive',
-}
-
 onMounted(async () => {
   try {
     const res = await api<{ data: VettingRequestRecord[] }>('/vetting-requests')
@@ -88,9 +74,7 @@ onMounted(async () => {
             {{ r.service_type_label }} · {{ r.assigned_lawyer?.name ?? 'Looking for a lawyer…' }} · {{ timeAgo(r.created_at) }}
           </p>
         </div>
-        <Badge :class="statusTone[r.status] ?? 'bg-muted text-muted-foreground'" class="shrink-0">
-          {{ r.status_label }}
-        </Badge>
+        <StatusBadge :status="r.status" :label="r.status_label" class="shrink-0" />
         <Loader2Icon v-if="r.status === 'payment_pending'" class="size-4 animate-spin text-muted-foreground" />
       </div>
     </div>

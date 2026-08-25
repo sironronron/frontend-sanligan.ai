@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ExternalLinkIcon,
+  BadgeCheckIcon,
   GlobeIcon,
   QuoteIcon,
   ScaleIcon,
@@ -10,6 +11,7 @@ import {
 } from '@lucide/vue'
 import { cn } from '~/lib/utils'
 import { citationDate, collectCitations, documentTypeLabel, faviconUrl } from '~/utils/citations'
+import { rightsBasisLabel, standardStatusLabel } from '~/lib/standards'
 import CitationReaderDialog from '~/components/chat/CitationReaderDialog.vue'
 import { useCitationFocus } from '~/composables/useCitationFocus'
 import type { ChatMessage } from '~/types/chat'
@@ -56,8 +58,16 @@ function focusEntry(entry: CitationEntry) {
   focusMark({ kind: entry.type, token: entry.token, index: entry.index })
 }
 
-const grounded = computed(() => citations.value.filter((entry) => entry.type !== 'web'))
+const legal = computed(() => citations.value.filter((entry) => entry.type === 'legal'))
+const standards = computed(() => citations.value.filter((entry) => entry.type === 'standard'))
+const documents = computed(() => citations.value.filter((entry) => entry.type === 'document'))
 const web = computed(() => citations.value.filter((entry) => entry.type === 'web'))
+
+const citationGroups = computed(() => [
+  { key: 'legal', label: 'Legal sources', entries: legal.value },
+  { key: 'standard', label: 'Standards', entries: standards.value },
+  { key: 'document', label: 'Your documents', entries: documents.value },
+].filter((group) => group.entries.length > 0))
 
 const list = ref<HTMLElement | null>(null)
 
@@ -105,6 +115,7 @@ function iconFailed(key: string) {
 
 function typeLabel(entry: CitationEntry): string {
   if (entry.type === 'document') return documentTypeLabel(entry.label, entry.mimeType)
+  if (entry.type === 'standard') return entry.sourceName ?? 'International standard'
   return entry.sourceName ?? 'Legal source'
 }
 
@@ -117,6 +128,8 @@ function metaLine(entry: CitationEntry): string | null {
     const uploaded = citationDate(entry.uploadedAt)
     return uploaded ? `Uploaded ${uploaded}` : null
   }
+
+  if (entry.type === 'standard') return null
 
   return [citationDate(entry.promulgationDate), entry.sourceName]
     .filter(Boolean)
@@ -159,19 +172,18 @@ function readableUrl(url: string | null): string {
         <QuoteIcon class="size-5 text-muted-foreground" />
         <p class="text-sm font-medium">No sources cited yet</p>
         <p class="text-xs text-muted-foreground">
-          When Batayan grounds an answer in the law, your uploads, or the web, every source it used appears here.
+          When Batayan grounds an answer in law, standards, your uploads, or the web, every source it used appears here.
         </p>
       </div>
 
       <div v-else ref="list" class="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-5 pt-1">
-        <!-- Law and the user's own documents -->
-        <section v-if="grounded.length > 0" class="space-y-2.5">
+        <section v-for="group in citationGroups" :key="group.key" class="space-y-2.5">
           <h4 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Law &amp; your documents
+            {{ group.label }}
           </h4>
 
           <article
-            v-for="entry in grounded"
+            v-for="entry in group.entries"
             :key="entry.key"
             :data-citation-key="entry.key"
             class="rounded-xl border bg-card p-3 shadow-sm"
@@ -200,13 +212,27 @@ function readableUrl(url: string | null): string {
               <div class="min-w-0 flex-1">
                 <p class="flex items-center gap-1.5 text-[13px] font-medium leading-snug">
                   <component
-                    :is="entry.type === 'document' ? fileIcon(entry.label, entry.mimeType) : ScaleIcon"
+                    :is="entry.type === 'document'
+                      ? fileIcon(entry.label, entry.mimeType)
+                      : entry.type === 'standard' ? BadgeCheckIcon : ScaleIcon"
                     class="size-3.5 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
                   />
-                  <span class="min-w-0 break-words">{{ entry.label }}</span>
+                  <span class="min-w-0 break-words" :translate="entry.type === 'standard' ? 'no' : undefined">
+                    {{ entry.label }}
+                  </span>
+                </p>
+                <p v-if="entry.type === 'standard' && entry.title && entry.title !== entry.label" class="mt-0.5 break-words text-[11px] text-foreground/75">
+                  {{ entry.title }}
                 </p>
                 <p class="mt-0.5 break-words text-[11px] text-muted-foreground">
                   {{ typeLabel(entry) }}<template v-if="metaLine(entry)"> · {{ metaLine(entry) }}</template>
+                </p>
+                <p v-if="entry.type === 'standard'" class="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                  <span v-if="entry.standard_edition">Edition {{ entry.standard_edition }}</span>
+                  <span v-if="entry.standard_issuer">Issuer {{ entry.standard_issuer }}</span>
+                  <span v-if="entry.standard_status">Status {{ standardStatusLabel(entry.standard_status) }}</span>
+                  <span v-if="entry.rights_basis">Rights {{ rightsBasisLabel(entry.rights_basis) }}</span>
                 </p>
               </div>
 
@@ -215,10 +241,10 @@ function readableUrl(url: string | null): string {
                 read as the source's official handle rather than a filing detail.
               -->
               <span
-                v-if="entry.type === 'legal' && entry.grNumber"
+                v-if="(entry.type === 'legal' && entry.grNumber) || (entry.type === 'standard' && entry.standard_code && entry.label !== entry.standard_code)"
                 class="mt-0.5 shrink-0 rounded-md border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] font-semibold leading-none tracking-wide text-muted-foreground"
               >
-                {{ entry.grNumber }}
+                {{ entry.type === 'legal' ? entry.grNumber : entry.standard_code }}
               </span>
             </div>
 
@@ -231,7 +257,7 @@ function readableUrl(url: string | null): string {
               <span class="cite-mark">{{ excerpt }}</span>
             </p>
 
-            <ul v-if="entry.tags.length > 0" class="mt-2.5 flex flex-wrap gap-1">
+            <ul v-if="entry.type !== 'standard' && entry.tags.length > 0" class="mt-2.5 flex flex-wrap gap-1">
               <li
                 v-for="tag in entry.tags"
                 :key="tag.id"
