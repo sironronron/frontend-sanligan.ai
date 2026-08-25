@@ -35,7 +35,7 @@ export default defineNuxtConfig({
     // endpoint. Comma-separated list of full origins (scheme + host + port).
     allowedOrigins: process.env.NUXT_ALLOWED_ORIGINS || '',
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:80',
       // Supabase Auth is the identity layer. The publishable (anon) key is
       // designed to ship to browsers; the service-role key never appears here.
       supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL || '',
@@ -60,9 +60,9 @@ export default defineNuxtConfig({
       name: 'page',
       mode: 'out-in',
     },
-    layoutTransition: {
-      name: 'layout',
-      mode: 'out-in',
-    },
+    // Page transitions already cover navigation. A second transition around
+    // NuxtLayout can inspect its async placeholder during redirects and emit
+    // the false NUXT_E4002 multi-root diagnostic.
+    layoutTransition: false,
   },
 })

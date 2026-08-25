@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { categoryLabel } from '~/lib/legalCategories'
+import { categoryLabel, knowledgeTypeLabel, type KnowledgeType } from '~/lib/legalCategories'
+import { rightsBasisLabel, standardStatusLabel, type StandardStatus } from '~/lib/standards'
 
 definePageMeta({
   middleware: 'admin',
@@ -10,6 +11,7 @@ interface CrawledPage {
   legal_source_id: string | null
   url: string
   kind: 'crawled' | 'uploaded'
+  knowledge_type?: KnowledgeType
   category: string
   crawl_status: 'pending' | 'ok' | 'failed'
   http_status: number | null
@@ -17,6 +19,13 @@ interface CrawledPage {
   law_name: string | null
   gr_number: string | null
   promulgation_date: string | null
+  standard_code: string | null
+  standard_edition: string | null
+  standard_issuer: string | null
+  standard_status: StandardStatus | null
+  standard_publication_date: string | null
+  standard_review_date: string | null
+  rights_basis: string | null
   last_error: string | null
   last_crawled_at: string | null
   legal_source: { id: string; name: string } | null
@@ -66,7 +75,9 @@ async function loadPages() {
     const query: Record<string, string | number> = { page: page.value }
     if (statusFilter.value && statusFilter.value !== 'all') query.status = statusFilter.value
 
-    const res = await api<Paginated<CrawledPage>>(`/admin/crawled-pages?${new URLSearchParams(String(query))}`)
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => params.set(key, String(value)))
+    const res = await api<Paginated<CrawledPage>>(`/admin/crawled-pages?${params}`)
     pages.value = res.data
     meta.value = res.meta
   } catch {
@@ -95,15 +106,16 @@ onMounted(loadPages)
   <div class="mx-auto w-full max-w-6xl px-4 py-6">
     <AdminNav />
 
-    <AppPageHeader title="Crawled pages" description="Pages pulled from allowlisted legal sources into the knowledge base." />
+    <AppPageHeader title="Indexed pages" description="Public official pages and standard summaries indexed in the shared knowledge base." />
 
     <div class="surface mb-6 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
       <p class="text-sm text-muted-foreground">
         {{ meta?.total ?? 0 }} pages crawled
       </p>
       <div class="flex items-center gap-2">
+        <Label for="crawled-status-filter" class="sr-only">Filter indexed pages by status</Label>
         <Select :model-value="statusFilter" @update:model-value="statusFilter = String($event)">
-          <SelectTrigger class="h-8 w-36">
+          <SelectTrigger id="crawled-status-filter" class="h-8 w-36">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
@@ -140,11 +152,17 @@ onMounted(loadPages)
                 {{ p.title || p.url }}
               </a>
               <p class="mt-0.5 max-w-md truncate text-xs text-muted-foreground">{{ p.url }}</p>
-              <p v-if="p.law_name || p.gr_number" class="mt-0.5 text-xs text-muted-foreground">
+              <p v-if="p.knowledge_type !== 'standard' && (p.law_name || p.gr_number)" class="mt-0.5 text-xs text-muted-foreground">
                 {{ [p.law_name, p.gr_number].filter(Boolean).join(' · ') }}
               </p>
+              <template v-if="p.knowledge_type === 'standard'">
+                <p class="mt-0.5 text-xs text-muted-foreground">
+                  {{ knowledgeTypeLabel(p.knowledge_type) }} · {{ [p.standard_code, p.standard_edition && `ed. ${p.standard_edition}`, p.standard_issuer, standardStatusLabel(p.standard_status)].filter(Boolean).join(' · ') }}
+                </p>
+                <p class="mt-0.5 text-xs text-muted-foreground">Rights: {{ rightsBasisLabel(p.rights_basis) }}</p>
+              </template>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                {{ categoryLabel(p.category) }}
+                {{ p.knowledge_type === 'standard' ? categoryLabel(p.category) : `${knowledgeTypeLabel(p.knowledge_type)} · ${categoryLabel(p.category)}` }}
                 <span v-if="p.kind === 'uploaded'"> · uploaded</span>
               </p>
               <p v-if="p.crawl_status === 'failed' && p.last_error" class="mt-0.5 text-xs text-destructive">
@@ -167,8 +185,8 @@ onMounted(loadPages)
       </div>
       <EmptyState
         v-else-if="pages.length === 0"
-        title="No crawled pages match"
-        description="Adjust the filters, or run a crawl from the legal sources tab."
+        title="No indexed pages match"
+        description="Adjust the filters, or run a crawl from the Knowledge sources tab."
         class="m-4 border-0"
       />
 

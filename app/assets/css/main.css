@@ -52,7 +52,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: 'Inter', sans-serif;
-  --font-heading: 'Fraunces', serif;
+  --font-heading: 'Fraunces', sans-serif;
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-chart-5: var(--chart-5);
@@ -80,8 +80,9 @@
 
 /*
  * Type scale. Pages stop hand-rolling sizes: one ramp from display down to
- * caption, each set in Fraunces where it carries a heading's weight. Used by
- * AppPageHeader, StatTile, SectionCard and the revamped surfaces.
+ * caption, each set in Inter (same as the body) where it carries a heading's
+ * weight. Used by AppPageHeader, StatTile, SectionCard and the revamped
+ * surfaces.
  */
 @utility text-display {
   font-family: var(--font-heading);
@@ -1423,8 +1424,9 @@ body {
     );
   }
 
-  /* Lift any direct content above the decorative wash. */
-  .hero-gradient > * {
+  /* Lift any direct content above the decorative wash. The blob stays
+     absolutely positioned so it doesn't take up layout space. */
+  .hero-gradient > :not(.gradient-blob) {
     position: relative;
     z-index: 1;
   }

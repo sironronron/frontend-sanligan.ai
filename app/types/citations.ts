@@ -23,7 +23,7 @@ export interface CitationTarget {
 
 /** A cited source's full text, as the reader popup needs it. */
 export interface CitationReading {
-  kind: 'document' | 'legal'
+  kind: 'document' | 'legal' | 'standard'
   id: string
   title: string
   subtitle: string | null
@@ -32,6 +32,13 @@ export interface CitationReading {
   hasDigest: boolean
   tags: ChatSourceTag[]
   uploadedAt: string | null
+  standard_code: string | null
+  standard_edition: string | null
+  standard_issuer: string | null
+  standard_status: string | null
+  standard_publication_date: string | null
+  standard_review_date: string | null
+  rights_basis: string | null
   chunks: CitationChunk[]
 }
 
@@ -67,4 +74,11 @@ export interface CitationEntry {
   lawName: string | null
   grNumber: string | null
   promulgationDate: string | null
+  standard_code: string | null
+  standard_edition: string | null
+  standard_issuer: string | null
+  standard_status: string | null
+  standard_publication_date: string | null
+  standard_review_date: string | null
+  rights_basis: string | null
 }

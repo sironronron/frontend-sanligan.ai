@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import { PlusIcon, TrashIcon, RefreshCwIcon } from '@lucide/vue'
-import { LEGAL_CATEGORIES, categoryLabel } from '~/lib/legalCategories'
+import {
+  LEGAL_CATEGORIES,
+  KNOWLEDGE_TYPES,
+  categoryLabel,
+  knowledgeTypeLabel,
+  type KnowledgeType,
+} from '~/lib/legalCategories'
 
 definePageMeta({
   middleware: 'admin',
@@ -13,6 +19,7 @@ interface LegalSource {
   base_domain: string
   seed_urls: string[]
   is_active: boolean
+  knowledge_type?: KnowledgeType
   category: string
   crawled_pages_count: number
   legal_chunks_count: number
@@ -33,8 +40,18 @@ const form = reactive({
   base_domain: '',
   seed_urls: '',
   is_active: true,
-  category: 'law',
+  knowledge_type: 'legal' as KnowledgeType,
+  category: 'general',
 })
+
+const legalSourceCategories = LEGAL_CATEGORIES.filter((category) => category.value !== 'standard')
+
+watch(
+  () => form.knowledge_type,
+  (knowledgeType) => {
+    form.category = knowledgeType === 'standard' ? 'standard' : 'general'
+  },
+)
 
 async function loadSources() {
   loading.value = true
@@ -74,15 +91,23 @@ async function createSource() {
         base_domain: form.base_domain.trim(),
         seed_urls: seedUrls,
         is_active: form.is_active,
+        knowledge_type: form.knowledge_type,
         category: form.category,
       },
     })
-    toast.success('Legal source added')
-    Object.assign(form, { name: '', base_domain: '', seed_urls: '', is_active: true, category: 'law' })
+    toast.success('Knowledge source added')
+    Object.assign(form, {
+      name: '',
+      base_domain: '',
+      seed_urls: '',
+      is_active: true,
+      knowledge_type: 'legal' as KnowledgeType,
+      category: 'general',
+    })
     showForm.value = false
     await loadSources()
   } catch (err: any) {
-    formError.value = err?.data?.message ?? 'Could not create the legal source.'
+    formError.value = err?.data?.message ?? 'Could not create the knowledge source.'
   } finally {
     creating.value = false
   }
@@ -105,7 +130,7 @@ async function removeSource(source: LegalSource) {
     toast.success(`Deleted ${source.name}`)
     await loadSources()
   } catch {
-    toast.error('Could not delete the legal source')
+    toast.error('Could not delete the knowledge source')
   }
 }
 
@@ -116,7 +141,7 @@ onMounted(loadSources)
   <div class="mx-auto w-full max-w-5xl px-4 py-6">
     <AdminNav />
 
-    <AppPageHeader title="Legal sources" description="Allowlisted domains the crawler indexes for legal retrieval." />
+    <AppPageHeader title="Knowledge sources" description="Allowlisted public official pages and standard summaries used for retrieval." />
 
     <div class="surface mb-6 flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
       <p class="text-sm text-muted-foreground">
@@ -130,9 +155,9 @@ onMounted(loadSources)
 
     <Card v-if="showForm" class="mb-6">
       <CardHeader>
-        <CardTitle class="text-base">Add a legal source</CardTitle>
+        <CardTitle class="text-base">Add a knowledge source</CardTitle>
         <CardDescription>
-          The crawler will follow pages within the base domain and index legal texts for retrieval.
+          Use public official pages for legal authorities or public standard summaries. Do not crawl copyrighted ISO text without the required rights.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -160,17 +185,36 @@ onMounted(loadSources)
 
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="space-y-2">
-              <Label for="source-category">Category</Label>
-              <Select v-model="form.category">
-                <SelectTrigger id="source-category" class="w-full">
+              <Label for="source-knowledge-type">Knowledge type</Label>
+              <Select v-model="form.knowledge_type">
+                <SelectTrigger id="source-knowledge-type" class="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem v-for="c in LEGAL_CATEGORIES" :key="c.value" :value="c.value">
-                    {{ c.label }}
+                  <SelectItem v-for="type in KNOWLEDGE_TYPES" :key="type.value" :value="type.value">
+                    {{ type.label }}
                   </SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div class="space-y-2">
+              <Label v-if="form.knowledge_type === 'standard'" id="source-category-label">Category</Label>
+              <div v-if="form.knowledge_type === 'standard'" role="status" aria-labelledby="source-category-label" class="surface-inset flex min-h-10 items-center px-3 text-sm text-muted-foreground">
+                {{ categoryLabel(form.category) }}
+              </div>
+              <template v-else>
+                <Label for="source-category">Category</Label>
+                <Select v-model="form.category">
+                  <SelectTrigger id="source-category" class="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="c in legalSourceCategories" :key="c.value" :value="c.value">
+                      {{ c.label }}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </template>
             </div>
             <div class="flex items-end gap-2 pb-1">
               <Switch id="is_active" v-model:checked="form.is_active" />
@@ -178,7 +222,7 @@ onMounted(loadSources)
             </div>
           </div>
 
-          <p v-if="formError" class="text-sm text-destructive">{{ formError }}</p>
+          <p v-if="formError" role="alert" aria-live="assertive" class="text-sm text-destructive">{{ formError }}</p>
 
           <div class="flex justify-end gap-2">
             <Button type="button" variant="outline" @click="showForm = false">Cancel</Button>
@@ -197,8 +241,8 @@ onMounted(loadSources)
 
       <EmptyState
         v-else-if="sources.length === 0"
-        title="No legal sources configured"
-        description="Add an allowlisted domain and the crawler will index its legal texts for retrieval."
+        title="No knowledge sources configured"
+        description="Add an allowlisted domain and the crawler will index public official pages or standard summaries for retrieval."
       />
 
       <Card v-for="source in sources" :key="source.id">
@@ -210,7 +254,8 @@ onMounted(loadSources)
                 <Badge variant="outline" :class="source.is_active ? 'text-forest dark:text-peach' : 'text-muted-foreground'">
                   {{ source.is_active ? 'Active' : 'Inactive' }}
                 </Badge>
-                <Badge variant="secondary">{{ categoryLabel(source.category) }}</Badge>
+                <Badge variant="secondary">{{ knowledgeTypeLabel(source.knowledge_type) }}</Badge>
+                <Badge variant="outline">{{ categoryLabel(source.category) }}</Badge>
               </div>
               <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ source.base_domain }}</p>
               <p class="mt-1 text-xs text-muted-foreground">

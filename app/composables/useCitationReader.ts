@@ -24,6 +24,14 @@ interface LegalPageResponse {
     promulgation_date: string | null
     url: string | null
     source_name: string | null
+    knowledge_type: string | null
+    standard_code: string | null
+    standard_edition: string | null
+    standard_issuer: string | null
+    standard_status: string | null
+    standard_publication_date: string | null
+    standard_review_date: string | null
+    rights_basis: string | null
     digest: string | null
     has_digest: boolean
     chunks: CitationChunk[]
@@ -72,6 +80,13 @@ export function useCitationReader() {
         hasDigest: data.has_digest,
         tags: data.categories ?? [],
         uploadedAt: data.uploaded_at,
+        standard_code: null,
+        standard_edition: null,
+        standard_issuer: null,
+        standard_status: null,
+        standard_publication_date: null,
+        standard_review_date: null,
+        rights_basis: null,
         chunks: data.chunks ?? [],
       }
 
@@ -81,18 +96,51 @@ export function useCitationReader() {
 
     const { data } = await api<LegalPageResponse>(`/legal-pages/${entry.readableId}`)
 
-    const resolved: CitationReading = {
-      kind: 'legal',
-      id: data.id,
-      title: data.law_name || data.title || data.gr_number || 'Legal source',
-      subtitle: [data.gr_number, data.source_name].filter(Boolean).join(' · ') || null,
-      url: data.url,
-      digest: data.digest,
-      hasDigest: data.has_digest,
-      tags: [],
-      uploadedAt: null,
-      chunks: data.chunks ?? [],
-    }
+    const isStandard = data.knowledge_type === 'standard'
+    const resolved: CitationReading = isStandard
+      ? {
+          kind: 'standard',
+          id: data.id,
+          title: data.standard_code || data.title || data.source_name || 'International standard',
+          subtitle: [
+            data.standard_edition ? `Edition ${data.standard_edition}` : null,
+            data.standard_issuer,
+            data.standard_status,
+            data.source_name,
+          ].filter(Boolean).join(' · ') || null,
+          url: data.url,
+          digest: data.digest,
+          hasDigest: data.has_digest,
+          tags: [],
+          uploadedAt: null,
+          standard_code: data.standard_code,
+          standard_edition: data.standard_edition,
+          standard_issuer: data.standard_issuer,
+          standard_status: data.standard_status,
+          standard_publication_date: data.standard_publication_date,
+          standard_review_date: data.standard_review_date,
+          rights_basis: data.rights_basis,
+          chunks: data.chunks ?? [],
+        }
+      : {
+          kind: 'legal',
+          id: data.id,
+          title: data.law_name || data.title || data.gr_number || 'Legal source',
+          subtitle: [data.gr_number, data.source_name].filter(Boolean).join(' · ') || null,
+          url: data.url,
+          digest: data.digest,
+          hasDigest: data.has_digest,
+          tags: [],
+          uploadedAt: null,
+          standard_code: null,
+          standard_edition: null,
+          standard_issuer: null,
+          standard_status: null,
+          standard_publication_date: null,
+          standard_review_date: null,
+          rights_basis: null,
+          chunks: data.chunks ?? [],
+        }
 
     cache.set(key, resolved)
     return resolved

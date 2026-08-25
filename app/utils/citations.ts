@@ -12,6 +12,11 @@ export function identityOf(source: ChatSource): string | null {
   if (source.type === 'document') {
     return source.document_id ? `document:${source.document_id}` : (source.id ? `document-chunk:${source.id}` : null)
   }
+  if (source.type === 'standard') {
+    return source.page_id
+      ? `standard:${source.page_id}`
+      : (source.url ? `standard-url:${source.url}` : (source.id ? `standard-chunk:${source.id}` : null))
+  }
   return source.page_id
     ? `legal:${source.page_id}`
     : (source.url ? `legal-url:${source.url}` : (source.id ? `legal-chunk:${source.id}` : null))
@@ -21,13 +26,16 @@ function labelOf(source: ChatSource): string {
   if (source.type === 'web') {
     return source.title || source.label || source.domain || source.url || 'Web result'
   }
+  if (source.type === 'standard') {
+    return source.label || source.standard_code || source.title || 'International standard'
+  }
   return source.label || source.title || (source.type === 'document' ? 'Uploaded document' : 'Legal source')
 }
 
 /** Where a citation can be read in-app, if it can be at all. */
 function readableIdOf(source: ChatSource): string | null {
   if (source.type === 'document') return source.document_id ?? null
-  if (source.type === 'legal') return source.page_id ?? null
+  if (source.type === 'legal' || source.type === 'standard') return source.page_id ?? null
   return null
 }
 
@@ -52,6 +60,13 @@ function entryFrom(source: ChatSource, key: string, index: number): CitationEntr
     lawName: source.law_name ?? null,
     grNumber: source.gr_number ?? null,
     promulgationDate: source.promulgation_date ?? null,
+    standard_code: source.standard_code ?? null,
+    standard_edition: source.standard_edition ?? null,
+    standard_issuer: source.standard_issuer ?? null,
+    standard_status: source.standard_status ?? null,
+    standard_publication_date: source.standard_publication_date ?? null,
+    standard_review_date: source.standard_review_date ?? null,
+    rights_basis: source.rights_basis ?? null,
   }
 }
 
@@ -98,6 +113,13 @@ export function collectCitations(messages: ChatMessage[]): CitationEntry[] {
       if (existing.tags.length === 0 && source.tags?.length) existing.tags = source.tags
       existing.uploadedAt ??= source.uploaded_at ?? null
       existing.mimeType ??= source.mime_type ?? null
+      existing.standard_code ??= source.standard_code ?? null
+      existing.standard_edition ??= source.standard_edition ?? null
+      existing.standard_issuer ??= source.standard_issuer ?? null
+      existing.standard_status ??= source.standard_status ?? null
+      existing.standard_publication_date ??= source.standard_publication_date ?? null
+      existing.standard_review_date ??= source.standard_review_date ?? null
+      existing.rights_basis ??= source.rights_basis ?? null
     }
   }
 
@@ -129,7 +151,7 @@ export function citationMarkFrom(target: EventTarget | null): CitationMark | nul
 
   const kind = badge.getAttribute('data-cite-kind')
 
-  if (kind !== 'legal' && kind !== 'document' && kind !== 'web') return null
+  if (kind !== 'legal' && kind !== 'standard' && kind !== 'document' && kind !== 'web') return null
 
   const index = badge.getAttribute('data-cite-index')
 
