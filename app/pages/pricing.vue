@@ -119,12 +119,10 @@ async function joinWorkspace(invite: OrgInvitation) {
 }
 
 /**
- * The payment gateway is being finalised, so the price list is shown but
- * blocked: it is blurred underneath an overlay that still lets someone with a
- * referral code in. Keeping the table visible (rather than hidden) reassures
- * the reader the pricing exists; the blur makes clear it is not live yet.
+ * Emergency kill switch for checkout while provider credentials are rotated.
+ * PayPal is live by default; referral-code redemption remains available either way.
  */
-const gatewayFinalizing = ref(true)
+const gatewayFinalizing = ref(false)
 const referralCode = ref('')
 const referralError = ref('')
 const redeemingReferral = ref(false)
@@ -581,7 +579,7 @@ onMounted(async () => {
           Simple pricing for your practice
         </h1>
         <p class="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-          Pay per account. Cancel or switch plans any time. Cards and Maya accepted.
+           Pay per account. Cancel or switch plans any time. Secure checkout via PayPal.
         </p>
         <div v-if="!hasActiveSubscription" class="mt-6 inline-flex items-center rounded-full border bg-muted/40 p-1 text-sm">
           <button
@@ -677,7 +675,7 @@ onMounted(async () => {
 
         <div
           :class="gatewayFinalizing ? 'pointer-events-none select-none blur-[6px] saturate-50' : ''"
-          aria-hidden="true"
+          :aria-hidden="gatewayFinalizing ? 'true' : undefined"
         >
         <div class="surface overflow-x-auto">
         <table class="w-full min-w-[52rem] border-separate border-spacing-0 text-left">
@@ -826,7 +824,7 @@ onMounted(async () => {
       >
         <span>No contract, cancel any time</span>
         <span aria-hidden="true" class="text-muted-foreground/40">·</span>
-        <span>Secure checkout via PayMongo</span>
+         <span>Secure checkout via PayPal</span>
         <span aria-hidden="true" class="text-muted-foreground/40">·</span>
         <span>All prices in Philippine pesos</span>
       </p>
@@ -874,7 +872,7 @@ onMounted(async () => {
               {{ processing ? 'Preparing checkout…' : `Pay ${billedLabel(selectedPlan, selectedInterval)}` }}
             </Button>
             <p class="text-center text-xs text-muted-foreground">
-              You'll be taken to PayMongo's secure payment page to complete your subscription. Cards and Maya accepted.
+               You'll be taken to PayPal's secure payment page to complete your subscription. Cards accepted.
             </p>
           </CardContent>
         </Card>

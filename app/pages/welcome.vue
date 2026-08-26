@@ -26,7 +26,9 @@ const destination = computed(() => (route.query.next as string) || auth.homePath
  * stamp their own name on the query, matching the success URL the API builds.
  */
 const fromCheckout = computed(
-  () => route.query.paymongo === 'return' || route.query.lemonsqueezy === 'return',
+  () => route.query.paymongo === 'return'
+    || route.query.lemonsqueezy === 'return'
+    || route.query.paypal === 'return',
 )
 
 const loading = ref(true)

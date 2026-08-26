@@ -54,6 +54,7 @@ function formatCount(value: number | null) {
 const gatewayLabel: Record<string, string> = {
   paymongo: 'PayMongo',
   lemonsqueezy: 'Lemon Squeezy',
+  paypal: 'PayPal',
 }
 
 async function handleCancel() {
@@ -81,7 +82,7 @@ onMounted(async () => {
 
   // Checkouts return to `/welcome` now. This stays for sessions that were
   // already in flight against the old success URL, which still point here.
-  if (route.query.paymongo === 'return' || route.query.lemonsqueezy === 'return') {
+  if (route.query.paymongo === 'return' || route.query.lemonsqueezy === 'return' || route.query.paypal === 'return') {
     confirmingPayment.value = true
     const active = await billing.waitForActiveSubscription().catch(() => false)
     confirmingPayment.value = false

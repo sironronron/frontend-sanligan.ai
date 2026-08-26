@@ -65,7 +65,7 @@ export type BillingInterval = 'monthly' | 'annual'
 export interface Subscription {
   id: string
   status: string
-  gateway: 'paymongo' | 'lemonsqueezy'
+  gateway: 'paymongo' | 'lemonsqueezy' | 'paypal'
   interval: BillingInterval
   plan: Plan | null
   current_period_start: string | null

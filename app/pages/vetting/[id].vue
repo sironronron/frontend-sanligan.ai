@@ -178,7 +178,13 @@ function formatDateTime(value: string | null) {
 }
 
 onMounted(() => {
-  void loadRequest()
+  void loadRequest().then(() => {
+    if (route.query.payment === 'return') {
+      toast.success('Payment confirmed — we will start matching you with a lawyer shortly.')
+    } else if (route.query.payment === 'cancelled') {
+      toast.info('Payment was cancelled. You can return here and pay when you are ready.')
+    }
+  })
   void loadMessages()
 })
 </script>
