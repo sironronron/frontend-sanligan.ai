@@ -74,6 +74,7 @@ export interface ChatTurn {
    */
   choiceQuestions: ChoiceQuestion[] | null
   error: string
+  completed: boolean
   /** Between send and the first byte of the response. */
   sending: boolean
   streaming: boolean
@@ -474,6 +475,8 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       void refreshAdvisories(turn)
       completeStep(turn, 'flag_advisories')
     } else if (event === 'done') {
+      turn.completed = payload.ok === true && turn.error === ''
+      if (!turn.completed && !turn.error) turn.error = 'The response could not be completed. Your partial answer is kept below.'
       streamers.get(turn.conversationId)?.flush()
       resetUnfinishedLetterDraft(turn)
       completeActiveSteps(turn)
@@ -560,6 +563,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       intakeDismissed: false,
       choiceQuestions: null,
       error: '',
+      completed: false,
       sending: true,
       streaming: false,
       todoToolCalled: false,
@@ -634,6 +638,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
+        buffer = buffer.replace(/\r\n/g, '\n')
 
         const frames = buffer.split('\n\n')
         buffer = frames.pop() ?? ''
@@ -641,9 +646,13 @@ export const useChatStreamStore = defineStore('chatStream', () => {
         for (const frame of frames) handleFrame(live, frame)
       }
 
+      buffer += decoder.decode()
       if (buffer.trim()) handleFrame(live, buffer)
 
       streamer.flush()
+      if (!live.completed && !live.error) {
+        live.error = 'The connection ended before the response completed. Your partial answer is kept below.'
+      }
     } catch (err: any) {
       streamer.flush()
 
@@ -686,18 +695,14 @@ export const useChatStreamStore = defineStore('chatStream', () => {
   }
 
   /**
-   * Re-send the turn's question, discarding the failed attempt's messages.
+   * Re-send the question with its attachments, retaining the partial attempt.
    */
   async function retry(conversationId: string, onUpgrade?: StartTurnOptions['onUpgrade']): Promise<void> {
     const turn = turnFor(conversationId)
     if (!turn || turn.streaming || turn.sending) return
 
     const { question, returnTo } = turn
-    // Dropped rather than carried: the failed exchange is being replaced, not
-    // appended to.
-    delete turns.value[conversationId]
-
-    await start({ conversationId, question, returnTo, onUpgrade })
+    await start({ conversationId, question, returnTo, attachments: turn.userMessage.attachments, onUpgrade })
   }
 
   /**
@@ -706,7 +711,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
    */
   function settle(conversationId: string) {
     const turn = turnFor(conversationId)
-    if (!turn || turn.streaming || turn.sending) return
+    if (!turn || turn.streaming || turn.sending || !turn.completed || turn.error) return
 
     streamers.get(conversationId)?.stop()
     streamers.delete(conversationId)

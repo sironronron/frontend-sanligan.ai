@@ -1,10 +1,22 @@
 export interface DashboardUsageMeter {
   used: number
-  limit: number
+  limit: number | null
+}
+
+export interface DashboardAiUsageMeter {
+  used_pesos: number
+  budget_pesos: number
+  percent: number
+  warning: boolean
+  exhausted: boolean
+  warned_80_at: string | null
+  window_start: string | null
+  window_end: string | null
 }
 
 export interface DashboardSummary {
   usage: {
+    ai_usage: DashboardAiUsageMeter
     messages: DashboardUsageMeter
     documents: DashboardUsageMeter
     active_cases: DashboardUsageMeter

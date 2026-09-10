@@ -53,6 +53,9 @@ const heading = computed(() =>
  */
 const thanks = computed(() => {
   if (fromCheckout.value) {
+    if (unconfirmed.value) {
+      return 'Thank you for subscribing. Your payment is being confirmed with the gateway.'
+    }
     return planName.value
       ? `Thank you for subscribing. Your ${planName.value} plan is active and your workspace is ready.`
       : 'Thank you for subscribing. Your plan is active and your workspace is ready.'
@@ -65,7 +68,7 @@ const thanks = computed(() => {
   return 'Thank you for joining. Your free trial has started — no card, nothing to set up.'
 })
 
-/** The allowance the user just bought or was granted, in plain counts. */
+/** The allowance the user just bought or was granted, in plain terms. */
 const allowances = computed(() => {
   const usage = sub.value?.usage
   if (!usage) return []
@@ -73,8 +76,12 @@ const allowances = computed(() => {
   const count = (limit: number | null, unit: string) =>
     limit === null ? `Unlimited ${unit}` : `${limit.toLocaleString()} ${unit}`
 
+  const ai = usage.ai_usage?.budget_pesos
+    ? `₱${usage.ai_usage.budget_pesos.toLocaleString()} monthly AI usage`
+    : 'Monthly AI usage'
+
   return [
-    count(usage.messages.limit, 'AI messages'),
+    ai,
     count(usage.active_cases.limit, 'active cases'),
     count(usage.documents.limit, 'document uploads'),
   ]
@@ -143,8 +150,8 @@ onMounted(async () => {
           class="reveal mt-4 rounded-lg border border-primary/25 bg-primary/10 px-4 py-2.5 text-xs leading-relaxed"
           style="--reveal-delay: 0.24s"
         >
-          Your payment is still being confirmed with the gateway. You can start working now —
-          the plan will appear in your billing settings shortly.
+          Your payment is still being confirmed with the gateway. Check your billing settings
+          shortly — you will not be asked to pay again.
         </p>
 
         <ul
