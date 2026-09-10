@@ -584,7 +584,7 @@ onMounted(async () => {
           <p class="text-sm text-muted-foreground">
             {{
               canHaveTeam
-                ? 'Create an organization to share cases, documents, and templates with your team. Each seat keeps its own message allowance.'
+                ? 'Create an organization to share cases, documents, and templates with your team. The whole team shares one monthly AI allowance.'
                 : 'Your plan covers a single account. Upgrade to Firm to invite colleagues onto shared matters, with seats you can add as the team grows.'
             }}
           </p>

@@ -3,6 +3,7 @@ import { ArrowLeftIcon, CircleAlertIcon, FileTextIcon, FileUpIcon, Loader2Icon, 
 import { toast } from '~/components/ui/sonner'
 import { parseApiError } from '~/composables/useApiErrors'
 import type { VettingRequestRecord } from '~/types/vetting'
+import type { TiptapDoc, TiptapNode } from '~/types/tiptap'
 import {
   VETTING_DOCUMENT_TYPE_SUGGESTIONS,
   VETTING_REGION_OPTIONS,
@@ -23,6 +24,10 @@ interface DraftSource {
   case_title: string | null
   title: string
   content: string
+  letter_draft: {
+    content: TiptapDoc
+    title: string | null
+  } | null
   created_at: string
 }
 
@@ -62,19 +67,42 @@ function onPickFile(event: Event) {
 }
 
 /**
- * A draft carries its content as markdown, so it is rendered into a PDF and
+ * A draft carries its content as Tiptap JSON, so it is rendered into a PDF and
  * handed to the lawyer as a .pdf file rather than forcing the submitter to
  * download and re-upload it.
  */
-async function fileFromDraft(title: string, content: string): Promise<File> {
+async function fileFromDraft(source: DraftSource): Promise<File> {
+  const title = source.letter_draft?.title || source.title
   const base = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60)
-  const { buildPdfBlob } = await import('~/utils/pdf')
-  const blob = await buildPdfBlob(content, title)
+  const { buildPdfFromTiptap } = await import('~/utils/tiptapPdf')
+  const content = source.letter_draft?.content
+
+  if (!content || content.type !== 'doc' || !hasRenderableLetterContent(content)) {
+    throw new Error('This draft has no letter content. Open it in the editor and save it again.')
+  }
+
+  const blob = await buildPdfFromTiptap(content, title)
   return new File([blob], `${base || 'draft'}.pdf`, { type: 'application/pdf' })
+}
+
+/** Ignore the signature placeholder when deciding whether a draft has a body. */
+function hasRenderableLetterContent(node: TiptapNode): boolean {
+  if (node.type === 'text') return typeof node.text === 'string' && node.text.trim() !== ''
+
+  if (node.type === 'image') {
+    return typeof node.attrs?.src === 'string' && node.attrs.src !== ''
+  }
+
+  if (node.type === 'signature') {
+    return typeof node.attrs?.src === 'string' && node.attrs.src !== ''
+      || typeof node.attrs?.signerName === 'string' && node.attrs.signerName.trim() !== ''
+  }
+
+  return node.content?.some(hasRenderableLetterContent) ?? false
 }
 
 /**
@@ -94,7 +122,7 @@ async function loadDraft() {
     draft.value = data
     form.document_type = data.title.slice(0, 100)
     form.summary = `AI-drafted document ("${data.title}"). Please review it and notarize it.`
-    file.value = await fileFromDraft(data.title, data.content)
+    file.value = await fileFromDraft(data)
   } catch (err: any) {
     draftError.value = parseApiError(err).message || 'Could not load the draft.'
   } finally {

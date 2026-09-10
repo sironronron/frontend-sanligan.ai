@@ -704,6 +704,7 @@ async function finalizeTurn(id: string) {
   // work left in it, so the turn stays until the user submits, answers,
   // abandons, or retries.
   const keep = finished.intakeFields !== null
+    || !finished.completed
     || finished.choiceQuestions !== null
     || finished.error !== ''
 
@@ -724,7 +725,7 @@ async function finalizeTurn(id: string) {
 
     // A turn waiting on a decision has no finished answer, so its partial text
     // is not a source of next steps.
-    if (!finished.todoToolCalled && finished.choiceQuestions === null) {
+    if (finished.completed && !finished.error && !finished.todoToolCalled && finished.choiceQuestions === null) {
       await maybeCreateTodosFromText(finished.assistantMessage?.content ?? '', id)
     }
     await refreshTodos(id)

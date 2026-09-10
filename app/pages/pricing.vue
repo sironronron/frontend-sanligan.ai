@@ -15,8 +15,8 @@ const organization = useOrganizationStore()
 const router = useRouter()
 const salesEmail = useRuntimeConfig().public.salesEmail
 
-const plans = ref<Plan[]>([])
 const loading = ref(true)
+const plans = computed(() => billing.plans)
 
 const billingInterval = ref<BillingInterval>('monthly')
 const selectedPlan = ref<Plan | null>(null)
@@ -30,6 +30,16 @@ const currentPlanId = computed(() => billing.subscription?.plan?.id ?? null)
 const hasActiveSubscription = computed(() => {
   const sub = billing.subscription
   return !!sub && sub.status === 'active'
+})
+
+const canManageBilling = computed(() => {
+  const user = auth.user
+  const sub = billing.subscription
+
+  if (!user) return false
+  if (sub?.organization_id === null || user.organization_id === null) return true
+
+  return user.org_role === 'owner' || user.org_role === 'admin'
 })
 
 /**
@@ -150,20 +160,20 @@ async function submitReferralCode() {
 const onTrial = computed(() => billing.subscription?.trial.on_trial === true)
 const trialDaysRemaining = computed(() => billing.subscription?.trial.days_remaining ?? null)
 
-// A trial ends on whichever runs out first, the days or the messages, so the
-// banner leads with whichever is closer rather than always counting days.
-const trialMessagesLeft = computed(() => {
-  const meter = billing.subscription?.usage.messages
-  if (!meter || meter.limit === null) return null
-  return Math.max(0, meter.limit - meter.used)
+// A trial ends on whichever runs out first, the days or the AI allowance, so
+// the banner leads with whichever is closer rather than always counting days.
+const trialUsageLeft = computed(() => {
+  const meter = billing.subscription?.usage.ai_usage
+  if (!meter || meter.budget_pesos <= 0) return null
+  return Math.max(0, 100 - meter.percent)
 })
 
 const trialHeadline = computed(() => {
   const days = trialDaysRemaining.value
-  const messages = trialMessagesLeft.value
+  const usageLeft = trialUsageLeft.value
 
-  if (messages !== null && (days === null || messages <= days * 10)) {
-    return `${messages} ${messages === 1 ? 'message' : 'messages'} left`
+  if (usageLeft !== null && (days === null || usageLeft <= days * 10)) {
+    return `${Math.round(usageLeft)}% of trial AI usage left`
   }
 
   return `${days} ${days === 1 ? 'day' : 'days'} left`
@@ -258,16 +268,11 @@ const planLimits = (plan: Plan) => [
   plan.limits.documents_uploaded === null
     ? 'Unlimited document uploads'
     : `${plan.limits.documents_uploaded} document uploads/mo`,
-  // Allowances are counted per seat, so a multi-seat plan has to say so — "300
-  // AI messages" on a three-seat plan reads as a shared pool it is not.
-  plan.limits.messages_used === null
-    ? 'Unlimited AI messages'
-    : `${plan.limits.messages_used} AI messages/mo${plan.included_seats > 1 ? ' per seat' : ''}`,
-  // Only meaningful against a cap: an unlimited allowance can neither run out
-  // nor spill into overage, so the line is dropped rather than claiming a cap.
-  ...(plan.limits.messages_used === null
-    ? []
-    : [plan.overage_price === null ? 'No overage — hard message cap' : `Overage ${plan.overage_label}/msg`]),
+  // Spend, not counts: the allowance is one monthly meter shared across the
+  // workspace, and a spent allowance pauses AI work instead of billing more.
+  ...(plan.ai_budget_label !== null
+    ? [`${plan.ai_budget_label}${plan.included_seats > 1 ? ', shared across your team' : ''}`, 'No overage — pauses at 100%']
+    : []),
   ...seatLines(plan),
 ]
 
@@ -286,6 +291,9 @@ function seatLines(plan: Plan): string[] {
 }
 
 function isCurrent(plan: Plan) {
+  // A cancelled subscription no longer holds the plan: the same card must
+  // offer a resubscribe rather than staying disabled as "Current plan".
+  if (billing.subscription?.status === 'cancelled') return false
   return currentPlanId.value === plan.id
 }
 
@@ -304,13 +312,12 @@ function limitValue(limit: number | null, suffix = ''): Cell {
 }
 
 /**
- * What happens past a plan's message allowance. An unlimited plan never runs
- * out (dash); a capped one stops you (Capped); the rest bill overage.
+ * The monthly AI allowance, read off the spend budget the API enforces — a
+ * plan without one is a contract tier, not an unlimited one.
  */
-function overageCell(plan: Plan): Cell {
-  if (plan.limits.messages_used === null) return '—'
-  if (plan.overage_price === null) return 'Capped'
-  return `${plan.overage_label} each`
+function usageCell(plan: Plan): Cell {
+  if (plan.ai_budget_label === null) return 'By contract'
+  return plan.included_seats > 1 ? `${plan.ai_budget_label}, team pool` : plan.ai_budget_label
 }
 
 /**
@@ -348,8 +355,7 @@ const tableRows = computed<{ label: string; cells: Cell[]; heading?: boolean }[]
   return [
     { label: 'Active cases', cells: p.map(pl => limitValue(pl.limits.active_cases)) },
     { label: 'Document uploads', cells: p.map(pl => limitValue(pl.limits.documents_uploaded, ' / mo')) },
-    { label: 'AI messages (per seat)', cells: p.map(pl => limitValue(pl.limits.messages_used, ' / mo')) },
-    { label: 'Extra AI messages', cells: p.map(pl => overageCell(pl)) },
+    { label: 'Monthly AI usage', cells: p.map(pl => usageCell(pl)) },
     { label: 'Seats', cells: p.map(pl => seatCell(pl)) },
     ...rowsForGroup('capability'),
     ...(serviceRows.length === 0
@@ -370,6 +376,10 @@ function choose(plan: Plan) {
 
 function handleChoose(plan: Plan) {
   if (isCurrent(plan) || plan.contact_sales) return
+  if (auth.user && !canManageBilling.value) {
+    toast.info('Ask your workspace admin to manage billing.')
+    return
+  }
   if (hasActiveSubscription.value) {
     switchPlanNow(plan)
     return
@@ -387,7 +397,12 @@ function switchPlanNow(plan: Plan) {
   processing.value = true
   billing
     .changePlan(plan.id)
-    .then(() => {
+    .then((result) => {
+      if (result.checkout?.checkout_url) {
+        window.location.href = result.checkout.checkout_url
+        return
+      }
+
       toast.success(`You're now on the ${plan.name} plan`)
       navigateTo('/settings/billing')
     })
@@ -428,7 +443,6 @@ onMounted(async () => {
     await organization.fetchPendingInvites()
   }
 
-  plans.value = billing.plans
   loading.value = false
 })
 </script>
@@ -567,6 +581,13 @@ onMounted(async () => {
           <span class="font-medium">{{ trialHeadline }}</span>
           on your free trial. Subscribe any time to keep your workspace.
         </span>
+      </div>
+
+      <div v-if="billing.plansError" role="alert" class="mx-auto mb-6 flex max-w-xl items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm">
+        <span>Could not load plans. Check your connection and try again.</span>
+        <button type="button" class="font-medium underline underline-offset-2" @click="billing.fetchPlans(true)">
+          Retry
+        </button>
       </div>
 
       <div class="mb-8 text-center">
@@ -805,10 +826,10 @@ onMounted(async () => {
                   class="w-full max-w-[12rem]"
                   :variant="isPro(plan) ? 'default' : 'outline'"
                   :class="isPro(plan) ? 'bg-cream text-forest hover:bg-cream/90' : ''"
-                  :disabled="isCurrent(plan)"
+                    :disabled="isCurrent(plan) || processing || (!!auth.user && !canManageBilling)"
                   @click="handleChoose(plan)"
                 >
-                  {{ isCurrent(plan) ? 'Current plan' : hasActiveSubscription ? 'Switch to this plan' : 'Get started' }}
+                  {{ isCurrent(plan) ? 'Current plan' : auth.user && !canManageBilling ? 'Ask workspace admin' : hasActiveSubscription ? 'Switch to this plan' : 'Get started' }}
                 </Button>
               </td>
             </tr>
@@ -827,6 +848,8 @@ onMounted(async () => {
          <span>Secure checkout via PayPal</span>
         <span aria-hidden="true" class="text-muted-foreground/40">·</span>
         <span>All prices in Philippine pesos</span>
+        <span aria-hidden="true" class="text-muted-foreground/40">·</span>
+        <span>Allowances reset monthly — an exhausted allowance stops the turn, it never grows the bill</span>
       </p>
 
       <TrialCodeRedeem

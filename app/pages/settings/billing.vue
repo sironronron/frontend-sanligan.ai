@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CheckIcon, CreditCardIcon, Loader2Icon, MinusIcon, PlusIcon, SparklesIcon, UsersIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
-import { useBillingStore, isAtLimit, limitPct } from '~/stores/billing'
+import { useBillingStore } from '~/stores/billing'
 
 definePageMeta({
   middleware: ['auth'],
@@ -16,9 +16,11 @@ const route = useRoute()
 const loading = ref(true)
 const confirmingPayment = ref(false)
 const cancelling = ref(false)
+const confirmCancel = ref(false)
 const seatQuantity = ref(1)
 const seatBusy = ref(false)
 const confirmSeatPurchase = ref(false)
+const pendingBusy = ref(false)
 
 const sub = computed(() => billing.subscription)
 
@@ -28,6 +30,7 @@ const statusLabel: Record<string, string> = {
   active: 'Active',
   past_due: 'Payment overdue',
   unpaid: 'Payment failed',
+  paused: 'Paused',
   cancelled: 'Cancelled',
 }
 
@@ -37,6 +40,7 @@ const statusStyles: Record<string, string> = {
   incomplete: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
   incomplete_cancelled: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
   unpaid: 'bg-destructive/10 text-destructive dark:bg-cream/10 dark:text-destructive',
+  paused: 'bg-espresso/10 text-espresso dark:bg-cream/10 dark:text-peach',
   cancelled: 'bg-muted text-muted-foreground',
 }
 
@@ -44,11 +48,11 @@ function formatDate(value: string | null) {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Asia/Manila' })
 }
 
 function formatCount(value: number | null) {
-  return value === null ? 'Unlimited' : value.toLocaleString()
+  return value === null ? 'Unlimited' : value.toLocaleString('en-PH')
 }
 
 const gatewayLabel: Record<string, string> = {
@@ -57,8 +61,12 @@ const gatewayLabel: Record<string, string> = {
   paypal: 'PayPal',
 }
 
+const planChangeReturn = computed(() => route.query.paypal === 'plan-change-return')
+const planChangeCancelled = computed(() => route.query.paypal === 'plan-change-cancelled')
+
 async function handleCancel() {
   if (!sub.value) return
+  confirmCancel.value = false
   cancelling.value = true
   try {
     await billing.cancel()
@@ -67,6 +75,25 @@ async function handleCancel() {
     toast.error(err?.data?.message ?? 'Could not cancel the subscription')
   } finally {
     cancelling.value = false
+  }
+}
+
+async function continuePendingPlan() {
+  const url = sub.value?.pending_plan_checkout_url
+  if (!url) return
+  window.location.href = url
+}
+
+async function cancelPendingPlan() {
+  if (!sub.value?.pending_plan_id) return
+  pendingBusy.value = true
+  try {
+    await billing.cancelPlanChange()
+    toast.info('Your pending plan change was cancelled')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not cancel the pending plan change')
+  } finally {
+    pendingBusy.value = false
   }
 }
 
@@ -79,6 +106,32 @@ onMounted(async () => {
     org.fetchOrganization().catch(() => null),
   ])
   loading.value = false
+
+  if (planChangeReturn.value) {
+    confirmingPayment.value = true
+    const planId = typeof route.query.plan === 'string' ? route.query.plan : null
+    const changed = planId
+      ? await billing.waitForSubscriptionPlan(planId).catch(() => false)
+      : false
+    confirmingPayment.value = false
+
+    if (changed) {
+      toast.success('Your plan has been updated')
+    } else {
+      toast.info('Your plan change is being confirmed. Check back shortly.')
+    }
+    return
+  }
+
+  if (planChangeCancelled.value) {
+    try {
+      await billing.cancelPlanChange()
+      toast.info('Your plan change was cancelled')
+    } catch (err: any) {
+      toast.error(err?.data?.message ?? 'Could not cancel the pending plan change')
+    }
+    return
+  }
 
   // Checkouts return to `/welcome` now. This stays for sessions that were
   // already in flight against the old success URL, which still point here.
@@ -94,24 +147,18 @@ onMounted(async () => {
   }
 })
 
-// -- isAtLimit / limitPct are referenced via template in the meters
-const meters = computed(() => {
-  if (!sub.value) return []
-  const u = sub.value.usage
-  return [
-    {
-      key: 'messages',
-      label: 'AI messages',
-      used: u.messages.used,
-      limit: u.messages.limit,
-      overage: u.messages.overage,
-      overage_due_pesos: u.messages.overage_due_pesos,
-      overage_rate: u.messages.overage_rate,
-    },
-    { key: 'documents', label: 'Documents uploaded', used: u.documents.used, limit: u.documents.limit },
-    { key: 'cases', label: 'Active cases', used: u.active_cases.used, limit: u.active_cases.limit },
-  ]
-})
+// -- the template renders the single AI allowance meter below; the legacy
+// count meters are gone because plans no longer carry count caps.
+const aiUsage = computed(() => sub.value?.usage.ai_usage ?? null)
+
+const aiPercent = computed(() => Math.min(100, Math.round(aiUsage.value?.percent ?? 0)))
+
+function formatResetDate(value: string | null) {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', timeZone: 'Asia/Manila' })
+}
 
 const priceLabel = computed(() => {
   const plan = sub.value?.plan
@@ -132,11 +179,7 @@ const billingSummary = computed(() => {
 })
 
 function formatPesos(value: number) {
-  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function limitLabel(limit: number | null) {
-  return formatCount(limit)
+  return value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 /**
@@ -153,6 +196,13 @@ const seatsFree = computed(() => Math.max(0, (seats.value?.purchased ?? 0) - sea
 
 /** Only admins may change the seat count; the API enforces the same rule. */
 const canManageSeats = computed(() => sellsSeats.value && org.isManager && sub.value?.status !== 'cancelled')
+
+const canManageBilling = computed(() => {
+  if (!sub.value) return false
+  if (sub.value.organization_id === null) return true
+
+  return auth.user?.org_role === 'owner' || auth.user?.org_role === 'admin'
+})
 
 /**
  * The subscription carries a per-seat price only once it has been set on the
@@ -248,7 +298,9 @@ async function handleRemoveSeats() {
         <CardContent class="flex items-center gap-3 py-6">
           <Loader2Icon class="size-5 animate-spin text-primary" />
           <div>
-            <p class="text-sm font-medium">Confirming your payment…</p>
+            <p class="text-sm font-medium">
+              {{ planChangeReturn ? 'Confirming your plan change…' : 'Confirming your payment…' }}
+            </p>
             <p class="text-xs text-muted-foreground">This can take a few seconds.</p>
           </div>
         </CardContent>
@@ -261,6 +313,37 @@ async function handleRemoveSeats() {
     </div>
 
     <template v-else-if="sub">
+      <Card v-if="sub.pending_plan_id" class="mb-6 border-primary/25 bg-primary/5">
+        <CardContent class="flex flex-wrap items-center justify-between gap-3 py-4">
+          <div class="text-sm">
+            <p class="font-medium">Plan change awaiting approval</p>
+            <p class="mt-0.5 text-xs text-muted-foreground">
+              Complete payment with your provider to apply the new plan, or cancel the pending change.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <Button
+              v-if="sub.pending_plan_checkout_url && canManageBilling"
+              size="sm"
+              :disabled="pendingBusy"
+              @click="continuePendingPlan"
+            >
+              Continue payment
+            </Button>
+            <Button
+              v-if="canManageBilling"
+              variant="outline"
+              size="sm"
+              :disabled="pendingBusy"
+              @click="cancelPendingPlan"
+            >
+              <Loader2Icon v-if="pendingBusy" class="size-4 animate-spin" />
+              Cancel pending change
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card class="mb-6">
         <CardHeader>
           <div class="flex items-start justify-between gap-4">
@@ -295,16 +378,19 @@ async function handleRemoveSeats() {
           </div>
           <div class="pt-2">
             <Button
-              v-if="sub.status !== 'cancelled'"
+              v-if="sub.status !== 'cancelled' && canManageBilling"
               variant="outline"
               size="sm"
               class="text-destructive hover:text-destructive"
               :disabled="cancelling"
-              @click="handleCancel"
+              @click="confirmCancel = true"
             >
               <Loader2Icon v-if="cancelling" class="size-4 animate-spin" />
               Cancel subscription
             </Button>
+            <p v-else-if="sub.status !== 'cancelled'" class="text-sm text-muted-foreground">
+              Ask your workspace admin to manage this subscription.
+            </p>
             <p v-else class="text-sm text-muted-foreground">
               This subscription is cancelled. You can resubscribe anytime from the pricing page.
             </p>
@@ -392,32 +478,37 @@ async function handleRemoveSeats() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Usage this period</CardTitle>
-          <CardDescription>Resets each billing cycle.</CardDescription>
+          <CardTitle>Monthly AI usage</CardTitle>
+          <CardDescription v-if="aiUsage?.window_end">
+            Resets {{ formatResetDate(aiUsage.window_end) }}.
+          </CardDescription>
+          <CardDescription v-else>
+            Resets each billing cycle.
+          </CardDescription>
         </CardHeader>
         <CardContent class="space-y-5">
-          <div v-for="meter in meters" :key="meter.key">
+          <div v-if="aiUsage">
             <div class="mb-1.5 flex items-center justify-between text-sm">
-              <span>{{ meter.label }}</span>
+              <span>AI usage</span>
               <span class="text-muted-foreground">
-                {{ meter.used.toLocaleString() }} / {{ limitLabel(meter.limit) }}
+                {{ Math.round(aiUsage.percent) }}% used
               </span>
             </div>
             <div class="h-2 overflow-hidden rounded-full bg-muted">
               <div
                 class="h-full rounded-full transition-all"
-                :class="isAtLimit(meter.used, meter.limit) ? 'bg-destructive' : limitPct(meter.used, meter.limit) > 80 ? 'bg-espresso' : 'bg-primary'"
-                :style="{ width: `${limitPct(meter.used, meter.limit)}%` }"
+                :class="aiUsage.exhausted ? 'bg-destructive' : aiUsage.warning ? 'bg-espresso' : 'bg-primary'"
+                :style="{ width: `${aiPercent}%` }"
               />
             </div>
-            <p v-if="isAtLimit(meter.used, meter.limit)" class="mt-1 text-xs text-destructive">
-              Limit reached — upgrade for more.
+            <p v-if="aiUsage.exhausted" class="mt-1 text-xs text-destructive">
+              Allowance used — new AI work pauses until {{ formatResetDate(aiUsage.window_end) || 'renewal' }}. Your documents, matters, and exports stay available.
             </p>
-            <p
-              v-else-if="meter.overage && meter.overage > 0"
-              class="mt-1 text-xs text-espresso dark:text-peach"
-            >
-              {{ meter.overage.toLocaleString() }} over the cap · &#8369;{{ formatPesos(meter.overage_due_pesos) }} due this cycle.
+            <p v-else-if="aiUsage.warning" class="mt-1 text-xs text-espresso dark:text-peach">
+              Over 80% used. Research and document processing draw faster than short questions.
+            </p>
+            <p v-else class="mt-1 text-xs text-muted-foreground">
+              Research and document processing use more of your allowance than short questions.
             </p>
           </div>
         </CardContent>
@@ -431,17 +522,28 @@ async function handleRemoveSeats() {
             <SparklesIcon class="size-6 text-primary" />
           </div>
           <div>
-            <h2 class="text-lg font-semibold">No active subscription</h2>
+            <h2 class="text-lg font-semibold">
+              {{ billing.subscriptionError ? 'Could not load subscription' : 'No active subscription' }}
+            </h2>
             <p class="mt-1 max-w-sm text-sm text-muted-foreground">
-              Choose a plan to keep unlimited access to your cases, documents, and AI assistant.
+              {{
+                billing.subscriptionError
+                  ? 'Check your connection and try again. Your existing plan is unchanged.'
+                  : 'Choose a plan to keep unlimited access to your cases, documents, and AI assistant.'
+              }}
             </p>
           </div>
-          <NuxtLink to="/pricing">
-            <Button>
-              <CheckIcon class="size-4" />
-              View plans
+          <div class="flex gap-2">
+            <Button v-if="billing.subscriptionError" variant="outline" @click="billing.fetchSubscription()">
+              Retry
             </Button>
-          </NuxtLink>
+            <NuxtLink to="/pricing">
+              <Button>
+                <CheckIcon class="size-4" />
+                View plans
+              </Button>
+            </NuxtLink>
+          </div>
         </CardContent>
       </Card>
     </template>
@@ -472,6 +574,26 @@ async function handleRemoveSeats() {
           <AlertDialogAction :disabled="seatBusy" @click.prevent="handleAddSeats">
             <Loader2Icon v-if="seatBusy" class="size-4 animate-spin" />
             {{ seatBusy ? 'Purchasing…' : 'Confirm purchase' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <AlertDialog v-model:open="confirmCancel">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel this subscription?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Access ends immediately and integrations pause. You can resubscribe anytime from the pricing page.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="cancelling">
+            Keep subscription
+          </AlertDialogCancel>
+          <AlertDialogAction :disabled="cancelling" @click.prevent="handleCancel">
+            <Loader2Icon v-if="cancelling" class="size-4 animate-spin" />
+            {{ cancelling ? 'Cancelling…' : 'Confirm cancel' }}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

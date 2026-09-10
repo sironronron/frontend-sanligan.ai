@@ -27,6 +27,9 @@ export interface Plan {
   price_annual_label: string
   overage_price: number | null
   overage_label: string | null
+  /** Relative AI usage tier shown on pricing. Null means not spend-gated. */
+  ai_budget_label: string | null
+  ai_usage_multiplier: number | null
   currency: string
   interval: string
   /** How many people the list price covers. */
@@ -60,14 +63,35 @@ export interface MessageUsageMeter extends UsageMeter {
   overage_due_pesos: number
 }
 
+/**
+ * The customer-facing AI allowance: one percent meter over the
+ * subscription's anniversary window, pooled across the workspace.
+ * Tokens, models, and tool calls stay on the server — this is the only
+ * usage number the UI needs.
+ */
+export interface AiUsageMeter {
+  used_pesos: number
+  budget_pesos: number
+  /** 0–100+, uncapped so overshoot stays visible instead of reading full. */
+  percent: number
+  warning: boolean
+  exhausted: boolean
+  warned_80_at: string | null
+  window_start: string | null
+  window_end: string | null
+}
+
 export type BillingInterval = 'monthly' | 'annual'
 
 export interface Subscription {
   id: string
+  organization_id: string | null
   status: string
   gateway: 'paymongo' | 'lemonsqueezy' | 'paypal'
   interval: BillingInterval
   plan: Plan | null
+  pending_plan_id: string | null
+  pending_plan_checkout_url: string | null
   current_period_start: string | null
   current_period_end: string | null
   cancelled_at: string | null
@@ -85,6 +109,7 @@ export interface Subscription {
     next_invoice_pesos: number
   }
   usage: {
+    ai_usage: AiUsageMeter
     messages: MessageUsageMeter
     documents: UsageMeter
     active_cases: UsageMeter
@@ -100,6 +125,11 @@ export interface CheckoutSession {
 export interface SubscribeResponse {
   data: Subscription
   checkout: CheckoutSession
+}
+
+export interface ChangePlanResponse {
+  data: Subscription
+  checkout: CheckoutSession | null
 }
 
 export const useBillingStore = defineStore('billing', () => {
@@ -120,15 +150,24 @@ export const useBillingStore = defineStore('billing', () => {
   const subscriptionLoaded = ref(false)
   const busy = ref(false)
 
+  const plansError = ref(false)
+  const subscriptionError = ref(false)
+
   async function fetchPlans(force = false) {
     if (plansLoaded.value && !force) return plans.value
     try {
       const { data, meta } = await api<{ data: Plan[]; meta?: { features?: FeatureCatalogue } }>('/plans')
       plans.value = data.sort((a, b) => a.sort_order - b.sort_order)
       featureCatalogue.value = meta?.features ?? {}
+      plansError.value = false
     } catch {
-      plans.value = []
-      featureCatalogue.value = {}
+      // Preserve the last good list so a transient failure never renders as
+      // an empty catalogue with no retry.
+      if (plans.value.length === 0) {
+        plans.value = []
+        featureCatalogue.value = {}
+      }
+      plansError.value = true
     } finally {
       plansLoaded.value = true
     }
@@ -139,8 +178,11 @@ export const useBillingStore = defineStore('billing', () => {
     try {
       const { data } = await api<{ data: Subscription }>('/subscription')
       subscription.value = data
+      subscriptionError.value = false
     } catch {
-      subscription.value = null
+      // Preserve the last good subscription so a transient failure never
+      // flashes as "no subscription".
+      subscriptionError.value = true
     } finally {
       subscriptionLoaded.value = true
     }
@@ -164,9 +206,22 @@ export const useBillingStore = defineStore('billing', () => {
   async function changePlan(planId: string) {
     busy.value = true
     try {
-      const { data } = await api<{ data: Subscription }>('/subscription/change-plan', {
+      const res = await api<ChangePlanResponse>('/subscription/change-plan', {
         method: 'POST',
         body: { plan_id: planId },
+      })
+      subscription.value = res.data
+      return res
+    } finally {
+      busy.value = false
+    }
+  }
+
+  async function cancelPlanChange() {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: Subscription | null }>('/subscription/change-plan/cancel', {
+        method: 'POST',
       })
       subscription.value = data
       return data
@@ -254,6 +309,19 @@ export const useBillingStore = defineStore('billing', () => {
     }
   }
 
+  async function waitForSubscriptionPlan(planId: string, timeoutMs = 20000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs
+
+    for (;;) {
+      const sub = await fetchSubscription()
+      // Require an active status, not just the plan id: an approval-pending
+      // PayPal revision must never count as success.
+      if (sub?.plan?.id === planId && sub?.status === 'active') return true
+      if (Date.now() >= deadline) return false
+      await new Promise(resolve => setTimeout(resolve, 1500))
+    }
+  }
+
   /**
    * Redeem an invite or referral code, starting the organization's trial.
    * Returns the trialing subscription and refreshes the store.
@@ -291,8 +359,10 @@ export const useBillingStore = defineStore('billing', () => {
     plans,
     featureCatalogue,
     plansLoaded,
+    plansError,
     subscription,
     subscriptionLoaded,
+    subscriptionError,
     busy,
     accessGranted,
     onTrial,
@@ -303,11 +373,13 @@ export const useBillingStore = defineStore('billing', () => {
     fetchSubscription,
     subscribe,
     changePlan,
+    cancelPlanChange,
     addSeats,
     removeSeats,
     cancel,
     redeemTrialCode,
     waitForActiveSubscription,
+    waitForSubscriptionPlan,
   }
 })
 

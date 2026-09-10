@@ -90,12 +90,11 @@ const seatLabel = computed(() => {
 })
 
 const usageMeters = computed(() => {
-  const usage = billing.subscription?.usage
-  if (!usage) return []
+  const aiUsage = billing.subscription?.usage.ai_usage
+  if (!aiUsage) return []
+  // One percent meter: the template's used/limit math reads it as-is.
   return [
-    { key: 'messages', label: 'Messages', used: usage.messages.used, limit: usage.messages.limit },
-    { key: 'documents', label: 'Documents', used: usage.documents.used, limit: usage.documents.limit },
-    { key: 'cases', label: 'Cases', used: usage.active_cases.used, limit: usage.active_cases.limit },
+    { key: 'ai_usage', label: 'AI usage', used: Math.round(aiUsage.percent), limit: 100 },
   ]
 })
 

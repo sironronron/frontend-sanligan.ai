@@ -41,7 +41,7 @@ const openTasks = computed<Todo[]>(() =>
   todos.todos.filter(t => t.status !== 'completed').slice(0, 6),
 )
 
-const messages = computed(() => summary.value?.usage.messages ?? null)
+const aiUsage = computed(() => summary.value?.usage.ai_usage ?? null)
 const cases = computed(() => summary.value?.cases ?? null)
 const org = computed(() => summary.value?.organization ?? null)
 const tasks = computed(() => summary.value?.tasks ?? null)
@@ -127,11 +127,11 @@ onMounted(async () => {
     <template v-else-if="summary">
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile
-          label="Messages"
-          :value="messages?.used ?? 0"
-          :used="messages?.used ?? null"
-          :limit="messages?.limit ?? null"
-          :hint="messages?.limit ? `${messages.limit.toLocaleString()} included` : 'Unlimited'"
+          label="AI usage"
+          :value="aiUsage ? Math.round(aiUsage.percent) : 0"
+          :used="aiUsage?.percent ?? null"
+          :limit="100"
+          :hint="aiUsage?.budget_pesos ? `₱${aiUsage.budget_pesos.toLocaleString()} monthly allowance` : 'Usage-based'"
           :icon="GaugeIcon"
           to="/settings/billing"
         />
