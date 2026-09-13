@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ActivityIcon, ChevronRightIcon, CrownIcon } from '@lucide/vue'
+import { ActivityIcon, ChevronRightIcon, CrownIcon, SparklesIcon } from '@lucide/vue'
 import { Popover, PopoverContent, PopoverTrigger } from '~/components/ui/popover'
 import type { CaseMember, LegalCase } from '~/stores/cases'
 
@@ -19,6 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [id: string]
   progress: [id: string]
+  digest: [id: string]
 }>()
 
 const { typeLabel, relativeTime, dueState, taskPercent } = useCasePresentation()
@@ -121,6 +122,14 @@ const peopleLabel = computed(() => {
         {{ props.case.last_message_snippet }}
       </p>
 
+      <CaseDigest
+        v-if="props.case.digest"
+        class="mt-2"
+        compact
+        :digest="props.case.digest"
+        :generated-at="props.case.digest_generated_at"
+      />
+
       <!--
         Who is on the case closes the block, below the facts about it. It is a
         button rather than a static stack because four avatars is where a row
@@ -189,6 +198,17 @@ const peopleLabel = computed(() => {
         Hidden on phones: the row already carries status and a chevron there,
         and progress is one tap away inside the case.
       -->
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="hidden text-muted-foreground transition-opacity sm:inline-flex lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
+        :aria-label="`View digest for ${props.case.title}`"
+        title="Digest"
+        @click.stop="emit('digest', props.case.id)"
+      >
+        <SparklesIcon />
+      </Button>
+
       <Button
         variant="ghost"
         size="icon-sm"

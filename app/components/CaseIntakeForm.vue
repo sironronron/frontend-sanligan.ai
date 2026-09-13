@@ -83,7 +83,7 @@ interface IntakeFormState {
 
 const NO_TEMPLATE = 'none'
 
-const { typeLabel, priorityLabel, priorityClass, dueState } = useCasePresentation()
+const { typeLabel, priorityLabel, priorityClass, dueState, todayInputDate } = useCasePresentation()
 
 const isEdit = computed(() => !!props.initial)
 
@@ -133,6 +133,12 @@ const selectedTemplate = computed(() =>
 )
 
 const due = computed(() => dueState(form.due_date || null))
+const minimumDueDate = todayInputDate()
+const dueDateIsPast = computed(() =>
+  Boolean(form.due_date)
+  && form.due_date < minimumDueDate
+  && form.due_date !== (props.initial?.due_date ?? ''),
+)
 
 const submitText = computed(() => props.submitLabel ?? (isEdit.value ? 'Save Changes' : 'Create Case'))
 
@@ -246,6 +252,10 @@ function submitNow() {
     focusFirstField()
     return
   }
+  if (dueDateIsPast.value) {
+    validationError.value = 'A new due date must be today or later.'
+    return
+  }
   emit('submit', buildPayload())
 }
 
@@ -353,7 +363,7 @@ onBeforeUnmount(() => {
           </template>
         </nav>
 
-        <form class="flex flex-1 flex-col overflow-y-auto" @submit.prevent="handleSubmit">
+        <form novalidate class="flex flex-1 flex-col overflow-y-auto" @submit.prevent="handleSubmit">
           <div class="flex-1 space-y-4 px-4 pt-4 pb-2">
             <!-- Step 1 — Basics: the three fields the server actually requires. -->
             <section v-show="isEdit || step === 0" data-step-panel :hidden="!isEdit && step !== 0" class="space-y-4">
@@ -501,7 +511,14 @@ onBeforeUnmount(() => {
 
               <div class="space-y-1.5">
                 <Label for="case-due-date" class="text-xs">Due Date / Deadline</Label>
-                <Input id="case-due-date" v-model="form.due_date" type="date" class="text-sm" />
+                <Input
+                  id="case-due-date"
+                  v-model="form.due_date"
+                  type="date"
+                  :min="minimumDueDate"
+                  :aria-invalid="dueDateIsPast"
+                  class="text-sm"
+                />
                 <div class="flex flex-wrap items-center gap-1.5">
                   <Button type="button" variant="outline" size="xs" @click="setDueIn(7)">In a week</Button>
                   <Button type="button" variant="outline" size="xs" @click="setDueIn(30)">In 30 days</Button>

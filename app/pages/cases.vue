@@ -268,6 +268,20 @@ async function openProgress(id: string) {
   await router.push({ path: `/cases/${id}`, query: { view: 'progress' } })
 }
 
+/** The case whose digest is peeked in the dialog — row data already carries it. */
+const digestTarget = ref<LegalCase | null>(null)
+
+function openDigest(id: string) {
+  digestTarget.value = sortedCases.value.find(c => c.id === id) ?? null
+}
+
+function openDigestCase() {
+  if (!digestTarget.value) return
+  const id = digestTarget.value.id
+  digestTarget.value = null
+  openCase(id)
+}
+
 onMounted(async () => {
   await Promise.all([loadCases(), loadTemplates(), orgStore.fetchMembers()])
 })
@@ -300,82 +314,84 @@ onMounted(async () => {
         permanent segmented control instead of hiding inside a select next to
         two it is used far less often than.
       -->
-      <div class="surface flex flex-wrap items-center gap-2 p-2.5">
-        <div class="surface-inset flex items-center overflow-x-auto p-0.5" role="tablist" aria-label="Filter by status">
-          <button
-            v-for="option in [{ value: 'all', label: 'All' }, ...CASE_STATUSES]"
-            :key="option.value"
-            type="button"
-            role="tab"
-            :aria-selected="statusFilter === option.value"
-            class="inline-flex h-7 shrink-0 items-center rounded-md px-3 text-xs font-medium transition-colors"
-            :class="statusFilter === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-            @click="statusFilter = option.value"
-          >
-            {{ option.label }}
-          </button>
-        </div>
+       <div class="surface flex flex-wrap items-center gap-2 p-2.5">
+         <div class="surface-inset flex max-w-full items-center overflow-x-auto p-0.5" role="tablist" aria-label="Filter by status">
+           <button
+             v-for="option in [{ value: 'all', label: 'All' }, ...CASE_STATUSES]"
+             :key="option.value"
+             type="button"
+             role="tab"
+             :aria-selected="statusFilter === option.value"
+             class="inline-flex min-h-11 shrink-0 items-center rounded-md px-3 text-xs font-medium transition-colors sm:h-7 sm:min-h-0"
+             :class="statusFilter === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+             @click="statusFilter = option.value"
+           >
+             {{ option.label }}
+           </button>
+         </div>
 
-        <div class="relative min-w-48 flex-1">
-          <SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input v-model="search" class="h-8 pl-9 text-sm" placeholder="Search title, reference, tags…" />
-        </div>
+         <div class="relative basis-full min-w-0 flex-1 sm:basis-auto sm:min-w-48">
+           <SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+           <Input v-model="search" class="h-11 pl-9 text-sm sm:h-8" placeholder="Search title, reference, tags…" />
+         </div>
 
-        <Select v-model="typeFilter">
-          <SelectTrigger class="w-36">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem v-for="t in CASE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+         <div class="grid w-full grid-cols-2 gap-2 sm:contents">
+           <Select v-model="typeFilter">
+             <SelectTrigger class="h-11 w-full sm:h-8 sm:w-36">
+               <SelectValue placeholder="Type" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="all">All types</SelectItem>
+               <SelectItem v-for="t in CASE_TYPES" :key="t.value" :value="t.value">{{ t.label }}</SelectItem>
+             </SelectContent>
+           </Select>
 
-        <Select v-model="priorityFilter">
-          <SelectTrigger class="w-32">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All priorities</SelectItem>
-            <SelectItem v-for="p in CASE_PRIORITIES" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+           <Select v-model="priorityFilter">
+             <SelectTrigger class="h-11 w-full sm:h-8 sm:w-32">
+               <SelectValue placeholder="Priority" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="all">All priorities</SelectItem>
+               <SelectItem v-for="p in CASE_PRIORITIES" :key="p.value" :value="p.value">{{ p.label }}</SelectItem>
+             </SelectContent>
+           </Select>
 
-        <!--
-          Only a firm has people to filter by; a solo practitioner would get a
-          select whose every option means "all of them".
-        -->
-        <Select v-if="colleagues.length > 0" v-model="assigneeFilter">
-          <SelectTrigger class="w-40" aria-label="Filter by person">
-            <SelectValue placeholder="Anyone" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Anyone</SelectItem>
-            <SelectItem value="me">Assigned to me</SelectItem>
-            <SelectItem v-for="m in colleagues" :key="m.id" :value="m.id">{{ m.name }}</SelectItem>
-          </SelectContent>
-        </Select>
+           <!--
+             Only a firm has people to filter by; a solo practitioner would get a
+             select whose every option means "all of them".
+           -->
+           <Select v-if="colleagues.length > 0" v-model="assigneeFilter">
+             <SelectTrigger class="h-11 w-full sm:h-8 sm:w-40" aria-label="Filter by person">
+               <SelectValue placeholder="Anyone" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="all">Anyone</SelectItem>
+               <SelectItem value="me">Assigned to me</SelectItem>
+               <SelectItem v-for="m in colleagues" :key="m.id" :value="m.id">{{ m.name }}</SelectItem>
+             </SelectContent>
+           </Select>
 
-        <!--
-          Wrapped so the trigger's justify-between sees one child plus its
-          chevron; a bare leading icon would get spread to the far edge.
-        -->
-        <Select v-model="sort">
-          <SelectTrigger class="w-44" aria-label="Sort cases">
-            <span class="flex min-w-0 items-center gap-1.5">
-              <SlidersHorizontalIcon class="size-3.5 shrink-0 text-muted-foreground" />
-              <SelectValue />
-            </span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
+           <!--
+             Wrapped so the trigger's justify-between sees one child plus its
+             chevron; a bare leading icon would get spread to the far edge.
+           -->
+           <Select v-model="sort">
+             <SelectTrigger class="h-11 w-full sm:h-8 sm:w-44" aria-label="Sort cases">
+               <span class="flex min-w-0 items-center gap-1.5">
+                 <SlidersHorizontalIcon class="size-3.5 shrink-0 text-muted-foreground" />
+                 <SelectValue />
+               </span>
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem v-for="option in SORT_OPTIONS" :key="option.value" :value="option.value">
+                 {{ option.label }}
+               </SelectItem>
+             </SelectContent>
+           </Select>
+         </div>
 
-        <ViewModeToggle v-model="view" class="ml-auto" />
-      </div>
+         <ViewModeToggle v-model="view" class="ml-auto" />
+       </div>
 
       <div v-if="activeFilters.length > 0" class="mt-2 flex flex-wrap items-center gap-1.5">
         <button
@@ -440,6 +456,7 @@ onMounted(async () => {
               :case="c"
               @open="openCase"
               @progress="openProgress"
+              @digest="openDigest"
             />
           </div>
         </div>
@@ -456,6 +473,7 @@ onMounted(async () => {
               :case="c"
               @open="openCase"
               @progress="openProgress"
+              @digest="openDigest"
             />
           </div>
         </div>
@@ -488,6 +506,7 @@ onMounted(async () => {
               :case="c"
               @open="openCase"
               @progress="openProgress"
+              @digest="openDigest"
             />
             </TableBody>
           </Table>
@@ -501,6 +520,15 @@ onMounted(async () => {
         :submit-label="creating ? 'Creating…' : 'Create Case'"
         @submit="handleIntakeSubmit"
         @cancel="handleIntakeCancel"
+      />
+
+      <CaseDigestDialog
+        v-if="digestTarget"
+        :title="digestTarget.title"
+        :digest="digestTarget.digest"
+        :generated-at="digestTarget.digest_generated_at"
+        @close="digestTarget = null"
+        @open="openDigestCase"
       />
     </div>
 

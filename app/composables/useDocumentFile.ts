@@ -1,5 +1,9 @@
 import { authHeaders } from '~/lib/http'
 
+export function isPdfDocument(filename: string, mimeType?: string): boolean {
+  return mimeType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')
+}
+
 /**
  * Access to an uploaded document's stored file.
  *

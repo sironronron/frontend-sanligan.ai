@@ -28,7 +28,8 @@ import {
 import { useAuthStore } from '~/stores/auth'
 import { useCaseStore } from '~/stores/cases'
 import { useLabelStore, type AppliedLabel, type Label } from '~/stores/labels'
-import { upgradeMessage } from '~/stores/billing'
+import { isPdfDocument, useDocumentFile } from '~/composables/useDocumentFile'
+import { upgradeMessage, useBillingStore } from '~/stores/billing'
 import DocumentViewer from '~/components/DocumentViewer.vue'
 import FileTagDialog from '~/components/FileTagDialog.vue'
 
@@ -53,13 +54,32 @@ interface Document {
 
 const api = useApi()
 const auth = useAuthStore()
+const billing = useBillingStore()
 const caseStore = useCaseStore()
 const labelStore = useLabelStore()
 const fileDrop = useFileDrop()
-const { download: downloadDocument } = useDocumentFile()
+const { download } = useDocumentFile()
 const { fileIcon } = useFileTypeIcon()
 
 const cases = computed(() => caseStore.cases)
+const canUsePdf = computed(() => auth.user?.is_admin === true || billing.hasFeature('pdf_documents'))
+
+function isPdfBlocked(doc: Document): boolean {
+  return isPdfDocument(doc.original_filename, doc.mime_type) && !canUsePdf.value
+}
+
+async function downloadDocument(doc: Document) {
+  if (isPdfBlocked(doc)) {
+    toast.info('PDF access is available on paid plans.', { action: { label: 'View plans', onClick: () => navigateTo('/pricing') } })
+    return
+  }
+
+  try {
+    await download(doc.id, doc.original_filename)
+  } catch (err: any) {
+    toast.error(err?.message ?? 'Could not download the document')
+  }
+}
 
 function uploaderLabel(doc: Document) {
   if (!doc.uploaded_by || doc.user_id === auth.user?.id) return null
@@ -541,18 +561,27 @@ function pickFile() {
 function onFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
   const picked = target.files ? Array.from(target.files) : []
-  selectedFiles.value.push(...picked)
+  const accepted = canUsePdf.value ? picked : picked.filter(file => !isPdfDocument(file.name, file.type))
+  const blocked = picked.find(file => isPdfDocument(file.name, file.type))
+  selectedFiles.value.push(...accepted)
   target.value = ''
-  errorMessage.value = ''
+  errorMessage.value = blocked
+    ? 'PDF uploads are available on paid plans. Choose a DOCX, TXT, MD, or image file instead.'
+    : ''
 }
 
 function onFilesDropped(event: DragEvent) {
   const rejected = fileDrop.onDrop(event, (files) => {
-    selectedFiles.value.push(...files)
+    const accepted = canUsePdf.value ? files : files.filter(file => !isPdfDocument(file.name, file.type))
+    const blocked = files.find(file => isPdfDocument(file.name, file.type))
+    selectedFiles.value.push(...accepted)
     errorMessage.value = ''
+    if (blocked) {
+      errorMessage.value = 'PDF uploads are available on paid plans. Choose a DOCX, TXT, MD, or image file instead.'
+    }
   })
   if (rejected.length > 0 && rejected[0]) {
-    errorMessage.value = `"${rejected[0].name}" is not a supported file type. Use PDF, DOCX, TXT, MD, or an image.`
+    errorMessage.value = `"${rejected[0].name}" is not a supported file type. Use ${canUsePdf.value ? 'PDF, ' : ''}DOCX, TXT, MD, or an image.`
   }
 }
 
@@ -954,10 +983,11 @@ async function bulkDelete() {
             <FileUpIcon class="size-4 text-muted-foreground" />
           </div>
           <div>
-            <p class="text-sm font-medium">PDF, DOCX, TXT, MD, or image — up to 25 MB</p>
-            <p class="mt-0.5 text-xs text-muted-foreground">
-              Drag and drop, or
-              <button type="button" class="font-medium text-primary underline-offset-2 hover:underline" @click="pickFile">browse</button>
+             <p class="text-sm font-medium">{{ canUsePdf ? 'PDF, DOCX, TXT, MD, or image' : 'DOCX, TXT, MD, or image' }} — up to 25 MB</p>
+             <p class="mt-0.5 text-xs text-muted-foreground">
+               Drag and drop, or
+               <button type="button" class="font-medium text-primary underline-offset-2 hover:underline" @click="pickFile">browse</button>
+               <span v-if="!canUsePdf">. PDF uploads are available on paid plans.</span>
             </p>
           </div>
         </div>
@@ -988,7 +1018,7 @@ async function bulkDelete() {
       <input
         ref="fileInput"
         type="file"
-        accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic"
+         :accept="canUsePdf ? '.pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic' : '.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic'"
         multiple
         class="hidden"
         @change="onFileSelected"
@@ -1191,10 +1221,11 @@ async function bulkDelete() {
           <div class="flex shrink-0 items-center gap-0.5" @click.stop>
             <DocumentActions
               :document="doc"
+              :pdf-blocked="isPdfBlocked(doc)"
               :attaching="attachTarget?.id === doc.id"
               :retrying="retrying.has(doc.id)"
               @view="viewing = doc"
-              @download="downloadDocument(doc.id, doc.original_filename)"
+              @download="downloadDocument(doc)"
               @retry="retryDocument(doc)"
               @toggle-attach="toggleAttach(doc)"
               @toggle-file="tagOpen = true"

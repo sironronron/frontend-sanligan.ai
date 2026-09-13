@@ -61,10 +61,18 @@ export const useOrganizationStore = defineStore('organization', () => {
   })
 
   async function fetchOrganization() {
+    // A solo account has no organization to read; asking anyway only buys a
+    // 404 and a console error. The API stays the source of truth for every
+    // other case (lapsed membership, suspension), which still throws below.
+    if (auth.initialized && !auth.hasOrganization) {
+      organization.value = null
+      return null
+    }
     loading.value = true
     try {
       const { data } = await api<ApiResource<OrganizationInfo>>('/organizations')
       organization.value = data
+      return data
     } finally {
       loading.value = false
     }
@@ -76,6 +84,11 @@ export const useOrganizationStore = defineStore('organization', () => {
    * 404/403 here, which is an answer rather than a failure: nobody to list.
    */
   async function fetchMembers() {
+    // Same answer as the API's 403 for a solo account, without the request.
+    if (auth.initialized && !auth.hasOrganization) {
+      members.value = []
+      return members.value
+    }
     try {
       const { data } = await api<ApiList<OrgMember>>('/organizations/members')
       members.value = data

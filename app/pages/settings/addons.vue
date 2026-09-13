@@ -247,7 +247,7 @@ const showAdminPanel = computed(() => store.admin?.is_manager === true)
         <div class="flex items-center gap-2.5">
           <PuzzleIcon class="size-4 shrink-0 text-primary" />
           <p class="text-sm">
-            {{ store.payload?.upgrade_message ?? 'Add-ons are available on the Pro, Firm, and Business plans.' }}
+            {{ store.payload?.upgrade_message ?? 'Add-ons are available on the Pro and Firm plans.' }}
           </p>
         </div>
         <NuxtLink to="/pricing" class="shrink-0">

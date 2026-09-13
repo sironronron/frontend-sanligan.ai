@@ -32,7 +32,7 @@ const options: Array<{ value: ViewMode, label: string, icon: typeof ListIcon }> 
       :aria-checked="model === option.value"
       :aria-label="option.label"
       :title="option.label"
-      class="inline-flex size-7 items-center justify-center rounded-md transition-colors"
+       class="inline-flex size-10 items-center justify-center rounded-md transition-colors sm:size-7"
       :class="model === option.value
         ? 'bg-card text-foreground shadow-sm'
         : 'text-muted-foreground hover:text-foreground'"

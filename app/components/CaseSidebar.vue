@@ -21,8 +21,10 @@ import {
 } from '@lucide/vue'
 import { type CaseConversation, type LegalCase } from '~/stores/cases'
 import { useAuthStore } from '~/stores/auth'
+import { useBillingStore } from '~/stores/billing'
 import { useLabelStore } from '~/stores/labels'
 import { DOCUMENT_STATUS_LABEL, type CaseDocument, type GeneratedDocument } from '~/types/case'
+import { isPdfDocument } from '~/composables/useDocumentFile'
 import LabelPicker from '~/components/LabelPicker.vue'
 import FileTagDialog from '~/components/FileTagDialog.vue'
 import CaseBrief from '~/components/CaseBrief.vue'
@@ -53,6 +55,8 @@ import { THREAD_ICONS, THREAD_TILES, threadPurposeKind } from '~/lib/threads'
  * below it as a full-width button.
  */
 const props = withDefaults(defineProps<{
+  /** Renders the same rail inside the mobile matter drawer. */
+  mobile?: boolean
   threads: CaseConversation[]
   activeConversationId: string | null
   creating: boolean
@@ -74,7 +78,7 @@ const props = withDefaults(defineProps<{
   case: LegalCase
   /** Whether the case is still editable; gates the tag controls. */
   editable: boolean
-}>(), { readonly: false, streamingThreadIds: () => [] })
+}>(), { mobile: false, readonly: false, streamingThreadIds: () => [] })
 
 const emit = defineEmits<{
   selectThread: [id: string]
@@ -95,7 +99,17 @@ const emit = defineEmits<{
 const { formatShortDate, relativeTime } = useCasePresentation()
 const { fileIcon } = useFileTypeIcon()
 const auth = useAuthStore()
+const billing = useBillingStore()
 const labelStore = useLabelStore()
+
+const canUsePdf = computed(() => auth.user?.is_admin === true || billing.hasFeature('pdf_documents'))
+const fileAccept = computed(() => canUsePdf.value
+  ? '.pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic'
+  : '.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic')
+
+function isPdfBlocked(doc: CaseDocument): boolean {
+  return isPdfDocument(doc.original_filename, doc.mime_type) && !canUsePdf.value
+}
 
 function isStreaming(id: string): boolean {
   return props.streamingThreadIds.includes(id)
@@ -300,7 +314,10 @@ function onFileSelected(event: Event) {
   const target = event.target as HTMLInputElement
   const picked = target.files ? Array.from(target.files) : []
   target.value = ''
-  selectedFiles.value.push(...picked)
+  const accepted = canUsePdf.value ? picked : picked.filter(file => !isPdfDocument(file.name, file.type))
+  const blocked = picked.find(file => isPdfDocument(file.name, file.type))
+  selectedFiles.value.push(...accepted)
+  if (blocked) emit('rejectedUpload', blocked.name)
 }
 
 /**
@@ -310,11 +327,15 @@ function onFileSelected(event: Event) {
  */
 function onFilesDropped(event: DragEvent) {
   if (props.readonly) return
+  let blockedPdf: File | undefined
   const rejected = drop.onDrop(event, (files) => {
-    selectedFiles.value.push(...files)
+    const accepted = canUsePdf.value ? files : files.filter(file => !isPdfDocument(file.name, file.type))
+    blockedPdf = files.find(file => isPdfDocument(file.name, file.type))
+    selectedFiles.value.push(...accepted)
   })
   openSection('files')
-  if (rejected.length > 0) emit('rejectedUpload', rejected[0]?.name ?? 'That file')
+  if (blockedPdf) emit('rejectedUpload', blockedPdf.name)
+  else if (rejected.length > 0) emit('rejectedUpload', rejected[0]?.name ?? 'That file')
 }
 
 function removeSelected(index: number) {
@@ -366,11 +387,11 @@ const ROW_ACTIONS = 'flex shrink-0 items-center gap-0.5 pr-1 opacity-0 pointer-e
   + 'focus-within:opacity-100 focus-within:pointer-events-auto '
   + 'max-lg:opacity-100 max-lg:pointer-events-auto'
 
-const ROW_ACTION_BUTTON = 'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground '
+const ROW_ACTION_BUTTON = 'inline-flex size-11 items-center justify-center rounded-md text-muted-foreground md:size-7 '
   + 'transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 
 /** The `+` and `↑` that ride in a section header. */
-const SECTION_ACTION = 'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground '
+const SECTION_ACTION = 'inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground md:size-7 '
   + 'transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 '
   + 'focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50'
 
@@ -584,7 +605,9 @@ onMounted(() => {
 
 <template>
   <aside
-    class="surface relative hidden h-full w-[21rem] shrink-0 flex-col overflow-hidden bg-sidebar md:flex"
+    :class="props.mobile
+      ? 'surface relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar'
+      : 'surface relative hidden h-full w-[21rem] shrink-0 flex-col overflow-hidden bg-sidebar md:flex'"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -835,7 +858,7 @@ onMounted(() => {
           ref="fileInput"
           type="file"
           multiple
-          accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic"
+           :accept="fileAccept"
           class="hidden"
           @change="onFileSelected"
         />
@@ -914,7 +937,7 @@ onMounted(() => {
                 Drop them anywhere in this panel. Batayan can quote back whatever you attach.
               </span>
               <span class="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground/70">
-                PDF · DOCX · TXT · MD · images
+                 {{ canUsePdf ? 'PDF · DOCX · TXT · MD · images' : 'DOCX · TXT · MD · images' }}
               </span>
             </button>
             <p v-else class="px-2 py-5 text-center text-xs text-muted-foreground">
@@ -1024,10 +1047,14 @@ onMounted(() => {
                         <RotateCcwIcon class="size-4" />
                         Retry
                       </DropdownMenuItem>
-                      <DropdownMenuItem v-else @click="emit('downloadDocument', row.doc)">
-                        <DownloadIcon class="size-4" />
-                        Download
-                      </DropdownMenuItem>
+                       <DropdownMenuItem v-else-if="!isPdfBlocked(row.doc)" @click="emit('downloadDocument', row.doc)">
+                         <DownloadIcon class="size-4" />
+                         Download
+                       </DropdownMenuItem>
+                       <DropdownMenuItem v-else @click="navigateTo('/pricing')">
+                         <DownloadIcon class="size-4" />
+                         Unlock PDF access
+                       </DropdownMenuItem>
                       <template v-if="!props.readonly && row.doc.status !== 'failed'">
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" @click="emit('deleteDocument', row.doc)">

@@ -23,10 +23,10 @@ defineEmits<{ 'update:open': [value: boolean] }>()
         </AlertDialogTitle>
         <AlertDialogDescription>
           <template v-if="providerName">
-            The {{ providerName }} integration is available on the Pro, Firm, and Business plans.
+            The {{ providerName }} integration is available on the Pro and Firm plans.
           </template>
           <template v-else>
-            Add-ons and integrations are available on the Pro, Firm, and Business plans.
+            Add-ons and integrations are available on the Pro and Firm plans.
           </template>
           Upgrade to connect it and choose exactly which capabilities it gets.
         </AlertDialogDescription>

@@ -126,6 +126,11 @@ export function useCasePresentation() {
     return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
   }
 
+  function todayInputDate() {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
   function relativeTime(value: string | null | undefined) {
     if (!value) return ''
     const then = new Date(value).getTime()
@@ -193,6 +198,7 @@ export function useCasePresentation() {
     formatDate,
     formatShortDate,
     formatDateTime,
+    todayInputDate,
     relativeTime,
     dueState,
     taskPercent,

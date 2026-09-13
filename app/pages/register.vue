@@ -7,6 +7,7 @@ definePageMeta({
 })
 
 const auth = useAuthStore()
+const route = useRoute()
 
 const name = ref('')
 const email = ref('')
@@ -21,6 +22,15 @@ const showEmailForm = ref(false)
 // Decides where a fresh account lands after email confirmation. A lawyer is
 // sent on to their application; a researcher into the KYC questions.
 const intent = ref<'researcher' | 'lawyer'>('researcher')
+
+const postAuthRedirect = computed(() => {
+  if (intent.value === 'lawyer') return '/lawyer/register'
+
+  const plan = typeof route.query.plan === 'string' ? route.query.plan : ''
+  const interval = route.query.interval === 'annual' ? 'annual' : 'monthly'
+
+  return plan ? `/choose-plan?plan=${encodeURIComponent(plan)}&interval=${interval}` : '/choose-plan'
+})
 
 /** The API enforces a minimum of 8 characters; the rest is guidance, not a rule. */
 const MIN_PASSWORD_LENGTH = 8
@@ -67,12 +77,9 @@ async function handleSubmit() {
   try {
     const { confirmationRequired } = await auth.register(name.value, email.value, password.value)
 
-    // Parked now so it survives the email-confirmation -> sign-in hop: the
-    // confirmation link requires a fresh sign-in, and the destination has to
-    // be carried across it without riding on the link itself.
-    if (intent.value === 'lawyer') {
-      rememberPostAuthRedirect('/lawyer/register')
-    }
+    // Parked now so it survives the email-confirmation -> sign-in hop. The
+    // researcher sees the free/paid choice before entering the workspace.
+    rememberPostAuthRedirect(postAuthRedirect.value)
 
     if (confirmationRequired) {
       confirmSent.value = true
@@ -80,13 +87,7 @@ async function handleSubmit() {
       return
     }
 
-    if (!auth.hasAcceptedTerms) {
-      await navigateTo('/terms/accept')
-    } else if (!auth.kycCompleted) {
-      await navigateTo('/onboarding')
-    } else {
-      await navigateTo(auth.homePath())
-    }
+    await navigateTo(resolveAuthDestination())
   } catch (err) {
     const parsed = parseApiError(err, 'Registration failed. Please try again.')
     error.value = parsed.message
@@ -182,7 +183,7 @@ async function handleSubmit() {
       <div v-if="!showEmailForm" class="space-y-3">
         <GoogleAuthButton
           label="Create account with Google"
-          :redirect="intent === 'lawyer' ? '/lawyer/register' : undefined"
+            :redirect="postAuthRedirect"
           @error="error = $event"
         />
         <Button type="button" variant="outline" class="h-10 w-full gap-2.5" @click="showEmailForm = true">

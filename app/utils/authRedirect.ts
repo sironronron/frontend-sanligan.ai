@@ -12,7 +12,7 @@ const REDIRECT_KEY = 'batayan.auth.redirect'
  * Rejects anything that could leave the app. A leading `//` is a
  * protocol-relative URL — `//evil.example` is a different origin, not a path.
  */
-function isInternalPath(path: string): boolean {
+export function isInternalPath(path: string): boolean {
   return path.startsWith('/') && !path.startsWith('//')
 }
 
@@ -76,7 +76,8 @@ export function getPostAuthRedirect(): string | null {
 export function resolveAuthDestination(explicitRedirect: string | null = null): string {
   const auth = useAuthStore()
 
-  const destination = explicitRedirect || takePostAuthRedirect()
+  const requestedDestination = explicitRedirect && isInternalPath(explicitRedirect) ? explicitRedirect : null
+  const destination = requestedDestination || takePostAuthRedirect()
 
   if (!auth.hasAcceptedTerms) {
     // Terms come first. The destination is parked back in the same slot so the
@@ -91,7 +92,7 @@ export function resolveAuthDestination(explicitRedirect: string | null = null): 
   }
 
   if (!auth.kycCompleted) {
-    return '/onboarding'
+    return destination ? `/onboarding?next=${encodeURIComponent(destination)}` : '/onboarding'
   }
 
   return destination ?? auth.homePath()

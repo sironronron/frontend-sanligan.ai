@@ -18,8 +18,8 @@ export type FeatureCatalogue = Record<string, PlanFeature>
 
 export interface Plan {
   id: string
-  /** `trial` is never listed for sale — it only arrives on a redeemed trial. */
-  slug: 'trial' | 'standard' | 'pro' | 'firm' | 'business'
+  /** `trial` is offered by the registration selector, never by paid checkout. */
+  slug: 'trial' | 'standard' | 'pro' | 'firm'
   name: string
   price: number
   price_label: string
@@ -48,6 +48,7 @@ export interface Plan {
    * conversation instead of quoting a figure, and checkout refuses the plan.
    */
   contact_sales: boolean
+  annual_only: boolean
   sort_order: number
 }
 
@@ -87,10 +88,11 @@ export interface Subscription {
   id: string
   organization_id: string | null
   status: string
-  gateway: 'paymongo' | 'lemonsqueezy' | 'paypal'
+  gateway: 'paymongo' | 'lemonsqueezy' | 'paypal' | null
   interval: BillingInterval
   plan: Plan | null
   pending_plan_id: string | null
+  pending_plan_interval: BillingInterval | null
   pending_plan_checkout_url: string | null
   current_period_start: string | null
   current_period_end: string | null
@@ -136,6 +138,7 @@ export const useBillingStore = defineStore('billing', () => {
   const api = useApi()
 
   const plans = ref<Plan[]>([])
+  const trialPlan = ref<Plan | null>(null)
   // Ships with the plans so the labels live in one place — the same place that
   // enforces the features — rather than being retyped in each client.
   const featureCatalogue = ref<FeatureCatalogue>({})
@@ -153,11 +156,13 @@ export const useBillingStore = defineStore('billing', () => {
   const plansError = ref(false)
   const subscriptionError = ref(false)
 
-  async function fetchPlans(force = false) {
-    if (plansLoaded.value && !force) return plans.value
+  async function fetchPlans(force = false, includeTrial = false) {
+    if (plansLoaded.value && !force && (!includeTrial || trialPlan.value !== null)) return plans.value
     try {
-      const { data, meta } = await api<{ data: Plan[]; meta?: { features?: FeatureCatalogue } }>('/plans')
-      plans.value = data.sort((a, b) => a.sort_order - b.sort_order)
+      const endpoint = includeTrial ? '/plans?include_trial=1' : '/plans'
+      const { data, meta } = await api<{ data: Plan[]; meta?: { features?: FeatureCatalogue } }>(endpoint)
+      trialPlan.value = data.find(plan => plan.slug === 'trial') ?? trialPlan.value
+      plans.value = data.filter(plan => plan.slug !== 'trial').sort((a, b) => a.sort_order - b.sort_order)
       featureCatalogue.value = meta?.features ?? {}
       plansError.value = false
     } catch {
@@ -165,6 +170,7 @@ export const useBillingStore = defineStore('billing', () => {
       // an empty catalogue with no retry.
       if (plans.value.length === 0) {
         plans.value = []
+        trialPlan.value = null
         featureCatalogue.value = {}
       }
       plansError.value = true
@@ -203,12 +209,26 @@ export const useBillingStore = defineStore('billing', () => {
     }
   }
 
-  async function changePlan(planId: string) {
+  async function startFreeTrial() {
+    busy.value = true
+    try {
+      const { data } = await api<{ data: Subscription }>('/subscription/trial', {
+        method: 'POST',
+      })
+      subscription.value = data
+      subscriptionLoaded.value = true
+      return data
+    } finally {
+      busy.value = false
+    }
+  }
+
+  async function changePlan(planId: string, interval: BillingInterval = subscription.value?.interval ?? 'monthly') {
     busy.value = true
     try {
       const res = await api<ChangePlanResponse>('/subscription/change-plan', {
         method: 'POST',
-        body: { plan_id: planId },
+        body: { plan_id: planId, billing_interval: interval },
       })
       subscription.value = res.data
       return res
@@ -357,6 +377,7 @@ export const useBillingStore = defineStore('billing', () => {
 
   return {
     plans,
+    trialPlan,
     featureCatalogue,
     plansLoaded,
     plansError,
@@ -372,6 +393,7 @@ export const useBillingStore = defineStore('billing', () => {
     fetchPlans,
     fetchSubscription,
     subscribe,
+    startFreeTrial,
     changePlan,
     cancelPlanChange,
     addSeats,

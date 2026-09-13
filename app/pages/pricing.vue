@@ -179,15 +179,11 @@ const trialHeadline = computed(() => {
   return `${days} ${days === 1 ? 'day' : 'days'} left`
 })
 
-const activeInterval = computed<BillingInterval>(() =>
-  hasActiveSubscription.value
-    ? (billing.subscription?.interval ?? 'monthly')
-    : billingInterval.value,
-)
+const activeInterval = computed<BillingInterval>(() => billingInterval.value)
 
 /**
- * A Business enquiry, pre-addressed. The plan carries no list price, so the
- * column sends the reader to a conversation rather than to checkout.
+ * A sales enquiry, pre-addressed for any future contact-only plan. The current
+ * three-tier ladder is self-serve.
  */
 function contactSalesHref(plan: Plan): string {
   return `mailto:${salesEmail}?subject=${encodeURIComponent(`${plan.name} plan enquiry`)}`
@@ -213,12 +209,18 @@ function monthlyPrice(plan: Plan, interval: BillingInterval): number {
   return interval === 'annual' ? annualPrice(plan) / 12 : plan.price
 }
 
+function isIntervalAvailable(plan: Plan, interval: BillingInterval): boolean {
+  return !plan.annual_only || interval === 'annual'
+}
+
 /**
  * The headline figure. Annual plans are quoted per month so the two intervals
  * can be compared at a glance; the amount actually charged is stated
  * separately by `billedLabel`, never left to be inferred from this.
  */
 function priceFor(plan: Plan, interval: BillingInterval = activeInterval.value) {
+  if (!isIntervalAvailable(plan, interval)) return 'Annual only'
+
   return peso(monthlyPrice(plan, interval))
 }
 
@@ -228,6 +230,8 @@ function billedAmount(plan: Plan, interval: BillingInterval): number {
 }
 
 function billedLabel(plan: Plan, interval: BillingInterval = activeInterval.value) {
+  if (!isIntervalAvailable(plan, interval)) return 'Available with annual billing'
+
   return peso(billedAmount(plan, interval))
 }
 
@@ -295,6 +299,7 @@ function isCurrent(plan: Plan) {
   // offer a resubscribe rather than staying disabled as "Current plan".
   if (billing.subscription?.status === 'cancelled') return false
   return currentPlanId.value === plan.id
+    && (!hasActiveSubscription.value || billingInterval.value === (billing.subscription?.interval ?? 'monthly'))
 }
 
 /**
@@ -376,6 +381,10 @@ function choose(plan: Plan) {
 
 function handleChoose(plan: Plan) {
   if (isCurrent(plan) || plan.contact_sales) return
+  if (!isIntervalAvailable(plan, billingInterval.value)) {
+    toast.info(`${plan.name} is available with annual billing only.`)
+    return
+  }
   if (auth.user && !canManageBilling.value) {
     toast.info('Ask your workspace admin to manage billing.')
     return
@@ -396,7 +405,7 @@ function switchPlanNow(plan: Plan) {
   if (!hasActiveSubscription.value) return
   processing.value = true
   billing
-    .changePlan(plan.id)
+    .changePlan(plan.id, billingInterval.value)
     .then((result) => {
       if (result.checkout?.checkout_url) {
         window.location.href = result.checkout.checkout_url
@@ -436,6 +445,10 @@ async function handleCheckout() {
 
 onMounted(async () => {
   await Promise.all([billing.fetchPlans(), billing.fetchSubscription(), auth.initialized ? Promise.resolve() : auth.fetchUser()])
+
+  if (hasActiveSubscription.value) {
+    billingInterval.value = billing.subscription?.interval ?? 'monthly'
+  }
 
   // Only after the user is known, and only for someone who could still join
   // one: a signed-in account with no workspace of its own.
@@ -602,7 +615,7 @@ onMounted(async () => {
         <p class="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
            Pay per account. Cancel or switch plans any time. Secure checkout via PayPal.
         </p>
-        <div v-if="!hasActiveSubscription" class="mt-6 inline-flex items-center rounded-full border bg-muted/40 p-1 text-sm">
+        <div class="mt-6 inline-flex items-center rounded-full border bg-muted/40 p-1 text-sm">
           <button
             type="button"
             class="rounded-full px-4 py-1.5 transition-colors"
@@ -727,9 +740,11 @@ onMounted(async () => {
                   {{ plan.name }}
                 </h3>
                 <p class="mt-1 text-[0.8125rem] leading-snug" :class="isPro(plan) ? 'text-cream/70' : 'text-muted-foreground'">
-                  {{ plan.contact_sales
-                    ? 'For organizations with their own terms'
-                    : activeInterval === 'annual' ? 'per month, billed yearly' : 'per month' }}
+                   {{ plan.contact_sales
+                     ? 'For organizations with their own terms'
+                     : plan.annual_only && activeInterval === 'monthly'
+                       ? 'annual billing only'
+                       : activeInterval === 'annual' ? 'per month, billed yearly' : 'per month' }}
                 </p>
 
                 <!--
@@ -744,7 +759,11 @@ onMounted(async () => {
                   >
                     {{ plan.contact_sales ? 'Custom' : priceFor(plan) }}
                   </span>
-                  <span v-if="!plan.contact_sales" class="pb-0.5 text-[0.8125rem] leading-tight" :class="isPro(plan) ? 'text-cream/60' : 'text-muted-foreground'">
+                   <span
+                     v-if="!plan.contact_sales && (!plan.annual_only || activeInterval === 'annual')"
+                     class="pb-0.5 text-[0.8125rem] leading-tight"
+                     :class="isPro(plan) ? 'text-cream/60' : 'text-muted-foreground'"
+                   >
                     /month
                   </span>
                 </div>
@@ -752,7 +771,10 @@ onMounted(async () => {
                   <template v-if="plan.contact_sales">
                     Priced per organization · billed by invoice
                   </template>
-                  <template v-else-if="activeInterval === 'annual'">
+                   <template v-else-if="plan.annual_only && activeInterval === 'monthly'">
+                     Available with annual billing
+                   </template>
+                   <template v-else-if="activeInterval === 'annual'">
                     {{ billedLabel(plan) }} billed yearly
                     <br />
                     <span :class="isPro(plan) ? 'text-peach' : 'text-forest dark:text-primary'">
@@ -826,10 +848,14 @@ onMounted(async () => {
                   class="w-full max-w-[12rem]"
                   :variant="isPro(plan) ? 'default' : 'outline'"
                   :class="isPro(plan) ? 'bg-cream text-forest hover:bg-cream/90' : ''"
-                    :disabled="isCurrent(plan) || processing || (!!auth.user && !canManageBilling)"
-                  @click="handleChoose(plan)"
-                >
-                  {{ isCurrent(plan) ? 'Current plan' : auth.user && !canManageBilling ? 'Ask workspace admin' : hasActiveSubscription ? 'Switch to this plan' : 'Get started' }}
+                     :disabled="isCurrent(plan) || processing || (!!auth.user && !canManageBilling) || !isIntervalAvailable(plan, billingInterval)"
+                    @click="handleChoose(plan)"
+                  >
+                  {{ isCurrent(plan)
+                    ? 'Current plan'
+                    : plan.annual_only && activeInterval === 'monthly'
+                      ? 'Annual billing required'
+                      : auth.user && !canManageBilling ? 'Ask workspace admin' : hasActiveSubscription ? 'Switch to this plan' : 'Get started' }}
                 </Button>
               </td>
             </tr>

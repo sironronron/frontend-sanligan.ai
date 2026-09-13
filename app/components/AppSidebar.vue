@@ -27,6 +27,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import {
   Popover,
@@ -37,6 +38,7 @@ import { isAtLimit, limitPct } from '~/stores/billing'
 
 const auth = useAuthStore()
 const route = useRoute()
+const { setOpenMobile } = useSidebar()
 const billing = useBillingStore()
 const org = useOrganizationStore()
 
@@ -72,6 +74,9 @@ function isActive(to: string) {
   return route.path === to || route.path.startsWith(`${to}/`)
 }
 
+// A mobile drawer should not remain over the destination after navigation.
+watch(() => route.fullPath, () => setOpenMobile(false))
+
 /** A workspace page that exists but needs a subscription to be reached. */
 function isLocked(item: (typeof navItems.value)[number]) {
   return showSubscriptionLock.value && item.gated
@@ -99,13 +104,12 @@ const usageMeters = computed(() => {
 })
 
 /**
- * Firm and business plans come with a named human on the other end — the rest
- * of the ladder is self-serve. Offering the channel only where it exists
- * keeps the footer honest.
+ * Firm comes with a named human on the other end — the rest of the ladder is
+ * self-serve. Offering the channel only where it exists keeps the footer honest.
  */
 const contactSupport = computed(() => {
   const slug = billing.plan?.slug
-  return slug === 'firm' || slug === 'business'
+  return slug === 'firm'
 })
 
 const salesEmail = useRuntimeConfig().public.salesEmail
@@ -122,7 +126,7 @@ onMounted(() => {
 
 <template>
   <Sidebar variant="floating" collapsible="icon" side="left">
-    <SidebarHeader>
+    <SidebarHeader class="pr-12 md:pr-2">
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton

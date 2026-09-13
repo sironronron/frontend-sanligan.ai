@@ -30,7 +30,7 @@ defineEmits<{ toggle: [] }>()
     beneath this one, and it can only know where "beneath" is if this bar's
     height does not drift with its contents.
   -->
-  <div class="sticky top-0 z-20 flex h-10 items-center gap-0.5 border-b bg-sidebar/95 pr-1.5 backdrop-blur-sm">
+   <div class="sticky top-0 z-20 flex h-11 items-center gap-0.5 border-b bg-sidebar/95 pr-1.5 backdrop-blur-sm md:h-10">
     <button
       type="button"
       :aria-expanded="open"

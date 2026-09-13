@@ -111,6 +111,156 @@ function transformCitations(text: string): string {
   )
 }
 
+const FLOWCHART_GLYPHS = /[┌┐└┘├┤┬┴┼─│▼▲◀▶]/u
+const FLOWCHART_FENCE = /^```(?:text|plaintext|ascii|flowchart)?\s*$/i
+const FLOWCHART_TOKEN_PREFIX = '\u0000BATAYAN_FLOWCHART_'
+
+function isFlowchartLine(line: string): boolean {
+  return FLOWCHART_FENCE.test(line.trim())
+    || FLOWCHART_GLYPHS.test(line)
+    || /^[ \t]*[[(]/.test(line)
+}
+
+function canContinueFlowchart(line: string): boolean {
+  const trimmed = line.trim()
+  return trimmed !== ''
+    && !/^#{1,4}\s/.test(trimmed)
+    && !/^[-*]\s/.test(trimmed)
+    && !/^\d+[.)]\s/.test(trimmed)
+}
+
+function flowchartToken(index: number): string {
+  return `${FLOWCHART_TOKEN_PREFIX}${index}\u0000`
+}
+
+function flowchartIndex(line: string): number | null {
+  const match = line.match(new RegExp(`^${FLOWCHART_TOKEN_PREFIX}(\\d+)\\u0000$`))
+  if (!match) return null
+
+  return Number(match[1])
+}
+
+/**
+ * Preserve ASCII/box-drawing diagrams as preformatted blocks. The labels at
+ * either end of a diagram usually contain no drawing glyph, so ranges expand
+ * around a connector line to include adjacent bracketed labels as well.
+ */
+function extractFlowcharts(text: string): { text: string, blocks: string[] } {
+  const lines = text.split('\n')
+  const ranges: Array<{ start: number, end: number }> = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line === undefined || !FLOWCHART_GLYPHS.test(line)) continue
+    if (ranges.some((range) => i >= range.start && i <= range.end)) continue
+
+    let start = i
+    while (start > 0 && isFlowchartLine(lines[start - 1] ?? '')) start--
+
+    let end = i
+    while (end + 1 < lines.length && canContinueFlowchart(lines[end + 1] ?? '')) end++
+
+    ranges.push({ start, end })
+  }
+
+  if (ranges.length === 0) return { text, blocks: [] }
+
+  const starts = new Map(ranges.map((range, index) => [range.start, { ...range, index }]))
+  const blocks = ranges.map(({ start, end }) => lines
+    .slice(start, end + 1)
+    .filter((line) => !FLOWCHART_FENCE.test(line.trim()))
+    .join('\n'))
+  const extracted: string[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const range = starts.get(i)
+    if (range) {
+      extracted.push(flowchartToken(range.index))
+      i = range.end
+    } else {
+      extracted.push(lines[i] ?? '')
+    }
+  }
+
+  return { text: extracted.join('\n'), blocks }
+}
+
+function cleanFlowchartLabel(label: string): string {
+  return label
+    .replace(/^\s*[[(]/, '')
+    .replace(/[\])]\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function renderVisualFlowchart(block: string): string | null {
+  if (!/SEnA Request for Assistance/i.test(block) || !/NLRC Labor Arbiter/i.test(block)) return null
+
+  const match = (pattern: RegExp): string | null => {
+    const value = block.match(pattern)?.[0]
+    return value ? cleanFlowchartLabel(value) : null
+  }
+
+  const root = match(/\[Step 1:[\s\S]*?RFA\)\]/i)
+  const settlement = match(/\[Settlement Reached\]/i)
+  const noSettlement = match(/\[No Settlement \/ 30 Days Expire\]/i)
+  const caseClosed = match(/\(Case Closed\)/i)
+  const illegalDismissal = match(/\(If Illegal Dismissal\s*\/[\s\S]*?Money Claim\s*(?:>|&gt;)\s*₱?5,000\)/i)
+  const inspection = match(/\(If Inspection\s*\/[\s\S]*?Regulatory\s*\/\s*Small Claim\)/i)
+  const formalComplaint = match(/\[File Formal Complaint[\s\S]*?with NLRC Labor Arbiter\]/i)
+  const doleDivision = match(/\[DOLE Regional Director\s*\/[\s\S]*?Labor Inspection Division\]/i)
+
+  if (!root || !settlement || !noSettlement || !caseClosed || !illegalDismissal || !inspection || !formalComplaint || !doleDivision) {
+    return null
+  }
+
+  const visualIllegalDismissal = illegalDismissal.replace(/\(If Inspection\s*\/\s*/i, '')
+  const visualInspection = inspection.replace(/Money Claim\s*(?:>|&gt;)\s*₱?5,000\)\s*/i, '')
+  const visualFormalComplaint = formalComplaint.replace(/\[DOLE Regional Director\s*\/\s*/i, '')
+  const visualDoleDivision = doleDivision.replace(/with NLRC Labor Arbiter\]\s*/i, '')
+  const node = (label: string, kind: string) => `<div class="batayan-flowchart__node batayan-flowchart__node--${kind}">${label}</div>`
+  const connector = '<div class="batayan-flowchart__connector" aria-hidden="true"></div>'
+
+  return `<figure class="batayan-flowchart batayan-flowchart--visual" aria-label="SEnA process flowchart">
+  <figcaption class="batayan-flowchart__caption">
+    <span class="batayan-flowchart__caption-title">SEnA process</span>
+    <span class="batayan-flowchart__caption-detail">Request for assistance to resolution or filing</span>
+  </figcaption>
+  <div class="batayan-flowchart__graph">
+    ${node(root, 'root')}
+    <div class="batayan-flowchart__connector batayan-flowchart__connector--root" aria-hidden="true"></div>
+    <div class="batayan-flowchart__branches">
+      <div class="batayan-flowchart__path">
+        ${node(settlement, 'branch')}
+        ${connector}
+        ${node(caseClosed, 'closed')}
+      </div>
+      <div class="batayan-flowchart__path">
+        ${node(noSettlement, 'branch')}
+        ${connector}
+        <div class="batayan-flowchart__subbranches">
+          <div class="batayan-flowchart__path">
+            ${node(visualIllegalDismissal, 'condition')}
+            ${connector}
+            ${node(visualFormalComplaint, 'action')}
+          </div>
+          <div class="batayan-flowchart__path">
+            ${node(visualInspection, 'condition')}
+            ${connector}
+            ${node(visualDoleDivision, 'action')}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</figure>`
+}
+
+function renderFlowchart(block: string): string {
+  return renderVisualFlowchart(block)
+    ?? `<pre class="batayan-flowchart" tabindex="0" aria-label="Process flowchart"><code>${block}</code></pre>`
+}
+
 function splitRow(line: string): string[] {
   const body = line.trim().replace(/^\|/, '').replace(/\|$/, '')
   return body.split('|').map((cell) => cell.trim())
@@ -213,6 +363,9 @@ function renderMarkdownInternal(text: string, bare: boolean): string {
   html = stripCodeFencesAndInternalReasoning(html)
   html = removeProtocolMarkers(html)
   html = html.replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+  const flowcharts = extractFlowcharts(html)
+  html = flowcharts.text
+  html = html.replace(/^#### (.+)$/gm, bare ? '<h4>$1</h4>' : '<h4 class="mt-3 mb-1.5 text-sm font-semibold">$1</h4>')
   html = html.replace(/^### (.+)$/gm, bare ? '<h3>$1</h3>' : '<h3 class="mt-4 mb-2 text-base font-semibold">$1</h3>')
   html = html.replace(/^## (.+)$/gm, bare ? '<h2>$1</h2>' : '<h2 class="mt-5 mb-2 text-lg font-bold">$1</h2>')
   html = html.replace(/^# (.+)$/gm, bare ? '<h1>$1</h1>' : '<h1 class="mt-6 mb-2 text-xl font-bold">$1</h1>')
@@ -268,6 +421,17 @@ function renderMarkdownInternal(text: string, bare: boolean): string {
     const line = lines[i]
     if (line === undefined) continue
 
+    const diagramIndex = flowchartIndex(line)
+    if (diagramIndex !== null) {
+      flushParagraph()
+      closeList()
+      const block = flowcharts.blocks[diagramIndex]
+      if (block !== undefined) {
+        out.push(renderFlowchart(block))
+      }
+      continue
+    }
+
     if (line.trim().startsWith('|') && isTableDelimiter(lines[i + 1])) {
       flushParagraph()
       closeList()
@@ -283,7 +447,7 @@ function renderMarkdownInternal(text: string, bare: boolean): string {
       continue
     }
 
-    if (/^<h[123] /.test(line)) {
+    if (/^<h[1234](?:\s|>)/.test(line)) {
       flushParagraph()
       closeList()
       out.push(line)
@@ -320,7 +484,7 @@ function renderMarkdownInternal(text: string, bare: boolean): string {
       }
       const quoteClass = bare
         ? ''
-        : ' class="my-2 rounded-r-md border-l-2 border-primary/60 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"'
+        : ' class="my-2 rounded-lg border border-border/70 bg-muted/40 px-3 py-2 text-sm text-muted-foreground"'
 
       out.push(`<blockquote${quoteClass}><p>${quoteLines.join('</p><p>')}</p></blockquote>`)
       continue

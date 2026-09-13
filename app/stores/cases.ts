@@ -43,6 +43,8 @@ export interface LegalCase {
   priority: 'low' | 'medium' | 'high' | 'urgent'
   status: 'open' | 'in_progress' | 'on_hold' | 'closed'
   description: string | null
+  digest: string | null
+  digest_generated_at: string | null
   related_parties: string[]
   due_date: string | null
   tags: string[]
