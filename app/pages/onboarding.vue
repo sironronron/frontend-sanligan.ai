@@ -44,6 +44,7 @@ import {
   kycRoleOptions,
   kycUseCaseOptions,
 } from '~/utils/kyc'
+import { isInternalPath } from '~/utils/authRedirect'
 
 definePageMeta({
   middleware: 'auth',
@@ -61,16 +62,15 @@ const billing = useBillingStore()
 /**
  * Where answering the questions leads.
  *
- * With the organization step gone, these questions are the last thing between
- * signing up and being asked to pay — so an account with no plan is sent to
- * the pricing page directly. The subscription guard would bounce them there
- * anyway; going straight avoids a flash of a workspace they cannot open yet.
+  * With the organization step gone, these questions are the last thing between
+  * signing up and choosing how to begin. New accounts carry `/choose-plan` in
+  * `next`; older accounts without access still go to paid pricing.
  */
 function destination() {
-  if (typeof nextUrl === 'string' && nextUrl.length > 0) return nextUrl
+  if (typeof nextUrl === 'string' && isInternalPath(nextUrl)) return nextUrl
   if (auth.user?.is_admin || billing.accessGranted) return auth.homePath()
 
-  return '/pricing'
+  return billing.subscription ? '/pricing' : '/choose-plan'
 }
 
 if (!billing.subscription) {

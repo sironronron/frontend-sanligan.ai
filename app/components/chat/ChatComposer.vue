@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Loader2Icon, PaperclipIcon, SendIcon, SquareIcon, XIcon, AlertCircleIcon } from '@lucide/vue'
+import { AlertCircleIcon, Loader2Icon, LockKeyholeIcon, PaperclipIcon, SendIcon, SquareIcon, XIcon } from '@lucide/vue'
 import type { ChatAttachment } from '~/composables/useChatAttachments'
 import ChatHelpGuide from '~/components/chat/ChatHelpGuide.vue'
+import { isPdfDocument } from '~/composables/useDocumentFile'
 
 const props = withDefaults(
   defineProps<{
@@ -37,10 +38,13 @@ const emit = defineEmits<{
 }>()
 
 const { fileIcon } = useFileTypeIcon()
+const auth = useAuthStore()
+const billing = useBillingStore()
 
 const textareaEl = ref<HTMLTextAreaElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileDrop = useFileDrop()
+const canUsePdf = computed(() => auth.user?.is_admin === true || billing.hasFeature('pdf_documents'))
 
 const attachments = computed(() => props.attachments ?? [])
 
@@ -103,7 +107,15 @@ function onFilesSelected(event: Event) {
   const picked = target.files ? Array.from(target.files) : []
   // Reset first so picking the same file twice still fires a change event.
   target.value = ''
-  if (picked.length > 0) emit('attach', picked)
+  const accepted = canUsePdf.value ? picked : picked.filter(file => !isPdfDocument(file.name, file.type))
+  const blocked = picked.find(file => isPdfDocument(file.name, file.type))
+  if (accepted.length > 0) {
+    dropError.value = ''
+    emit('attach', accepted)
+  }
+  if (blocked) {
+    dropError.value = 'PDF attachments are available on paid plans. Choose a DOCX, TXT, MD, or image file instead.'
+  }
 }
 
 const dropError = ref('')
@@ -112,13 +124,16 @@ function onFilesDropped(event: DragEvent) {
   if (!props.canAttach) return
 
   const rejected = fileDrop.onDrop(event, (files) => {
+    const accepted = canUsePdf.value ? files : files.filter(file => !isPdfDocument(file.name, file.type))
+    const blocked = files.find(file => isPdfDocument(file.name, file.type))
     dropError.value = ''
-    emit('attach', files)
+    if (accepted.length > 0) emit('attach', accepted)
+    if (blocked) dropError.value = 'PDF attachments are available on paid plans. Choose a DOCX, TXT, MD, or image file instead.'
   })
 
-  dropError.value = rejected.length > 0
-    ? `"${rejected[0]!.name}" is not a supported file type. Use PDF, DOCX, TXT, MD, or an image.`
-    : ''
+  if (rejected.length > 0) {
+    dropError.value = `"${rejected[0]!.name}" is not a supported file type. Use ${canUsePdf.value ? 'PDF, ' : ''}DOCX, TXT, MD, or an image.`
+  }
 }
 
 const sendDisabled = computed(() => !props.modelValue.trim() || props.disabled || props.readonly || props.canSend === false)
@@ -146,7 +161,7 @@ function statusLabel(attachment: ChatAttachment): string {
   return statusLabels[attachment.status]
 }
 
-const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50'
+const textareaClass = 'min-h-11 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm'
 </script>
 
 <template>
@@ -191,18 +206,18 @@ const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transpare
           type="button"
           variant="ghost"
           size="icon"
-          class="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
+          class="size-11 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
           :disabled="disabled || readonly"
           title="Attach a document"
           @click="pickFiles"
         >
-          <PaperclipIcon class="size-4" />
+           <PaperclipIcon class="size-4" />
           <span class="sr-only">Attach a document</span>
         </Button>
         <input
           ref="fileInput"
           type="file"
-          accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic"
+           :accept="canUsePdf ? '.pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic' : '.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic'"
           multiple
           class="hidden"
           @change="onFilesSelected"
@@ -227,7 +242,7 @@ const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transpare
           v-if="streaming"
           type="button"
           size="icon"
-          class="h-10 w-10 shrink-0 rounded-xl"
+          class="size-11 shrink-0 rounded-xl"
           title="Stop generating"
           @click="emit('stop')"
         >
@@ -238,7 +253,7 @@ const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transpare
           v-else
           type="button"
           size="icon"
-          class="h-10 w-10 shrink-0 rounded-xl"
+          class="size-11 shrink-0 rounded-xl"
           :disabled="sendDisabled"
           :title="sendTitle"
           @click="submit"
@@ -250,12 +265,15 @@ const textareaClass = 'min-h-10 min-w-0 flex-1 resize-none border-0 bg-transpare
       </div>
     </div>
 
-    <p v-if="dropError" class="mt-1.5 px-1 text-center text-[11px] text-destructive">
+    <p v-if="dropError" id="chat-composer-status" role="alert" class="mt-1.5 px-1 text-center text-[11px] text-destructive">
       {{ dropError }}
     </p>
-    <p v-else-if="attachmentPending" class="mt-1.5 px-1 text-center text-[11px] text-muted-foreground">
-      Preparing your attachment — you can send as soon as it is ready.
-    </p>
+     <p v-else-if="attachmentPending" id="chat-composer-status" aria-live="polite" class="mt-1.5 px-1 text-center text-[11px] text-muted-foreground">
+       Preparing your attachment — you can send as soon as it is ready.
+     </p>
+     <p v-else-if="!canUsePdf && canAttach" id="chat-composer-status" class="mt-1.5 flex items-center justify-center gap-1 px-1 text-center text-[11px] text-muted-foreground">
+       <LockKeyholeIcon class="size-3" /> PDF attachments are available on paid plans.
+     </p>
     <p class="mt-1.5 px-1 text-center text-[11px] text-muted-foreground/80">
       Batayan AI can make mistakes — verify important legal details before acting on them.
     </p>

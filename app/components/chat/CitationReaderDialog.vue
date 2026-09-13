@@ -198,7 +198,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
                   <li
                     v-for="(bullet, i) in section.bullets"
                     :key="i"
-                    class="relative pl-4 text-[0.95rem] leading-7 before:absolute before:left-0 before:text-muted-foreground before:content-['\\2022']"
+                    class="relative pl-4 text-[0.95rem] leading-7 before:absolute before:left-0 before:text-muted-foreground before:content-['•']"
                   >
                     {{ bullet }}
                   </li>

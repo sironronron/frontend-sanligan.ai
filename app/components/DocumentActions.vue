@@ -22,10 +22,13 @@ const props = withDefaults(defineProps<{
   retrying?: boolean
   /** Tighter buttons, for the table's actions column. */
   compact?: boolean
+  /** PDF download is unavailable to the current plan. */
+  pdfBlocked?: boolean
 }>(), {
   attaching: false,
   retrying: false,
   compact: false,
+  pdfBlocked: false,
 })
 
 const emit = defineEmits<{
@@ -56,7 +59,7 @@ const iconClass = computed(() => (props.compact ? 'size-3.5' : 'size-4'))
 
     <!-- A failed document has no file worth fetching; it gets a retry instead. -->
     <Button
-      v-if="!failed"
+       v-if="!failed && !pdfBlocked"
       variant="ghost"
       size="icon"
       :class="[sizeClass, 'text-muted-foreground hover:text-foreground']"

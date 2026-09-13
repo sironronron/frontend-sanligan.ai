@@ -131,7 +131,6 @@ onMounted(async () => {
           :value="aiUsage ? Math.round(aiUsage.percent) : 0"
           :used="aiUsage?.percent ?? null"
           :limit="100"
-          :hint="aiUsage?.budget_pesos ? `₱${aiUsage.budget_pesos.toLocaleString()} monthly allowance` : 'Usage-based'"
           :icon="GaugeIcon"
           to="/settings/billing"
         />

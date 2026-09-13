@@ -26,7 +26,7 @@ defineProps<{
   <button
     type="button"
     :aria-expanded="!collapsed"
-    class="sticky top-10 z-10 -mx-2 flex h-8 items-center gap-1.5 bg-sidebar/95 pl-4 pr-3.5 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    class="sticky top-11 z-10 -mx-2 flex h-11 items-center gap-1.5 bg-sidebar/95 pl-4 pr-3.5 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:top-10 md:h-8"
   >
     <ChevronRightIcon
       class="size-3.5 shrink-0 transition-transform"

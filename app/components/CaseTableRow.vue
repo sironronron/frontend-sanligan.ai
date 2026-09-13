@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ActivityIcon } from '@lucide/vue'
+import { ActivityIcon, SparklesIcon } from '@lucide/vue'
 import type { LegalCase } from '~/stores/cases'
 
 /**
@@ -16,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [id: string]
   progress: [id: string]
+  digest: [id: string]
 }>()
 
 const { typeLabel, relativeTime, dueState, taskPercent } = useCasePresentation()
@@ -59,10 +60,13 @@ const doneTasks = computed(() => props.case.total_tasks_count - props.case.open_
               Archived
             </span>
           </div>
-          <p class="truncate text-[11px] text-muted-foreground">
-            {{ props.case.reference || 'No reference' }} · {{ typeLabel(props.case.case_type) }}
-          </p>
-        </div>
+           <p class="truncate text-[11px] text-muted-foreground">
+             {{ props.case.reference || 'No reference' }} · {{ typeLabel(props.case.case_type) }}
+           </p>
+           <p v-if="props.case.digest" class="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground/80">
+             {{ props.case.digest }}
+           </p>
+         </div>
       </div>
     </TableCell>
 
@@ -108,6 +112,16 @@ const doneTasks = computed(() => props.case.total_tasks_count - props.case.open_
 
     <TableCell>
       <div class="flex justify-end">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          class="text-muted-foreground"
+          :aria-label="`View digest for ${props.case.title}`"
+          title="Digest"
+          @click.stop="emit('digest', props.case.id)"
+        >
+          <SparklesIcon />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"

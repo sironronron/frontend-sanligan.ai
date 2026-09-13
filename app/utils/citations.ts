@@ -336,10 +336,9 @@ function titleCase(label: string): string {
 /**
  * Mark up rendered markdown so the cited highlight follows the words.
  *
- * The highlight is a gradient that paints only across each line of glyphs,
- * which is an inline-box effect (`box-decoration-break: clone`). Put it on a
- * block instead and it floods the paragraph's whole box, which is exactly the
- * filled-behind-the-text look the reader avoids. So the text inside each
+ * The highlight is a soft wash drawn only across each line of glyphs, which
+ * is an inline-box effect (`box-decoration-break: clone`). Put it on a block
+ * instead and it floods the paragraph's whole box. So the text inside each
  * block is wrapped in an inline span and the mark goes there.
  *
  * Blocks that contain other blocks — a list item holding a nested list, a

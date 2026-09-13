@@ -68,7 +68,7 @@ const thanks = computed(() => {
   return 'Thank you for joining. Your free trial has started — no card, nothing to set up.'
 })
 
-/** The allowance the user just bought or was granted, in plain terms. */
+/** The allowance the user just bought or was granted, in plain terms — no peso figures. */
 const allowances = computed(() => {
   const usage = sub.value?.usage
   if (!usage) return []
@@ -76,12 +76,8 @@ const allowances = computed(() => {
   const count = (limit: number | null, unit: string) =>
     limit === null ? `Unlimited ${unit}` : `${limit.toLocaleString()} ${unit}`
 
-  const ai = usage.ai_usage?.budget_pesos
-    ? `₱${usage.ai_usage.budget_pesos.toLocaleString()} monthly AI usage`
-    : 'Monthly AI usage'
-
   return [
-    ai,
+    'Monthly AI usage',
     count(usage.active_cases.limit, 'active cases'),
     count(usage.documents.limit, 'document uploads'),
   ]

@@ -3,6 +3,7 @@ import {
   FileTextIcon,
   FileTypeIcon,
   Loader2Icon,
+  LockKeyholeIcon,
   MaximizeIcon,
   MinimizeIcon,
   PenLineIcon,
@@ -24,6 +25,8 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 const api = useApi()
+const auth = useAuthStore()
+const billing = useBillingStore()
 const editorRef = ref<InstanceType<typeof LetterEditor> | null>(null)
 const doc = ref<TiptapDoc | null>(props.draft.content)
 const exporting = ref<'word' | 'pdf' | null>(null)
@@ -39,6 +42,7 @@ watch(
 )
 
 const drafting = computed(() => props.draft.drafting === true || doc.value === null)
+const canExportPdf = computed(() => auth.user?.is_admin === true || billing.hasFeature('pdf_documents'))
 
 /**
  * Full screen.
@@ -133,6 +137,10 @@ function download(blob: Blob, extension: string) {
 
 async function exportDoc(type: 'word' | 'pdf') {
   if (drafting.value) return
+  if (type === 'pdf' && !canExportPdf.value) {
+    toast.info('PDF export is available on paid plans.', { action: { label: 'View plans', onClick: () => navigateTo('/pricing') } })
+    return
+  }
   exporting.value = type
   try {
     const content = editorRef.value?.getJSON() ?? doc.value ?? { type: 'doc', content: [{ type: 'paragraph' }] }
@@ -256,8 +264,8 @@ async function save() {
         </div>
 
         <div class="flex items-center gap-1.5 border-t bg-card px-4 py-3">
-          <Button
-            size="sm"
+           <Button
+             size="sm"
             class="h-8 gap-1.5 px-3 text-xs"
             :disabled="saving || drafting || !draft.messageId"
             title="Save your edits to the conversation"
@@ -281,8 +289,9 @@ async function save() {
             Word
             <span class="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">.docx</span>
           </Button>
-          <Button
-            size="sm"
+           <Button
+             v-if="canExportPdf"
+             size="sm"
             class="h-8 gap-1.5 px-3 text-xs"
             :disabled="exporting !== null || drafting"
             title="Download as PDF document (.pdf)"
@@ -290,8 +299,20 @@ async function save() {
           >
             <Loader2Icon v-if="exporting === 'pdf'" class="size-3.5 animate-spin" />
             <FileTextIcon v-else class="size-3.5" />
-            PDF
-          </Button>
+             PDF
+           </Button>
+           <Button
+             v-else
+             variant="outline"
+             size="sm"
+             class="h-8 gap-1.5 px-3 text-xs"
+             :disabled="drafting"
+             title="PDF export is available on paid plans"
+             @click="navigateTo('/pricing')"
+           >
+             <LockKeyholeIcon class="size-3.5" />
+             PDF on paid plans
+           </Button>
         </div>
       </div>
     </SheetContent>

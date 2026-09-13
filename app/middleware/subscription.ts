@@ -15,8 +15,12 @@ export default defineNuxtRouteMiddleware(async () => {
 
   const billing = useBillingStore()
 
-  if (!billing.subscription) {
+  if (!billing.subscription && !billing.subscriptionLoaded) {
     await billing.fetchSubscription()
+  }
+
+  if (!billing.subscription) {
+    return navigateTo('/choose-plan')
   }
 
   if (!billing.accessGranted) {

@@ -189,7 +189,7 @@ async function copyPrompt(prompt: string) {
       type="button"
       variant="ghost"
       size="icon"
-      class="h-10 w-10 rounded-xl text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+      class="size-11 rounded-xl text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary sm:size-10"
       :class="open ? 'bg-primary/10 text-primary' : ''"
       :aria-expanded="open"
       aria-controls="chat-help-guide-panel"

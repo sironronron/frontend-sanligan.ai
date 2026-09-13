@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { CheckIcon, ClipboardCheckIcon, Loader2Icon } from '@lucide/vue'
+import { CheckIcon, ClipboardCheckIcon, Loader2Icon, LockKeyholeIcon } from '@lucide/vue'
 import { toast } from '~/components/ui/sonner'
 import { vHighlight } from '~/directives/highlight'
 import type { ChatMessage, ChatMessageAttachment } from '~/types/chat'
+import { isPdfDocument } from '~/composables/useDocumentFile'
 
 /**
  * The reader's own turn.
@@ -24,12 +25,25 @@ const props = defineProps<{
 
 const { download: downloadDocument } = useDocumentFile()
 const { fileIcon } = useFileTypeIcon()
+const auth = useAuthStore()
+const billing = useBillingStore()
 
 const attachments = computed<ChatMessageAttachment[]>(() => props.message.attachments ?? [])
 const downloading = ref<string | null>(null)
 
+function isPdfBlocked(attachment: ChatMessageAttachment): boolean {
+  return isPdfDocument(attachment.original_filename, attachment.mime_type)
+    && auth.user?.is_admin !== true
+    && !billing.hasFeature('pdf_documents')
+}
+
 async function openAttachment(attachment: ChatMessageAttachment) {
   if (downloading.value) return
+
+  if (isPdfBlocked(attachment)) {
+    toast.info('PDF access is available on paid plans.', { action: { label: 'View plans', onClick: () => navigateTo('/pricing') } })
+    return
+  }
 
   downloading.value = attachment.id
 
@@ -100,7 +114,7 @@ const structured = computed(() => intakePairs.value ?? choicePairs.value)
         <button
           type="button"
           class="flex max-w-full items-center gap-1.5 rounded-lg border bg-card px-2 py-1 text-xs transition-colors hover:bg-accent disabled:opacity-60"
-          :title="`Download ${attachment.original_filename}`"
+           :title="isPdfBlocked(attachment) ? 'PDF access is available on paid plans' : `Download ${attachment.original_filename}`"
           :disabled="downloading === attachment.id"
           @click="openAttachment(attachment)"
         >
@@ -108,11 +122,12 @@ const structured = computed(() => intakePairs.value ?? choicePairs.value)
             v-if="downloading === attachment.id"
             class="size-3.5 shrink-0 animate-spin text-muted-foreground"
           />
-          <component
-            :is="fileIcon(attachment.original_filename, attachment.mime_type)"
-            v-else
-            class="size-3.5 shrink-0 text-muted-foreground"
-          />
+           <component
+             v-if="!isPdfBlocked(attachment)"
+             :is="fileIcon(attachment.original_filename, attachment.mime_type)"
+             class="size-3.5 shrink-0 text-muted-foreground"
+           />
+           <LockKeyholeIcon v-else class="size-3.5 shrink-0 text-muted-foreground" />
           <span class="min-w-0 truncate font-medium">{{ attachment.original_filename }}</span>
           <span v-if="attachment.status === 'failed'" class="shrink-0 text-destructive">· Failed</span>
         </button>

@@ -78,7 +78,7 @@ defineExpose({ focusInput })
       <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         v-model="query"
-        class="h-8 w-full pl-8 pr-8 text-xs"
+        class="h-11 w-full pl-8 pr-11 text-sm sm:h-8 sm:pr-8 sm:text-xs"
         placeholder="Search messages…"
         autofocus
         @keydown.esc="clear"
@@ -87,17 +87,17 @@ defineExpose({ focusInput })
       />
       <button
         v-if="query"
-        class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+        class="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center text-muted-foreground transition-colors hover:text-foreground sm:right-1 sm:size-6"
         title="Clear"
         @click="clear"
       >
         <XIcon class="size-3.5" />
       </button>
     </div>
-    <Button variant="ghost" size="icon" class="size-8 shrink-0" :disabled="total === 0" title="Previous match" @click="move(-1)">
+    <Button variant="ghost" size="icon" class="size-11 shrink-0 sm:size-8" :disabled="total === 0" title="Previous match" @click="move(-1)">
       <ChevronUpIcon class="size-4" />
     </Button>
-    <Button variant="ghost" size="icon" class="size-8 shrink-0" :disabled="total === 0" title="Next match" @click="move(1)">
+    <Button variant="ghost" size="icon" class="size-11 shrink-0 sm:size-8" :disabled="total === 0" title="Next match" @click="move(1)">
       <ChevronDownIcon class="size-4" />
     </Button>
     <span class="w-12 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground">

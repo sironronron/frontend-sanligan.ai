@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ActivityIcon } from '@lucide/vue'
+import { ActivityIcon, SparklesIcon } from '@lucide/vue'
 import type { LegalCase } from '~/stores/cases'
 
 /**
@@ -17,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   open: [id: string]
   progress: [id: string]
+  digest: [id: string]
 }>()
 
 const { typeLabel, relativeTime, dueState, taskPercent } = useCasePresentation()
@@ -78,6 +79,16 @@ const facts = computed(() => {
         variant="ghost"
         size="icon-sm"
         class="-mt-1 shrink-0 text-muted-foreground transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
+        :aria-label="`View digest for ${props.case.title}`"
+        title="Digest"
+        @click.stop="emit('digest', props.case.id)"
+      >
+        <SparklesIcon />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="-mt-1 shrink-0 text-muted-foreground transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
         :aria-label="`View progress for ${props.case.title}`"
         title="View progress"
         @click.stop="emit('progress', props.case.id)"
@@ -109,6 +120,13 @@ const facts = computed(() => {
     <p v-if="props.case.last_message_snippet" class="line-clamp-2 text-xs text-muted-foreground/80">
       {{ props.case.last_message_snippet }}
     </p>
+
+    <CaseDigest
+      v-if="props.case.digest"
+      compact
+      :digest="props.case.digest"
+      :generated-at="props.case.digest_generated_at"
+    />
 
     <!-- Pinned to the foot so the meter and roster line up across the grid. -->
     <div class="mt-auto space-y-3 pt-1">

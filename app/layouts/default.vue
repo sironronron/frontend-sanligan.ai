@@ -77,7 +77,7 @@ onMounted(() => {
         <div
           class="flex h-14 items-center gap-1 rounded-2xl border border-border bg-card/90 px-2 shadow-float backdrop-blur-md sm:gap-2 sm:px-3"
         >
-          <SidebarTrigger class="shrink-0 rounded-full" />
+          <SidebarTrigger class="size-11 shrink-0 rounded-full md:size-7" />
 
           <NuxtLink to="/chat" class="flex shrink-0 items-center gap-2.5 pl-1 pr-2" aria-label="Batayan">
             <span class="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">

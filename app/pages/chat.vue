@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
 import {
-  XIcon,
   ListChecksIcon,
   QuoteIcon,
   SearchIcon,
@@ -30,6 +29,7 @@ import ChatSearchBar from '~/components/chat/ChatSearchBar.vue'
 import LabelPicker from '~/components/LabelPicker.vue'
 import { useLabelStore, type AppliedLabel } from '~/stores/labels'
 import type { ChatMessageAttachment } from '~/types/chat'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet'
 
 definePageMeta({
   middleware: ['auth', 'onboarding', 'subscription'],
@@ -319,6 +319,8 @@ async function createConversation() {
 async function startNewChat() {
   activeId.value = null
   messages.value = []
+  input.value = ''
+  mobileConversations.value = false
   await router.replace({ query: {} })
 }
 
@@ -659,7 +661,7 @@ watch(activeId, async (id) => {
             <Button
               variant="ghost"
               size="icon"
-              class="shrink-0 md:hidden"
+              class="size-11 shrink-0 md:size-8"
               aria-label="Conversations"
               @click="mobileConversations = true"
             >
@@ -687,7 +689,7 @@ watch(activeId, async (id) => {
             <Button
               variant="ghost"
               size="sm"
-              class="gap-1.5 px-2 text-xs sm:px-3"
+              class="min-h-11 gap-1.5 px-2 text-xs sm:min-h-0 sm:px-3"
               :class="{ 'bg-muted text-primary': searchOpen }"
               :aria-pressed="searchOpen"
               @click="toggleSearch"
@@ -699,7 +701,7 @@ watch(activeId, async (id) => {
               v-if="citationCount > 0"
               variant="ghost"
               size="sm"
-              class="gap-1.5 px-2 text-xs sm:px-3"
+              class="min-h-11 gap-1.5 px-2 text-xs sm:min-h-0 sm:px-3"
               :class="{ 'bg-muted text-primary': showCitations }"
               :aria-pressed="showCitations"
               @click="togglePanel('citations')"
@@ -712,7 +714,7 @@ watch(activeId, async (id) => {
               v-if="activeConversation"
               variant="ghost"
               size="sm"
-              class="gap-1.5 px-2 text-xs sm:px-3"
+              class="min-h-11 gap-1.5 px-2 text-xs sm:min-h-0 sm:px-3"
               :class="{ 'bg-muted text-primary': showTodos }"
               :aria-pressed="showTodos"
               @click="togglePanel('tasks')"
@@ -834,30 +836,26 @@ watch(activeId, async (id) => {
       @close="rightPanel = null"
     />
 
-    <Teleport to="body">
-      <div v-if="mobileConversations" class="fixed inset-0 z-50 md:hidden">
-        <div class="absolute inset-0 bg-black/60" @click="mobileConversations = false" />
-        <div class="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-card shadow-xl">
-          <div class="flex h-12 shrink-0 items-center justify-between border-b px-3">
-            <span class="text-sm font-semibold">Conversations</span>
-            <Button variant="ghost" size="icon" class="size-8" aria-label="Close conversations" @click="mobileConversations = false">
-              <XIcon class="size-4" />
-            </Button>
-          </div>
-          <div class="min-h-0 flex-1">
-            <ChatConversationList
-              v-model:filter-tag-ids="threadFilterTagIds"
-              class="h-full w-full rounded-none border-0 shadow-none"
-              :conversations="conversations"
-              :active-id="activeId"
-              :streaming-ids="chatStream.streamingIds"
-              @new="startNewChat"
-              @select="(id: string) => { switchConversation(id); mobileConversations = false }"
-              @delete="deleteConversation"
-            />
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <Sheet v-model:open="mobileConversations">
+      <SheetContent
+        side="left"
+        class="w-[min(20rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] gap-0 bg-card p-0 pb-[env(safe-area-inset-bottom)] [&>button]:size-11"
+      >
+        <SheetHeader class="shrink-0 border-b px-4 py-3 pr-14">
+          <SheetTitle class="text-sm font-semibold">Conversations</SheetTitle>
+          <SheetDescription class="sr-only">Switch between your saved chat conversations.</SheetDescription>
+        </SheetHeader>
+        <ChatConversationList
+          v-model:filter-tag-ids="threadFilterTagIds"
+          class="min-h-0 w-full flex-1 rounded-none border-0 shadow-none"
+          :conversations="conversations"
+          :active-id="activeId"
+          :streaming-ids="chatStream.streamingIds"
+          @new="startNewChat"
+          @select="(id: string) => { switchConversation(id); mobileConversations = false }"
+          @delete="deleteConversation"
+        />
+      </SheetContent>
+    </Sheet>
   </div>
 </template>

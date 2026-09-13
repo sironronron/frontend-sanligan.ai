@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { DownloadIcon, Loader2Icon, XIcon } from '@lucide/vue'
 import { renderMarkdown } from '~/utils/markdown'
+import { isPdfDocument } from '~/composables/useDocumentFile'
 
 export interface ViewerDocument {
   id: string
@@ -16,6 +17,8 @@ const emit = defineEmits<{ close: [] }>()
 
 const { fetchBlob, objectUrl, download } = useDocumentFile()
 const { fileIcon } = useFileTypeIcon()
+const auth = useAuthStore()
+const billing = useBillingStore()
 
 const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'text/md', 'text/x-markdown'])
@@ -31,7 +34,11 @@ function isTextFile(name: string): boolean {
   )
 }
 
-const isPdf = computed(() => props.document.mime_type === 'application/pdf')
+const isPdf = computed(() => isPdfDocument(props.document.original_filename, props.document.mime_type))
+const pdfAccessGranted = computed(
+  () => !isPdf.value || auth.user?.is_admin === true || billing.hasFeature('pdf_documents'),
+)
+const pdfBlocked = computed(() => isPdf.value && !pdfAccessGranted.value)
 const isImage = computed(() => props.document.mime_type.startsWith('image/'))
 const isDocx = computed(() => {
   if (props.document.mime_type === DOCX_MIME_TYPE) return true
@@ -61,6 +68,8 @@ const docxLoading = ref(false)
 const docxRendered = ref(false)
 
 async function loadPreview() {
+  if (pdfBlocked.value) return
+
   if (isDocx.value) {
     if (docxRendered.value) return
 
@@ -156,8 +165,9 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
+             <button
+               v-if="!pdfBlocked"
+               type="button"
               :disabled="downloading"
               class="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
               @click="downloadFile"
@@ -171,7 +181,22 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="isPdf" class="min-h-0 flex-1">
+         <div v-if="pdfBlocked" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+           <span class="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+             <DownloadIcon class="size-5" />
+           </span>
+           <div class="flex max-w-sm flex-col gap-1.5">
+             <h2 class="font-heading text-xl font-medium tracking-tight">PDF access is part of paid plans.</h2>
+             <p class="text-sm leading-relaxed text-muted-foreground">
+               Your trial can still use text, Word, and image files. Upgrade when you need to read or download PDFs.
+             </p>
+           </div>
+           <NuxtLink to="/pricing" class="inline-flex h-9 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+             View paid plans
+           </NuxtLink>
+         </div>
+
+         <div v-else-if="isPdf" class="min-h-0 flex-1">
           <iframe v-if="inlineUrl" :src="inlineUrl" class="h-full w-full border-0" title="Document preview" />
           <div v-else class="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2Icon class="size-4 animate-spin" />

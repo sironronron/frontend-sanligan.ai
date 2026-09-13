@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { toast } from '~/components/ui/sonner'
+import { isPdfDocument, useDocumentFile } from '~/composables/useDocumentFile'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
   FileTextIcon,
+  FolderOpenIcon,
   ListChecksIcon,
   Loader2Icon,
   PinIcon,
@@ -17,6 +19,7 @@ import { useAdvisoryStore } from '~/stores/advisories'
 import { extractTodoItems } from '~/utils/todos'
 import { useLabelStore } from '~/stores/labels'
 import { useAuthStore } from '~/stores/auth'
+import { useBillingStore } from '~/stores/billing'
 import DocumentViewer from '~/components/DocumentViewer.vue'
 import CaseIntakeForm, { type CaseIntakePayload } from '~/components/CaseIntakeForm.vue'
 import TemplatePicker, { type TemplateOption } from '~/components/TemplatePicker.vue'
@@ -39,6 +42,7 @@ import { citationMarkFrom, collectCitations, findCitation, type CitationMark } f
 import type { CitationTarget } from '~/types/citations'
 import type { CaseDocument, GeneratedDocument } from '~/types/case'
 import { THREAD_ICONS, threadPurposeKind } from '~/lib/threads'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet'
 
 definePageMeta({
   middleware: ['auth'],
@@ -94,9 +98,29 @@ const todoStore = useTodoStore()
 const advisoryStore = useAdvisoryStore()
 const labelStore = useLabelStore()
 const auth = useAuthStore()
+const billing = useBillingStore()
 
 const experienceLevel = computed(() => auth.user?.kyc_experience_level ?? null)
-const { download: downloadDocument } = useDocumentFile()
+const { download } = useDocumentFile()
+
+function isPdfBlocked(doc: CaseDocument): boolean {
+  return isPdfDocument(doc.original_filename, doc.mime_type)
+    && auth.user?.is_admin !== true
+    && !billing.hasFeature('pdf_documents')
+}
+
+async function downloadDocument(doc: CaseDocument) {
+  if (isPdfBlocked(doc)) {
+    toast.info('PDF access is available on paid plans.', { action: { label: 'View plans', onClick: () => navigateTo('/pricing') } })
+    return
+  }
+
+  try {
+    await download(doc.id, doc.original_filename)
+  } catch (err: any) {
+    toast.error(err?.message ?? 'Could not download the document')
+  }
+}
 
 const caseDetail = ref<LegalCase | null>(null)
 const loading = ref(true)
@@ -118,6 +142,8 @@ const notFound = ref(false)
 const editOpen = ref(false)
 const pickerOpen = ref(false)
 const templates = ref<TemplateOption[]>([])
+let digestPollTimer: ReturnType<typeof setInterval> | null = null
+let digestPollAttempts = 0
 
 /**
  * Everything with a day on it, gathered for the sidebar's mini calendar: the
@@ -169,6 +195,7 @@ const scheduleEvents = computed<ScheduleEvent[]>(() => {
 type RightPanel = 'tasks' | 'citations'
 
 const rightPanel = ref<RightPanel | null>('tasks')
+const mobileMatterOpen = ref(false)
 
 const showTasks = computed(() => rightPanel.value === 'tasks')
 const showCitations = computed(() => rightPanel.value === 'citations')
@@ -331,6 +358,42 @@ async function loadGeneratedDocuments() {
     // keep the current list on transient errors
   } finally {
     generatedLoading.value = false
+  }
+}
+
+function stopDigestPolling() {
+  if (digestPollTimer !== null) {
+    clearInterval(digestPollTimer)
+    digestPollTimer = null
+  }
+}
+
+async function pollCaseDigest() {
+  if (caseDetail.value?.digest || digestPollAttempts >= 12) {
+    stopDigestPolling()
+    return
+  }
+
+  digestPollAttempts++
+
+  try {
+    const { data } = await api<{ data: LegalCase }>(`/cases/${caseDetail.value?.id}`)
+
+    if (data.digest && caseDetail.value?.id === data.id) {
+      caseDetail.value = { ...caseDetail.value, digest: data.digest, digest_generated_at: data.digest_generated_at }
+      stopDigestPolling()
+    }
+  } catch {
+    // The initial case response remains usable while the digest is generated.
+  }
+}
+
+function startDigestPolling() {
+  stopDigestPolling()
+  digestPollAttempts = 0
+
+  if (!caseDetail.value?.digest) {
+    digestPollTimer = setInterval(pollCaseDigest, 5000)
   }
 }
 
@@ -559,6 +622,7 @@ async function load(conversationId?: string | null) {
     }
     await loadCaseDocuments()
     await loadGeneratedDocuments()
+    startDigestPolling()
   } catch {
     notFound.value = true
   } finally {
@@ -1093,6 +1157,7 @@ const panelToggles = computed(() => {
 onMounted(async () => {
   window.addEventListener('keydown', onGlobalKeydown)
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  await billing.fetchSubscription()
   await Promise.all([load(), loadTemplates()])
 })
 
@@ -1104,6 +1169,7 @@ onBeforeUnmount(() => {
     clearInterval(documentPollTimer)
     documentPollTimer = null
   }
+  stopDigestPolling()
   // The turn itself is deliberately left running: it belongs to the store, and
   // leaving this page is exactly the case it exists to survive.
 })
@@ -1113,6 +1179,7 @@ watch(
   async () => {
     threads.value = []
     activeConversationId.value = null
+    mobileMatterOpen.value = false
     await load()
   },
 )
@@ -1145,6 +1212,11 @@ watch(
         @toggle-fullscreen="toggleFullscreen"
         @change-status="changeStatus"
       />
+      <CaseDigest
+        :digest="caseDetail.digest"
+        :generated-at="caseDetail.digest_generated_at"
+        class="mt-3"
+      />
     </div>
 
     <div class="flex min-h-0 flex-1" :class="fullscreen ? '' : 'gap-3 p-4 md:px-6 lg:gap-4 lg:p-6'">
@@ -1168,7 +1240,7 @@ watch(
       @upload="uploadCaseDocuments"
       @rejected-upload="reportRejectedUpload"
       @view-document="viewingDocument = $event"
-      @download-document="downloadDocument($event.id, $event.original_filename)"
+       @download-document="downloadDocument($event)"
       @delete-document="removeCaseDocument"
       @retry-document="retryCaseDocument"
       @update-document-categories="updateDocumentCategories"
@@ -1220,11 +1292,22 @@ watch(
         </div>
 
         <template v-else>
-        <div class="flex items-center gap-1.5 overflow-x-auto border-b px-3 py-2 md:hidden">
+        <div class="flex min-h-14 items-center gap-1.5 overflow-x-auto border-b px-3 py-2 md:hidden">
+          <button
+            type="button"
+            class="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border bg-muted/40 px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label="Open matter details, threads, files, and drafts"
+            @click="mobileMatterOpen = true"
+          >
+            <FolderOpenIcon class="size-4 text-primary" />
+            Matter
+          </button>
+          <span class="h-6 w-px shrink-0 bg-border" aria-hidden="true" />
           <button
             v-for="thread in sortedThreads"
             :key="thread.id"
-            class="flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors"
+            type="button"
+            class="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-colors"
             :class="thread.id === activeConversationId ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'"
             @click="selectConversation(thread.id)"
           >
@@ -1232,7 +1315,7 @@ watch(
             <component :is="THREAD_ICONS[threadPurposeKind(thread.purpose)]" class="size-3.5" />
             {{ thread.purpose || thread.title || 'Untitled' }}
           </button>
-          <Button v-if="!readOnly" variant="ghost" size="xs" class="shrink-0" :disabled="creating" @click="creatingThread = !creatingThread">
+          <Button v-if="!readOnly" variant="ghost" size="xs" class="min-h-11 shrink-0" :disabled="creating" @click="creatingThread = !creatingThread">
             <PlusIcon />
             New
           </Button>
@@ -1411,6 +1494,48 @@ watch(
       </div>
     </div>
     </div>
+
+    <Sheet v-model:open="mobileMatterOpen">
+      <SheetContent
+        side="left"
+        class="w-[min(21rem,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] bg-sidebar p-0 pt-12 pb-[env(safe-area-inset-bottom)] [&>button]:size-11"
+      >
+        <SheetHeader class="sr-only">
+          <SheetTitle>Matter workspace</SheetTitle>
+          <SheetDescription>Details, threads, files, and drafts for this case.</SheetDescription>
+        </SheetHeader>
+        <CaseSidebar
+          v-if="caseDetail && !loading"
+          mobile
+          :threads="threads"
+          :active-conversation-id="activeConversationId"
+          :creating="creating"
+          :documents="caseDocuments"
+          :documents-loading="documentsLoading"
+          :documents-error="documentsError"
+          :uploading="uploadingDocument"
+          :generated="generatedDocuments"
+          :generated-loading="generatedLoading"
+          :streaming-thread-ids="chatStream.streamingIds"
+          :readonly="readOnly"
+          :case="caseDetail"
+          :editable="!readOnly"
+          @select-thread="(id) => { mobileMatterOpen = false; selectConversation(id) }"
+          @create-thread="createThread"
+          @upload="uploadCaseDocuments"
+          @rejected-upload="reportRejectedUpload"
+          @view-document="(doc) => { mobileMatterOpen = false; viewingDocument = doc }"
+       @download-document="downloadDocument($event)"
+          @delete-document="removeCaseDocument"
+          @retry-document="retryCaseDocument"
+          @update-document-categories="updateDocumentCategories"
+          @open-generated="(doc) => { mobileMatterOpen = false; openGeneratedLetter(doc) }"
+          @update-thread-tags="updateThreadTags"
+          @toggle-pin-thread="toggleThreadPin"
+          @update-tags="saveCaseTags"
+        />
+      </SheetContent>
+    </Sheet>
 
     <DocumentViewer v-if="viewingDocument" :document="viewingDocument" @close="viewingDocument = null" />
 

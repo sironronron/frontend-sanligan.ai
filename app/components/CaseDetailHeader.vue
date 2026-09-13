@@ -123,7 +123,7 @@ const scheduleSummary = computed(() => {
       <div class="flex min-w-0 flex-1 items-center gap-2.5">
         <NuxtLink
           to="/cases"
-          class="-ml-1 inline-flex shrink-0 items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          class="-ml-1 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:min-h-0"
         >
           <ArrowLeftIcon class="size-3.5" />
           All cases
@@ -140,7 +140,7 @@ const scheduleSummary = computed(() => {
       <div class="flex flex-wrap items-center gap-1.5">
         <DropdownMenu v-if="editable">
           <DropdownMenuTrigger
-            class="inline-flex h-8 shrink-0 items-center rounded-lg border border-border bg-card px-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            class="inline-flex min-h-11 shrink-0 items-center rounded-lg border border-border bg-card px-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:h-8 md:min-h-0"
             :aria-label="`Case status: ${props.case.status}`"
           >
             <CaseStatusBadge
@@ -170,7 +170,7 @@ const scheduleSummary = computed(() => {
         <CasePriorityBadge
           :priority="props.case.priority"
           show-quiet
-          class="h-8 rounded-lg px-2.5"
+          class="min-h-11 rounded-lg px-2.5 md:h-8 md:min-h-0"
         />
 
         <span
@@ -189,7 +189,7 @@ const scheduleSummary = computed(() => {
           <PopoverTrigger as-child>
             <button
               type="button"
-              class="flex h-8 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              class="flex min-h-11 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 md:h-8 md:min-h-0"
               :class="dueStripClass"
               :aria-label="`Case schedule: ${scheduleSummary}`"
             >
@@ -213,7 +213,7 @@ const scheduleSummary = computed(() => {
         <button
           v-if="props.case.owner"
           type="button"
-          class="flex shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-muted"
+          class="flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1 transition-colors hover:bg-muted md:min-h-0"
           :aria-label="canManageAssignees ? 'Manage who is on this case' : 'People on this case'"
           :title="canManageAssignees ? 'Manage who is on this case' : 'People on this case'"
           @click="peopleOpen = true"
@@ -224,7 +224,7 @@ const scheduleSummary = computed(() => {
 
         <DropdownMenu>
           <DropdownMenuTrigger
-            class="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            class="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:size-8"
             aria-label="Case actions"
           >
             <MoreHorizontalIcon class="size-4" />
@@ -255,7 +255,7 @@ const scheduleSummary = computed(() => {
           type="button"
           role="tab"
           :aria-selected="props.view === 'chat'"
-          class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors"
+          class="inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors md:h-7 md:min-h-0"
           :class="props.view === 'chat' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
           @click="emit('setView', 'chat')"
         >
@@ -266,7 +266,7 @@ const scheduleSummary = computed(() => {
           type="button"
           role="tab"
           :aria-selected="props.view === 'progress'"
-          class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors"
+          class="inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors md:h-7 md:min-h-0"
           :class="props.view === 'progress' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
           @click="emit('setView', 'progress')"
         >
@@ -282,7 +282,7 @@ const scheduleSummary = computed(() => {
           :aria-pressed="props.fullscreen"
           :aria-label="props.fullscreen ? 'Exit full screen' : 'Full screen'"
           :title="props.fullscreen ? 'Exit full screen' : 'Full screen'"
-          class="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          class="inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:size-8"
           @click="emit('toggleFullscreen')"
         >
           <MinimizeIcon v-if="props.fullscreen" class="size-4" />
@@ -303,7 +303,7 @@ const scheduleSummary = computed(() => {
             :aria-pressed="toggle.active"
             :aria-label="toggle.label"
             :title="toggle.label"
-            class="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors"
+            class="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs font-medium transition-colors md:h-8 md:min-h-0"
             :class="toggle.active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
             @click="toggle.toggle()"
           >
@@ -319,7 +319,7 @@ const scheduleSummary = computed(() => {
         <button
           v-if="!readOnly && props.view === 'chat'"
           type="button"
-          class="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          class="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:h-8 md:min-h-0"
           @click="emit('draft')"
         >
           <FileTextIcon class="size-4" />

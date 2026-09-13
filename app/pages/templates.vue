@@ -27,6 +27,8 @@ interface Template {
 }
 
 const api = useApi()
+const auth = useAuthStore()
+const billing = useBillingStore()
 
 const templates = ref<Template[]>([])
 const loading = ref(false)
@@ -41,6 +43,7 @@ const form = reactive({
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | null>(null)
 const fileError = ref('')
+const canUsePdf = computed(() => auth.user?.is_admin === true || billing.hasFeature('pdf_documents'))
 
 const ownTemplates = computed(() => templates.value.filter((t) => !t.is_system))
 const systemTemplates = computed(() => templates.value.filter((t) => t.is_system))
@@ -111,7 +114,11 @@ async function handleFile(file: File) {
   const dot = file.name.lastIndexOf('.')
   const ext = dot >= 0 ? file.name.slice(dot).toLowerCase() : ''
   if (![...TEXT_EXTENSIONS, '.pdf', '.docx'].includes(ext)) {
-    fileError.value = 'Supported files: PDF, DOCX, TXT, MD.'
+    fileError.value = `Supported files: ${canUsePdf.value ? 'PDF, ' : ''}DOCX, TXT, MD.`
+    return
+  }
+  if (ext === '.pdf' && !canUsePdf.value) {
+    fileError.value = 'PDF templates are available on paid plans. Choose a DOCX, TXT, or MD file instead.'
     return
   }
 
@@ -266,17 +273,17 @@ onMounted(loadTemplates)
             >
               <UploadIcon class="size-4" />
               <span v-if="selectedFile">{{ selectedFile.name }}</span>
-              <span v-else>Drop a PDF, DOCX, TXT, or MD file here, or click to choose one</span>
+               <span v-else>Drop a {{ canUsePdf ? 'PDF, ' : '' }}DOCX, TXT, or MD file here, or click to choose one</span>
             </div>
             <input
               ref="fileInput"
               type="file"
-              accept=".pdf,.docx,.txt,.md,.markdown"
+               :accept="canUsePdf ? '.pdf,.docx,.txt,.md,.markdown' : '.docx,.txt,.md,.markdown'"
               class="hidden"
               @change="onFileSelected"
             />
             <p v-if="selectedFile" class="mt-1 text-[11px] text-muted-foreground">
-              PDF and DOCX text is extracted on upload. TXT and MD preview below.
+               {{ canUsePdf ? 'PDF and DOCX text is extracted on upload.' : 'DOCX text is extracted on upload.' }} TXT and MD preview below.
             </p>
             <p v-if="fileError" class="mt-1 text-xs text-destructive">{{ fileError }}</p>
           </div>
