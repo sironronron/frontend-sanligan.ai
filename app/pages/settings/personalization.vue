@@ -212,7 +212,7 @@ async function handleClear() {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-2xl flex-1 px-4 pt-8 pb-6">
     <PageHeader
       title="Personalization"
       description="Tell Batayan who you are and what you'll use it for so it can match its tone and drafting style. These answers are self-reported — they only calibrate responses and never grant access."

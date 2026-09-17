@@ -138,7 +138,7 @@ onMounted(loadSources)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl px-4 py-6">
+  <div class="mx-auto w-full max-w-5xl px-4 pt-8 pb-6">
     <AdminNav />
 
     <AppPageHeader title="Knowledge sources" description="Allowlisted public official pages and standard summaries used for retrieval." />

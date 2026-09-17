@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertCircleIcon, Loader2Icon, LockKeyholeIcon, PaperclipIcon, SendIcon, SquareIcon, XIcon } from '@lucide/vue'
+import { AlertCircleIcon, ArrowUpIcon, Loader2Icon, LockKeyholeIcon, PaperclipIcon, SparklesIcon, SquareIcon, XIcon } from '@lucide/vue'
 import type { ChatAttachment } from '~/composables/useChatAttachments'
 import ChatHelpGuide from '~/components/chat/ChatHelpGuide.vue'
 import { isPdfDocument } from '~/composables/useDocumentFile'
@@ -18,6 +18,8 @@ const props = withDefaults(
     helpContext?: 'general' | 'case'
     /** Locks the composer (no typing, sending, or attaching) without a spinner. */
     readonly?: boolean
+    /** The taller, roomier composer shown centered on an empty conversation. */
+    large?: boolean
   }>(),
   {
     disabled: false,
@@ -26,6 +28,7 @@ const props = withDefaults(
     canAttach: true,
     helpContext: 'general',
     readonly: false,
+    large: false,
   },
 )
 
@@ -49,10 +52,11 @@ const canUsePdf = computed(() => auth.user?.is_admin === true || billing.hasFeat
 const attachments = computed(() => props.attachments ?? [])
 
 /**
- * The composer grows with the message up to this height (~7 lines), then
- * scrolls instead of pushing the conversation off the screen.
+ * The composer grows with the message up to this height (~7 lines, ~11 for
+ * the large empty-state variant), then scrolls instead of pushing the
+ * conversation off the screen.
  */
-const MAX_HEIGHT = 160
+const MAX_HEIGHT = computed(() => (props.large ? 240 : 160))
 
 function resize() {
   const el = textareaEl.value
@@ -61,8 +65,8 @@ function resize() {
   // Collapse first so scrollHeight reports the content height, not the
   // height the box already had — otherwise it can only ever grow.
   el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
-  el.style.overflowY = el.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden'
+  el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT.value)}px`
+  el.style.overflowY = el.scrollHeight > MAX_HEIGHT.value ? 'auto' : 'hidden'
 }
 
 function onInput(event: Event) {
@@ -161,20 +165,63 @@ function statusLabel(attachment: ChatAttachment): string {
   return statusLabels[attachment.status]
 }
 
-const textareaClass = 'min-h-11 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-base outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm'
+const textareaClass = computed(() =>
+  props.large
+    ? 'min-h-14 min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-base outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-50'
+    : 'min-h-9 min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-base outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm',
+)
+
+/** The left-cluster toolbar pills: attach, help — icon plus a short label. */
+const pillClass = computed(() =>
+  props.large
+    ? 'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/80 px-3.5 py-2 text-sm font-medium text-muted-foreground outline-none transition-colors hover:border-foreground/20 hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50'
+    : 'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/80 px-3 py-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:border-foreground/20 hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50',
+)
+
+/** Send/stop is a plain circle with just an arrow or a square — no label. */
+const sendCircleClass = computed(() => (props.large ? 'size-11 rounded-full' : 'size-9 rounded-full'))
 </script>
 
 <template>
   <div class="w-full">
-    <div
-      class="rounded-2xl border bg-card/70 p-2 shadow-sm backdrop-blur transition-shadow focus-within:shadow-md focus-within:ring-2 focus-within:ring-primary/30"
-      :class="fileDrop.dragging.value && canAttach ? 'border-primary ring-2 ring-primary/30' : ''"
-      @dragenter="canAttach && fileDrop.onDragEnter($event)"
-      @dragover="canAttach && fileDrop.onDragOver($event)"
-      @dragleave="canAttach && fileDrop.onDragLeave($event)"
-      @drop="onFilesDropped"
-    >
-      <ul v-if="attachments.length > 0" class="mb-1.5 flex flex-wrap gap-1.5 px-1">
+    <!--
+      Two layers, each split into a base plus a shine: the base is a static
+      conic gradient, so the full rainbow sits on every edge all the time
+      instead of rotating in and out. A separate bright wedge, oversized and
+      clipped the same way, spins continuously clockwise on top (blended with
+      `screen`) so it reads as one glint chasing the border around an
+      always-present rainbow, not the rainbow itself moving.
+    -->
+    <div class="relative">
+      <div
+        aria-hidden="true"
+        class="pointer-events-none absolute -inset-1 overflow-hidden blur-sm sm:-inset-1.5"
+        :class="large ? 'rounded-[34px]' : 'rounded-[30px]'"
+      >
+        <div class="composer-ray-glow absolute inset-0" />
+        <div class="composer-ring-shine absolute inset-[-60%] motion-reduce:animate-none" />
+      </div>
+      <div
+        class="relative overflow-hidden"
+        :class="large ? 'rounded-[30px] p-[1.5px]' : 'rounded-[26px] p-[1.5px]'"
+      >
+        <div aria-hidden="true" class="composer-ring-glow absolute inset-0" />
+        <div
+          aria-hidden="true"
+          class="composer-ring-shine absolute inset-[-60%] motion-reduce:animate-none"
+        />
+      <div
+        class="relative border border-transparent bg-card shadow-lg backdrop-blur transition-shadow focus-within:shadow-xl focus-within:ring-2 focus-within:ring-primary/30"
+        :class="[
+          large ? 'rounded-[28px] p-4' : 'rounded-3xl p-3',
+          fileDrop.dragging.value && canAttach ? 'border-primary ring-2 ring-primary/30' : '',
+        ]"
+        @dragenter="canAttach && fileDrop.onDragEnter($event)"
+        @dragover="canAttach && fileDrop.onDragOver($event)"
+        @dragleave="canAttach && fileDrop.onDragLeave($event)"
+        @drop="onFilesDropped"
+      >
+      <ul v-if="attachments.length > 0" class="mb-2 flex flex-wrap gap-1.5">
         <li
           v-for="attachment in attachments"
           :key="attachment.localId"
@@ -200,31 +247,9 @@ const textareaClass = 'min-h-11 min-w-0 flex-1 resize-none border-0 bg-transpare
         </li>
       </ul>
 
-      <div class="flex items-center">
-        <Button
-          v-if="canAttach"
-          type="button"
-          variant="ghost"
-          size="icon"
-          class="size-11 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
-          :disabled="disabled || readonly"
-          title="Attach a document"
-          @click="pickFiles"
-        >
-           <PaperclipIcon class="size-4" />
-          <span class="sr-only">Attach a document</span>
-        </Button>
-        <input
-          ref="fileInput"
-          type="file"
-           :accept="canUsePdf ? '.pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic' : '.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic'"
-          multiple
-          class="hidden"
-          @change="onFilesSelected"
-        />
-
-        <ChatHelpGuide :context="helpContext" />
-
+      <!-- Row 1: the message itself, full width. -->
+      <div class="flex items-start gap-2">
+        <SparklesIcon class="mt-2.5 size-4 shrink-0 text-muted-foreground/40" aria-hidden="true" />
         <textarea
           ref="textareaEl"
           :value="modelValue"
@@ -237,31 +262,60 @@ const textareaClass = 'min-h-11 min-w-0 flex-1 resize-none border-0 bg-transpare
           @input="onInput"
           @keydown="onKeydown"
         />
+      </div>
+
+      <!-- Row 2: the toolbar — actions on the left, send on the right. -->
+      <div class="mt-2 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5">
+          <button
+            v-if="canAttach"
+            type="button"
+            :class="pillClass"
+            :disabled="disabled || readonly"
+            title="Attach a document"
+            @click="pickFiles"
+          >
+            <PaperclipIcon class="size-3.5 shrink-0" />
+            Attach
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+             :accept="canUsePdf ? '.pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic' : '.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.gif,.tiff,.heic'"
+            multiple
+            class="hidden"
+            @change="onFilesSelected"
+          />
+
+          <ChatHelpGuide :context="helpContext" />
+        </div>
 
         <Button
           v-if="streaming"
           type="button"
           size="icon"
-          class="size-11 shrink-0 rounded-xl"
+          :class="sendCircleClass"
           title="Stop generating"
+          aria-label="Stop generating"
           @click="emit('stop')"
         >
-          <SquareIcon class="size-4" />
-          <span class="sr-only">Stop generating</span>
+          <SquareIcon class="size-3.5" />
         </Button>
         <Button
           v-else
           type="button"
           size="icon"
-          class="size-11 shrink-0 rounded-xl"
+          :class="sendCircleClass"
           :disabled="sendDisabled"
           :title="sendTitle"
+          aria-label="Send"
           @click="submit"
         >
           <Loader2Icon v-if="disabled" class="size-4 animate-spin" />
-          <SendIcon v-else class="size-4" />
-          <span class="sr-only">Send</span>
+          <ArrowUpIcon v-else class="size-5" />
         </Button>
+      </div>
+      </div>
       </div>
     </div>
 
@@ -274,8 +328,54 @@ const textareaClass = 'min-h-11 min-w-0 flex-1 resize-none border-0 bg-transpare
      <p v-else-if="!canUsePdf && canAttach" id="chat-composer-status" class="mt-1.5 flex items-center justify-center gap-1 px-1 text-center text-[11px] text-muted-foreground">
        <LockKeyholeIcon class="size-3" /> PDF attachments are available on paid plans.
      </p>
-    <p class="mt-1.5 px-1 text-center text-[11px] text-muted-foreground/80">
+    <p class="mt-1.5 flex items-center justify-center gap-1 px-1 text-center text-[11px] text-muted-foreground/80">
+      <SparklesIcon class="size-3 shrink-0" />
       Batayan AI can make mistakes — verify important legal details before acting on them.
     </p>
   </div>
 </template>
+
+<style scoped>
+/*
+ * The static rainbow base — the crisp ring at the card's edge and its
+ * blurred echo just past it. Fixed, not rotating: every color sits on its
+ * own stretch of the border all the time, so the rainbow never rotates in
+ * and out of view. Both use the same gap-free sweep so the colors blend
+ * straight into each other around the whole perimeter.
+ */
+.composer-ring-glow,
+.composer-ray-glow {
+  background: conic-gradient(from 0deg, var(--cite), #22d3ee, #818cf8, #e879f9, #fb923c, var(--cite));
+}
+
+/*
+ * The shine: a single bright wedge, mostly transparent otherwise, blended
+ * with `screen` so it brightens whatever rainbow color it passes over
+ * instead of covering it. This is the layer that actually spins — the
+ * rainbow underneath stays put.
+ */
+.composer-ring-shine {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    transparent 85%,
+    rgba(255, 255, 255, 0.95) 93%,
+    transparent 100%
+  );
+  mix-blend-mode: screen;
+  animation: composer-shine-spin 3s linear infinite;
+}
+
+@keyframes composer-shine-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-ring-shine {
+    animation: none;
+    opacity: 0;
+  }
+}
+</style>

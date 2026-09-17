@@ -1186,7 +1186,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-4.5rem)] flex-col overflow-hidden">
+  <div class="flex h-dvh flex-col overflow-hidden">
     <!--
       The same shell as the chat page: the columns are detached panels floating
       on the page ground with a gutter between them, so fullscreen drops the

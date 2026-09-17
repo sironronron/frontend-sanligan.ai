@@ -72,7 +72,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-5xl flex-1 px-4 pt-8 pb-6">
     <PageHeader title="Lawyer workspace" description="Requests offered to you, your active matters, and your notarial journal.">
       <template #actions>
         <Button

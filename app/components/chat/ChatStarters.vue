@@ -12,15 +12,23 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <Button
-    v-for="starter in starters"
-    :key="starter.label"
-    variant="outline"
-    class="max-w-full gap-2 text-left"
-    :title="starter.prompt"
-    @click="emit('select', starter.prompt)"
-  >
-    <component :is="suggestionIcon(starter.icon)" class="size-4 shrink-0 text-primary" />
-    <span class="min-w-0 truncate text-xs">{{ starter.label }}</span>
-  </Button>
+  <div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+    <button
+      v-for="starter in starters"
+      :key="starter.label"
+      type="button"
+      class="surface-interactive flex flex-col items-start gap-2.5 p-4 text-left outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+      @click="emit('select', starter.prompt)"
+    >
+      <span class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <component :is="suggestionIcon(starter.icon)" class="size-4.5" />
+      </span>
+      <span class="min-w-0">
+        <span class="block text-sm font-semibold">{{ starter.label }}</span>
+        <span class="mt-1 block line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+          {{ starter.prompt }}
+        </span>
+      </span>
+    </button>
+  </div>
 </template>

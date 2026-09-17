@@ -227,7 +227,7 @@ const showAdminPanel = computed(() => store.admin?.is_manager === true)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-3xl flex-1 px-4 pt-8 pb-6">
     <PageHeader
       title="Add-ons"
       description="Connect Google Workspace and Microsoft SharePoint, and choose exactly what each one can do."

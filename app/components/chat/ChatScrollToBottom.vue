@@ -35,7 +35,7 @@ function scrollToBottom() {
   <Transition name="fade">
     <Button
       v-if="show"
-      class="absolute bottom-4 right-4 z-20 size-9 rounded-full shadow-lg"
+      class="absolute bottom-28 right-4 z-30 size-9 rounded-full shadow-lg sm:bottom-24"
       size="icon"
       variant="secondary"
       title="Scroll to bottom"

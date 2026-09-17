@@ -461,7 +461,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-6xl flex-1 px-4 pt-8 pb-6">
     <!--
       One skeleton for the whole page, because until the invitations are known
       it is not settled *which* page this is — showing the plans first would

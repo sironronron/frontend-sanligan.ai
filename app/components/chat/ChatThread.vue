@@ -151,7 +151,7 @@ const { suggestions } = useChatSuggestions(messagesRef, experienceLevelRef, stre
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-8 px-4 pb-10 pt-6 sm:px-6">
+  <div class="mx-auto max-w-4xl space-y-8 px-4 pb-10 pt-6 sm:px-6">
     <ChatMessage
       v-for="(m, index) in messages"
       :id="`msg-${m.id}`"

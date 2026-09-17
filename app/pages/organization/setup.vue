@@ -99,7 +99,7 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6">
+  <div class="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-8 pb-6">
     <PageHeader
       title="Create your organization"
       description="The workspace your cases, documents, and templates live in — and what colleagues join when you invite them."

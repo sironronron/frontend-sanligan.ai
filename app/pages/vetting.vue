@@ -35,7 +35,7 @@ onMounted(async () => {
 
 <template>
   <div>
-    <div v-if="!isChild" class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
+    <div v-if="!isChild" class="mx-auto w-full max-w-4xl flex-1 px-4 pt-8 pb-6">
     <PageHeader title="Document vetting" :icon="FileSearchIcon" description="Have a Philippine lawyer review and notarize your documents.">
       <template #actions>
         <Button class="bg-brand-gradient gap-2 border-0 text-primary-foreground shadow-sm transition-opacity hover:opacity-90" @click="navigateTo('/vetting/new')">

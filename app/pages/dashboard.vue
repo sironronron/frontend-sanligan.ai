@@ -92,7 +92,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-6xl flex-1 px-4 pt-8 pb-6">
     <!-- Hero -->
     <section class="hero-gradient surface mb-6 flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
       <div class="min-w-0">

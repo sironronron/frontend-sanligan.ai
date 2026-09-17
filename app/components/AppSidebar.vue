@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {
+  BellIcon,
   Building2Icon,
+  CreditCardIcon,
   FilePenIcon,
   FileSearchIcon,
   FileTextIcon,
@@ -10,10 +12,17 @@ import {
   LayoutTemplateIcon,
   ListChecksIcon,
   LockIcon,
+  LogOutIcon,
   MessageCircleIcon,
   MessageSquareIcon,
+  MoonIcon,
+  PuzzleIcon,
   ScaleIcon,
+  Settings2Icon,
   ShieldIcon,
+  SparklesIcon,
+  SunIcon,
+  UsersRoundIcon,
 } from '@lucide/vue'
 import {
   Sidebar,
@@ -34,23 +43,63 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { isAtLimit, limitPct } from '~/stores/billing'
+import { useNotificationStore } from '~/stores/notifications'
 
 const auth = useAuthStore()
 const route = useRoute()
 const { setOpenMobile } = useSidebar()
 const billing = useBillingStore()
 const org = useOrganizationStore()
+const notificationStore = useNotificationStore()
+const { isDark, toggle: toggleTheme } = useTheme()
+const tour = useProductTour()
+
+onMounted(() => void notificationStore.fetchUnreadCount())
+
+async function handleLogout() {
+  await auth.logout()
+  await navigateTo('/login')
+}
+
+const initials = computed(() =>
+  String(auth.user?.name ?? '')
+    .split(/\s+/)
+    .map((part: string) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase(),
+)
 
 const navItems = computed(() => [
   { to: '/dashboard', label: 'Dashboard', icon: GaugeIcon, gated: false },
   { to: '/chat', label: 'Chat', icon: MessageSquareIcon, gated: true },
   { to: '/cases', label: 'Cases', icon: FolderIcon, gated: true },
+  { to: '/crm/clients', label: 'Clients', icon: UsersRoundIcon, gated: true },
   { to: '/files', label: 'Files', icon: FileTextIcon, gated: true },
   { to: '/drafts', label: 'Drafts', icon: FilePenIcon, gated: true },
   { to: '/vetting', label: 'Vetting', icon: FileSearchIcon, gated: true },
   { to: '/templates', label: 'Templates', icon: LayoutTemplateIcon, gated: true },
-  ...(auth.user?.is_admin ? [{ to: '/admin/legal-sources', label: 'Admin', icon: ShieldIcon }] : []),
+  { to: '/todos', label: 'Todos', icon: ListChecksIcon, gated: true },
+])
+
+/**
+ * Notifications and settings are reachable from every plan state, so they sit
+ * apart from the gated workspace items — same treatment Dashboard gets.
+ */
+const utilityNavItems = computed(() => [
+  { to: '/notifications', label: 'Notifications', icon: BellIcon },
+  { to: '/settings/organization', label: 'Settings', icon: Settings2Icon },
 ])
 
 /**
@@ -60,6 +109,10 @@ const navItems = computed(() => [
  */
 const lawyerNavItems = computed(() =>
   auth.isVerifiedLawyer ? [{ to: '/lawyer/dashboard', label: 'Lawyer Dashboard', icon: ScaleIcon }] : [],
+)
+
+const adminNavItems = computed(() =>
+  auth.user?.is_admin ? [{ to: '/admin/legal-sources', label: 'Admin', icon: ShieldIcon }] : [],
 )
 
 /**
@@ -125,28 +178,17 @@ onMounted(() => {
 </script>
 
 <template>
-  <Sidebar variant="floating" collapsible="icon" side="left">
+  <Sidebar variant="sidebar" collapsible="icon" side="left">
     <SidebarHeader class="pr-12 md:pr-2">
+      <!-- The brand mark, not the account — the account lives at the bottom of the rail. -->
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton
-            size="lg"
-            as-child
-            :is-active="isActive('/settings/organization')"
-            :tooltip="orgName"
-          >
-            <NuxtLink to="/settings/organization">
-              <div
-                class="flex aspect-square size-8 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-              >
-                <Building2Icon class="size-4" />
-              </div>
-              <div
-                class="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden"
-              >
-                <span class="truncate font-semibold">{{ orgName }}</span>
-                <span class="truncate text-xs text-sidebar-foreground/60">{{ seatLabel }}</span>
-              </div>
+          <SidebarMenuButton as-child :is-active="isActive('/chat')" tooltip="Batayan">
+            <NuxtLink to="/chat">
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+                <BatayanMark class="size-4" />
+              </span>
+              <span class="font-heading font-semibold">Batayan</span>
             </NuxtLink>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -211,9 +253,61 @@ onMounted(() => {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
+
+      <SidebarSeparator class="group-data-[collapsible=icon]:hidden" />
+
+      <SidebarGroup>
+        <SidebarMenu>
+          <SidebarMenuItem v-for="item in utilityNavItems" :key="item.to">
+            <SidebarMenuButton
+              as-child
+              :is-active="isActive(item.to)"
+              :tooltip="item.label"
+              :data-tour="`nav-${item.to.replace('/', '')}`"
+            >
+              <NuxtLink :to="item.to">
+                <span class="relative inline-flex">
+                  <component :is="item.icon" />
+                  <span
+                    v-if="item.to === '/notifications' && notificationStore.unreadCount > 0"
+                    class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-destructive"
+                    aria-hidden="true"
+                  />
+                </span>
+                <span>{{ item.label }}</span>
+              </NuxtLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
+
+      <SidebarGroup v-if="adminNavItems.length > 0">
+        <SidebarGroupLabel>Admin</SidebarGroupLabel>
+        <SidebarMenu>
+          <SidebarMenuItem v-for="item in adminNavItems" :key="item.to">
+            <SidebarMenuButton
+              as-child
+              :is-active="isActive(item.to)"
+              :tooltip="item.label"
+              :data-tour="`nav-${item.to.replace('/', '')}`"
+            >
+              <NuxtLink :to="item.to">
+                <component :is="item.icon" />
+                <span>{{ item.label }}</span>
+              </NuxtLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
     </SidebarContent>
 
     <SidebarFooter>
+      <!--
+        "Batayan is replying" used to live in the header, the one place always
+        on screen — now that the header is gone, the rail is that place.
+      -->
+      <ChatStreamingIndicator class="mb-1 group-data-[collapsible=icon]:hidden" />
+
       <!-- Above usage: what to do next outranks how much of the plan is left. -->
       <SidebarTasks />
 
@@ -318,6 +412,81 @@ onMounted(() => {
               <HeadphonesIcon />
               <span>Contact 24/7 support</span>
             </a>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+
+      <SidebarSeparator class="mx-0 w-full" />
+
+      <!--
+        The signed-in person and the theme, at the very bottom — the two things
+        that belong to the person using the rail, not to the workspace. Two
+        separate menus, not one, so the footer's own gap keeps them apart
+        instead of sitting flush against each other.
+      -->
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <SidebarMenuButton size="lg" :tooltip="auth.user?.name ?? 'Account'">
+                <Avatar class="size-8 shrink-0">
+                  <AvatarFallback class="bg-sidebar-primary text-xs text-sidebar-primary-foreground">
+                    {{ initials }}
+                  </AvatarFallback>
+                </Avatar>
+                <div class="grid min-w-0 flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
+                  <span class="truncate font-semibold">{{ auth.user?.name ?? 'Account' }}</span>
+                  <span class="truncate text-xs text-sidebar-foreground/60">{{ seatLabel }}</span>
+                </div>
+              </SidebarMenuButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end" class="w-56">
+              <DropdownMenuLabel class="flex flex-col">
+                <span class="text-sm font-medium">{{ auth.user?.name }}</span>
+                <span class="text-xs text-muted-foreground">{{ auth.user?.email }}</span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem @click="navigateTo('/settings/organization')">
+                  <Building2Icon />
+                  {{ orgName }}
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="navigateTo('/settings/billing')">
+                  <CreditCardIcon />
+                  Billing
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="navigateTo('/settings/addons')">
+                  <PuzzleIcon />
+                  Add-ons
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="navigateTo('/settings/personalization')">
+                  <Settings2Icon />
+                  Personalization
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @click="tour.restart()">
+                <SparklesIcon />
+                Show me around
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" @click="handleLogout">
+                <LogOutIcon />
+                Log out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      </SidebarMenu>
+
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            :tooltip="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+            @click="toggleTheme"
+          >
+            <component :is="isDark ? SunIcon : MoonIcon" />
+            <span>{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>

@@ -41,7 +41,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl px-4 py-6">
+  <div class="mx-auto w-full max-w-3xl px-4 pt-8 pb-6">
     <PageHeader title="Notifications" description="Deadline reminders for your cases and tasks.">
       <template #actions>
         <Button

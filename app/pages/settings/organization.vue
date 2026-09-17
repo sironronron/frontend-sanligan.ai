@@ -264,7 +264,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-3xl flex-1 px-4 pt-8 pb-6">
     <PageHeader
       title="Organization"
       description="Manage your workspace, members, and invitations."

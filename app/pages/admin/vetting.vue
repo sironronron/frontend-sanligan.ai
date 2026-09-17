@@ -209,7 +209,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-4 py-6">
+  <div class="mx-auto w-full max-w-6xl px-4 pt-8 pb-6">
     <AdminNav />
 
     <PageHeader title="Vetting & payouts" description="Marketplace fees, operational rules, revenue, and weekly notarization payouts." />

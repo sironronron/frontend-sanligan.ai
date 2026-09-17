@@ -640,10 +640,10 @@ watch(activeId, async (id) => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100dvh-4.5rem)] gap-3 overflow-hidden p-4 md:px-6 lg:gap-4 lg:p-6">
+  <div class="flex h-dvh overflow-hidden">
     <ChatConversationList
       v-model:filter-tag-ids="threadFilterTagIds"
-      class="hidden md:flex"
+      class="hidden rounded-none border-0 border-r shadow-none md:flex"
       :conversations="conversations"
       :active-id="activeId"
       :streaming-ids="chatStream.streamingIds"
@@ -654,14 +654,14 @@ watch(activeId, async (id) => {
 
     <section
       ref="mainChatEl"
-      class="surface flex min-w-0 flex-1 flex-col overflow-hidden"
+      class="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background"
     >
-      <div class="flex items-center justify-between border-b px-2 py-2.5 sm:px-4">
+      <div class="flex items-center justify-between px-2 py-2.5 sm:px-4">
           <div class="flex min-w-0 items-center gap-1.5">
             <Button
               variant="ghost"
               size="icon"
-              class="size-11 shrink-0 md:size-8"
+              class="size-11 shrink-0 md:hidden"
               aria-label="Conversations"
               @click="mobileConversations = true"
             >
@@ -728,19 +728,54 @@ watch(activeId, async (id) => {
           </div>
       </div>
 
-      <div class="relative min-h-0 flex-1">
-        <div ref="messagesContainer" data-tour="chat-sources" class="absolute inset-0 overflow-y-auto">
-          <ChatEmptyState
-            v-if="thread.length === 0"
-            title="Research Philippine law with Batayan"
-            description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
-            eyebrow="Batayan AI"
-          >
-            <ChatStarters :starters="starters" @select="selectPrompt" />
-          </ChatEmptyState>
+      <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
+        <ChatSearchBar
+          ref="searchBarRef"
+          :messages="thread"
+          @query="searchQuery = $event"
+          @navigate="searchNavigate"
+          @close="toggleSearch"
+        />
+      </div>
 
+      <div class="relative min-h-0 flex-1">
+        <!--
+          Empty conversation: no thread to scroll, so the greeting and the
+          composer sit together as one block, centered on the page — the
+          composer only starts floating once there is something to float over.
+        -->
+        <div v-if="thread.length === 0" class="absolute inset-0 flex items-center justify-center overflow-y-auto px-4 py-10">
+          <div class="w-full max-w-4xl">
+            <ChatEmptyState
+              title="Research Philippine law with Batayan"
+              description="Ask about statutes, Supreme Court decisions, or your uploaded documents. Answers are grounded in retrieved sources and cited inline."
+            >
+              <ChatStarters :starters="starters" @select="selectPrompt" />
+            </ChatEmptyState>
+
+            <div data-tour="chat-composer" class="mx-auto mt-7 w-full">
+              <ChatComposer
+                ref="composerRef"
+                v-model="input"
+                large
+                :disabled="busy"
+                :streaming="streaming"
+                :attachments="attachmentsState.attachments.value"
+                :can-send="!attachmentsState.pending.value"
+                placeholder="Ask about Philippine law or your documents…"
+                help-context="general"
+                @send="send()"
+                @stop="stopStreaming"
+                @attach="attachmentsState.add"
+                @remove-attachment="attachmentsState.remove"
+              />
+            </div>
+          </div>
+        </div>
+
+        <template v-else>
+        <div ref="messagesContainer" data-tour="chat-sources" class="absolute inset-0 overflow-y-auto pb-36">
         <ChatThread
-          v-else
           ref="threadRef"
           :messages="thread"
           :streaming="streaming"
@@ -791,35 +826,32 @@ watch(activeId, async (id) => {
           clear of whichever panel is open in the right rail.
         -->
         <AdvisoryReview ref="advisoryReviewRef" :conversation-id="activeId" />
-      </div>
 
-      <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
-        <ChatSearchBar
-          ref="searchBarRef"
-          :messages="thread"
-          @query="searchQuery = $event"
-          @navigate="searchNavigate"
-          @close="toggleSearch"
-        />
-      </div>
-
-      <div data-tour="chat-composer" class="border-t px-3 py-3">
-        <div class="mx-auto w-full max-w-3xl">
-          <ChatComposer
-            ref="composerRef"
-            v-model="input"
-            :disabled="busy"
-            :streaming="streaming"
-            :attachments="attachmentsState.attachments.value"
-            :can-send="!attachmentsState.pending.value"
-            placeholder="Ask about Philippine law or your documents…"
-            help-context="general"
-            @send="send()"
-            @stop="stopStreaming"
-            @attach="attachmentsState.add"
-            @remove-attachment="attachmentsState.remove"
-          />
+        <!--
+          The composer floats over the thread rather than sitting in a bordered
+          footer row: a gradient wash behind it keeps the last lines of an
+          answer legible as they scroll underneath.
+        -->
+        <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-3 pb-4 sm:px-6">
+          <div class="h-16 w-full bg-gradient-to-t from-background via-background/85 to-transparent" />
+          <div data-tour="chat-composer" class="pointer-events-auto -mt-16 w-full max-w-4xl">
+            <ChatComposer
+              ref="composerRef"
+              v-model="input"
+              :disabled="busy"
+              :streaming="streaming"
+              :attachments="attachmentsState.attachments.value"
+              :can-send="!attachmentsState.pending.value"
+              placeholder="Ask about Philippine law or your documents…"
+              help-context="general"
+              @send="send()"
+              @stop="stopStreaming"
+              @attach="attachmentsState.add"
+              @remove-attachment="attachmentsState.remove"
+            />
+          </div>
         </div>
+        </template>
       </div>
     </section>
 

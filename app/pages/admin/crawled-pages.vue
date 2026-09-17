@@ -103,7 +103,7 @@ onMounted(loadPages)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-4 py-6">
+  <div class="mx-auto w-full max-w-6xl px-4 pt-8 pb-6">
     <AdminNav />
 
     <AppPageHeader title="Indexed pages" description="Public official pages and standard summaries indexed in the shared knowledge base." />

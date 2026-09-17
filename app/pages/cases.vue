@@ -289,7 +289,7 @@ onMounted(async () => {
 
 <template>
   <div>
-    <div v-if="!isDetail" class="mx-auto w-full max-w-5xl px-4 py-6">
+    <div v-if="!isDetail" class="mx-auto w-full max-w-5xl px-4 pt-8 pb-6">
       <PageHeader title="Cases" :description="summary" :icon="FolderOpenIcon">
         <template #actions>
           <Button

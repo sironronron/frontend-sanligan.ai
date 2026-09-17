@@ -70,7 +70,7 @@ onMounted(loadDocuments)
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-4xl px-4 py-6">
+  <div class="mx-auto w-full max-w-4xl px-4 pt-8 pb-6">
     <PageHeader
       title="Drafts"
       :icon="FileTextIcon"

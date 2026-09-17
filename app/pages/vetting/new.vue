@@ -202,7 +202,7 @@ async function handleSubmit() {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-3xl flex-1 px-4 pt-8 pb-6">
     <NuxtLink to="/vetting" class="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
       <ArrowLeftIcon class="size-3.5" />
       Back to requests

@@ -311,7 +311,7 @@ async function copyPrompt(prompt: string) {
 
         <footer class="flex items-start gap-2.5 border-t bg-muted/30 px-5 py-3">
           <span class="mt-px flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <ScaleIcon class="size-2.5" />
+            <SparklesIcon class="size-2.5" />
           </span>
           <p class="text-[11px] leading-relaxed text-muted-foreground/90">
             Batayan AI can make mistakes — always verify important legal details before acting on them.
