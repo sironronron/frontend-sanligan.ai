@@ -44,6 +44,7 @@ const {
   highlight: readerHighlight,
   loading: readerLoading,
   error: readerError,
+  note: readerNote,
   open: readerOpen,
   read: openReader,
   close: closeReader,
@@ -134,12 +135,6 @@ function metaLine(entry: CitationEntry): string | null {
   return [citationDate(entry.promulgationDate), entry.sourceName]
     .filter(Boolean)
     .join(' · ') || null
-}
-
-/** The link as the user would read it — no scheme, no trailing slash. */
-function readableUrl(url: string | null): string {
-  if (!url) return ''
-  return url.replace(/^https?:\/\//, '').replace(/\/$/, '')
 }
 </script>
 
@@ -342,7 +337,6 @@ function readableUrl(url: string | null): string {
 
               <div class="min-w-0 flex-1">
                 <p class="break-words text-[13px] font-medium leading-snug">{{ entry.label }}</p>
-                <p class="mt-0.5 break-all text-[11px] text-muted-foreground">{{ readableUrl(entry.url) }}</p>
               </div>
             </div>
 
@@ -354,7 +348,27 @@ function readableUrl(url: string | null): string {
               <span class="cite-mark">{{ excerpt }}</span>
             </p>
 
-            <div class="mt-3">
+            <div class="mt-3 flex flex-wrap items-center gap-1.5">
+              <template v-if="entry.readableId">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="h-7 gap-1.5 px-2.5 text-xs"
+                  @click="openReader(entry, 'digest')"
+                >
+                  <SparklesIcon class="size-3.5" />
+                  Digest
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  class="h-7 gap-1.5 px-2.5 text-xs"
+                  @click="openReader(entry, 'full')"
+                >
+                  <ScrollTextIcon class="size-3.5" />
+                  Open
+                </Button>
+              </template>
               <a
                 v-if="entry.url"
                 :href="entry.url"
@@ -378,6 +392,7 @@ function readableUrl(url: string | null): string {
       :highlight="readerHighlight"
       :loading="readerLoading"
       :error="readerError"
+      :note="readerNote"
       @update:view="readerView = $event"
       @close="closeReader()"
     />

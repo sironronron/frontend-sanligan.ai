@@ -82,6 +82,31 @@ export interface AiUsageMeter {
   window_end: string | null
 }
 
+
+/**
+ * Prepaid extra AI usage (ADR-010). A pack is bought for the current window and
+ * expires with it; `remaining_pesos` is what the customer's own ceiling still
+ * allows, or null when they have not set one.
+ */
+export interface TopUpPack {
+  price_pesos: number
+  price_label: string
+  usd: number
+  max_per_window: number | null
+}
+
+export interface TopUpOptions {
+  available: boolean
+  plan_allows: boolean
+  enabled: boolean
+  reason: string | null
+  pack: TopUpPack | null
+  cap_pesos: number | null
+  spent_pesos: number
+  remaining_pesos: number | null
+  window_end: string | null
+}
+
 export type BillingInterval = 'monthly' | 'annual'
 
 export interface Subscription {
@@ -136,6 +161,8 @@ export interface ChangePlanResponse {
 
 export const useBillingStore = defineStore('billing', () => {
   const api = useApi()
+
+  const topUp = ref<TopUpOptions | null>(null)
 
   const plans = ref<Plan[]>([])
   const trialPlan = ref<Plan | null>(null)
@@ -375,12 +402,48 @@ export const useBillingStore = defineStore('billing', () => {
     return plan.value?.features.includes(feature) ?? false
   }
 
+
+  async function fetchTopUp() {
+    try {
+      const { data } = await api<{ data: TopUpOptions }>('/billing/top-ups')
+      topUp.value = data
+      return data
+    } catch {
+      // The control is an extra, never a blocker: a failure here must not stop
+      // the billing page from rendering the subscription it already has.
+      topUp.value = null
+      return null
+    }
+  }
+
+  async function updateTopUpSettings(enabled: boolean, capPesos: number | null) {
+    const { data } = await api<{ data: TopUpOptions }>('/billing/top-ups/settings', {
+      method: 'PATCH',
+      body: { enabled, cap_pesos: capPesos },
+    })
+    topUp.value = data.options
+    return data.options
+  }
+
+  /** Returns the gateway checkout URL the customer is sent to. */
+  async function startTopUp(packs = 1) {
+    const { data } = await api<{ data: { checkout_url: string | null } }>('/billing/top-ups', {
+      method: 'POST',
+      body: { packs },
+    })
+    return data.checkout_url
+  }
+
   return {
     plans,
     trialPlan,
     featureCatalogue,
     plansLoaded,
     plansError,
+    topUp,
+    fetchTopUp,
+    updateTopUpSettings,
+    startTopUp,
     subscription,
     subscriptionLoaded,
     subscriptionError,

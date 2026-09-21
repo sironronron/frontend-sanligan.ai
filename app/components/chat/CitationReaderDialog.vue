@@ -20,6 +20,8 @@ const props = defineProps<{
   highlight: number[]
   loading: boolean
   error: string
+  /** What is happening while a slow source opens, e.g. a scan being read. */
+  note?: string
 }>()
 
 const emit = defineEmits<{
@@ -182,7 +184,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <div ref="body" class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div v-if="loading" class="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
             <Loader2Icon class="size-4 animate-spin" />
-            Opening source…
+            <span>
+              Opening source…
+              <span v-if="note" class="mt-1 block text-xs">{{ note }}</span>
+            </span>
           </div>
 
           <p v-else-if="error" class="py-16 text-center text-sm text-destructive">
@@ -221,7 +226,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               class="cite-passage"
               :class="highlighted.has(chunk.index)
                 ? 'cite-passage--cited'
-                : 'cite-passage--dim'"
+                : highlighted.size > 0 ? 'cite-passage--dim' : undefined"
             >
               <span v-if="highlighted.has(chunk.index)" class="cite-passage__tag">
                 <QuoteIcon class="size-3" />

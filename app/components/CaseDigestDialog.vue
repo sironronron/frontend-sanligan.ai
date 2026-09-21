@@ -8,11 +8,14 @@ import { SparklesIcon, XIcon } from '@lucide/vue'
  * instantly from row data — no fetch, no polling. The full case page stays
  * the source of truth for a digest that is still being prepared.
  */
-const props = defineProps<{
-  title: string
+const props = withDefaults(defineProps<{
+  /** Omitted when the dialog is opened from inside the case it already belongs to. */
+  title?: string
   digest: string | null
   generatedAt?: string | null
-}>()
+  /** The list's peek offers a way into the full case; already being there doesn't need it. */
+  showOpenAction?: boolean
+}>(), { title: undefined, showOpenAction: true })
 
 const emit = defineEmits<{
   close: []
@@ -44,7 +47,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium">Case digest</p>
-            <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ props.title }}</p>
+            <p v-if="props.title" class="mt-0.5 truncate text-xs text-muted-foreground">{{ props.title }}</p>
           </div>
           <Button variant="ghost" size="icon" class="size-7 shrink-0" aria-label="Close" @click="emit('close')">
             <XIcon class="size-4" />
@@ -56,8 +59,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </div>
 
         <div class="flex items-center justify-end gap-2 border-t px-5 py-3.5">
-          <Button variant="outline" @click="emit('close')">Close</Button>
-          <Button @click="emit('open')">Open full case</Button>
+          <Button :variant="showOpenAction ? 'outline' : 'default'" @click="emit('close')">Close</Button>
+          <Button v-if="showOpenAction" @click="emit('open')">Open full case</Button>
         </div>
       </div>
     </div>

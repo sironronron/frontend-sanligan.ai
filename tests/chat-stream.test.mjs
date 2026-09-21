@@ -21,7 +21,8 @@ function harness(chunks, failure) {
     '~/composables/useTextStreamer': {
       createTextStreamer: (write) => {
         let pending = ''
-        return { push: (text) => { pending += text }, flush: () => { write(pending); pending = '' }, stop: () => {} }
+        const drain = () => { write(pending); pending = '' }
+        return { push: (text) => { pending += text }, drained: async () => { drain() }, flush: drain, stop: () => {} }
       },
     },
   }
@@ -81,4 +82,67 @@ test('retry retains attachments and the previous partial answer', async () => {
   await store.retry('thread')
   assert.deepEqual(requests[1].attachment_ids, ['document'])
   assert.ok(store.turnFor('thread').priorMessages.some((message) => message.content === 'Partial answer'))
+})
+
+test('server ids replace optimistic copies after a normalized answer refresh', async () => {
+  const done = 'event: done\ndata: {"ok":true,"web_citations":0,"user_message_id":"saved-user","message_id":"saved-assistant"}\n\n'
+  const { store } = harness([delta, done])
+
+  await store.start(options)
+
+  const serverMessages = [
+    { id: 'saved-user', role: 'user', content: 'Help', sources: [], created_at: '' },
+    { id: 'saved-assistant', role: 'assistant', content: 'Partial answer (trimmed)', sources: [], created_at: '' },
+  ]
+
+  assert.deepEqual(
+    store.threadFor('thread', serverMessages).map((message) => message.id),
+    ['saved-user', 'saved-assistant'],
+  )
+})
+
+test('legacy done frames still deduplicate a trimmed assistant copy', async () => {
+  const { store } = harness([
+    'event: delta\ndata: {"delta":"Answer with trailing space \\n"}\n\n',
+    'event: done\ndata: {"ok":true,"web_citations":0}\n\n',
+  ])
+
+  await store.start(options)
+
+  const serverMessages = [
+    { id: 'saved-user', role: 'user', content: 'Help', sources: [], created_at: '' },
+    { id: 'saved-assistant', role: 'assistant', content: 'Answer with trailing space', sources: [], created_at: '' },
+  ]
+
+  assert.deepEqual(
+    store.threadFor('thread', serverMessages).map((message) => message.id),
+    ['saved-user', 'saved-assistant'],
+  )
+})
+
+test('a refreshed continuation does not duplicate the prior assistant answer', async () => {
+  const first = harness([
+    'event: delta\ndata: {"delta":"First answer"}\n\n',
+    'event: done\ndata: {"ok":true,"user_message_id":"first-user","message_id":"first-assistant"}\n\n',
+  ])
+  await first.store.start(options)
+
+  const second = harness([
+    'event: delta\ndata: {"delta":"Second answer"}\n\n',
+    'event: done\ndata: {"ok":true,"user_message_id":"second-user","message_id":"second-assistant"}\n\n',
+  ])
+  // Carry the completed first turn into the same store, as the choice/intake
+  // continuation path does before the conversation is fetched again.
+  second.store.turns.value.thread = first.store.turnFor('thread')
+  await second.store.start({ ...options, question: '[Choice Selection] Continue' })
+
+  const serverMessages = [
+    { id: 'first-user', role: 'user', content: 'Help', sources: [], created_at: '' },
+    { id: 'first-assistant', role: 'assistant', content: 'First answer', sources: [], created_at: '' },
+  ]
+
+  assert.deepEqual(
+    Array.from(second.store.threadFor('thread', serverMessages), (message) => String(message.content)),
+    ['Help', 'First answer', '[Choice Selection] Continue', 'Second answer'],
+  )
 })

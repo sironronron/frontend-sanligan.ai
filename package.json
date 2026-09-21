@@ -3,7 +3,12 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "test": "node --test tests/chat-stream.test.mjs tests/sse-contract.test.mjs tests/text-streamer.test.mjs",
     "test:chat": "node --test tests/chat-stream.test.mjs",
+    "test:sse": "node --test tests/sse-contract.test.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:list": "playwright test --list",
+    "typecheck": "vue-tsc --noEmit",
     "build": "nuxt build",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
@@ -44,6 +49,7 @@
     "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "^26.1.2",
     "@types/pdfmake": "^0.3.3",
     "typescript": "^5.9.3",

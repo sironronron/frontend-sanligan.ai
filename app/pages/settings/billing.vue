@@ -104,6 +104,7 @@ onMounted(async () => {
     // A solo account has no organization and is refused here; that is an
     // answer, not a failure, and the seat card simply stays hidden.
     org.fetchOrganization().catch(() => null),
+    billing.fetchTopUp(),
   ])
   loading.value = false
 
@@ -246,6 +247,71 @@ function requestSeatPurchase() {
   confirmSeatPurchase.value = true
 }
 
+// Prepaid extra AI usage (ADR-010). The control is only offered when the plan
+// permits it; the cap is the most this account will spend on packs per window.
+const topUpPacks = ref(1)
+const topUpCapPesos = ref<number | null>(null)
+const topUpBusy = ref(false)
+const topUpSaving = ref(false)
+
+watch(
+  () => billing.topUp,
+  (options) => {
+    if (options) {
+      topUpCapPesos.value = options.cap_pesos === null ? null : options.cap_pesos / 100
+    }
+  },
+  { immediate: true },
+)
+
+async function handleTopUpToggle(enabled: boolean) {
+  topUpSaving.value = true
+  try {
+    await billing.updateTopUpSettings(enabled, capToMinor())
+    toast.success(enabled ? 'Extra AI usage is on' : 'Extra AI usage is off')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not change the extra-usage setting')
+  } finally {
+    topUpSaving.value = false
+  }
+}
+
+async function handleTopUpCapSave() {
+  topUpSaving.value = true
+  try {
+    await billing.updateTopUpSettings(billing.topUp?.enabled ?? false, capToMinor())
+    toast.success('Spending cap saved')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not save the spending cap')
+  } finally {
+    topUpSaving.value = false
+  }
+}
+
+async function handleBuyTopUp() {
+  topUpBusy.value = true
+  try {
+    const checkoutUrl = await billing.startTopUp(topUpPacks.value)
+
+    if (checkoutUrl) {
+      window.location.href = checkoutUrl
+      return
+    }
+
+    toast.error('The payment page could not be opened. Try again.')
+  } catch (err: any) {
+    toast.error(err?.data?.message ?? 'Could not start the purchase')
+  } finally {
+    topUpBusy.value = false
+  }
+}
+
+/** Pesos in the input, minor units on the wire. */
+function capToMinor(): number | null {
+  if (topUpCapPesos.value === null || Number.isNaN(topUpCapPesos.value)) return null
+  return Math.max(0, Math.round(topUpCapPesos.value * 100))
+}
+
 async function handleAddSeats() {
   seatBusy.value = true
   try {
@@ -278,7 +344,7 @@ async function handleRemoveSeats() {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
+  <div class="mx-auto w-full max-w-3xl flex-1 px-4 pt-8 pb-6">
     <PageHeader
       title="Billing"
       description="Manage your subscription, payments, and usage."
@@ -510,6 +576,71 @@ async function handleRemoveSeats() {
             <p v-else class="mt-1 text-xs text-muted-foreground">
               Research and document processing use more of your allowance than short questions.
             </p>
+          </div>
+
+          <div
+            v-if="billing.topUp?.plan_allows"
+            class="space-y-3 rounded-lg border border-border/60 p-4"
+          >
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="text-sm font-medium">
+                  Extra AI usage
+                </p>
+                <p class="mt-0.5 text-xs text-muted-foreground">
+                  Buy more when the monthly allowance runs out. Extra usage is spent on this
+                  cycle only and does not carry over.
+                </p>
+              </div>
+              <Switch
+                :model-value="billing.topUp?.enabled ?? false"
+                :disabled="topUpSaving"
+                @update:model-value="handleTopUpToggle"
+              />
+            </div>
+
+            <template v-if="billing.topUp?.enabled && billing.topUp.pack">
+              <div class="flex flex-wrap items-end gap-3">
+                <div class="w-28">
+                  <label class="mb-1 block text-xs text-muted-foreground" for="topup-packs">
+                    Packs
+                  </label>
+                  <Input id="topup-packs" v-model.number="topUpPacks" type="number" min="1" :max="20" />
+                </div>
+                <Button :disabled="topUpBusy" @click="handleBuyTopUp">
+                  <Loader2Icon v-if="topUpBusy" class="me-2 size-4 animate-spin" />
+                  Buy {{ topUpPacks }} × {{ billing.topUp.pack.price_label }}
+                </Button>
+              </div>
+
+              <div class="flex flex-wrap items-end gap-3">
+                <div class="w-44">
+                  <label class="mb-1 block text-xs text-muted-foreground" for="topup-cap">
+                    Monthly spending cap (₱)
+                  </label>
+                  <Input
+                    id="topup-cap"
+                    v-model.number="topUpCapPesos"
+                    type="number"
+                    min="0"
+                    placeholder="No cap"
+                  />
+                </div>
+                <Button variant="outline" :disabled="topUpSaving" @click="handleTopUpCapSave">
+                  Save cap
+                </Button>
+              </div>
+
+              <p class="text-xs text-muted-foreground">
+                <template v-if="billing.topUp.remaining_pesos !== null">
+                  {{ (billing.topUp.remaining_pesos / 100).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' }) }}
+                  of your cap remains on this cycle.
+                </template>
+                <template v-else>
+                  No cap set — you control each purchase.
+                </template>
+              </p>
+            </template>
           </div>
         </CardContent>
       </Card>

@@ -85,6 +85,7 @@ const emit = defineEmits<{
   createThread: [purpose: string]
   upload: [files: File[]]
   rejectedUpload: [name: string]
+  blockedPdfUpload: [name: string]
   viewDocument: [doc: CaseDocument]
   downloadDocument: [doc: CaseDocument]
   deleteDocument: [doc: CaseDocument]
@@ -317,7 +318,7 @@ function onFileSelected(event: Event) {
   const accepted = canUsePdf.value ? picked : picked.filter(file => !isPdfDocument(file.name, file.type))
   const blocked = picked.find(file => isPdfDocument(file.name, file.type))
   selectedFiles.value.push(...accepted)
-  if (blocked) emit('rejectedUpload', blocked.name)
+  if (blocked) emit('blockedPdfUpload', blocked.name)
 }
 
 /**
@@ -334,7 +335,7 @@ function onFilesDropped(event: DragEvent) {
     selectedFiles.value.push(...accepted)
   })
   openSection('files')
-  if (blockedPdf) emit('rejectedUpload', blockedPdf.name)
+  if (blockedPdf) emit('blockedPdfUpload', blockedPdf.name)
   else if (rejected.length > 0) emit('rejectedUpload', rejected[0]?.name ?? 'That file')
 }
 
@@ -607,7 +608,7 @@ onMounted(() => {
   <aside
     :class="props.mobile
       ? 'surface relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar'
-      : 'surface relative hidden h-full w-[21rem] shrink-0 flex-col overflow-hidden bg-sidebar md:flex'"
+      : 'relative hidden h-full w-[21rem] shrink-0 flex-col overflow-hidden border-r bg-card md:flex'"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"

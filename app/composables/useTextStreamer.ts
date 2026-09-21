@@ -7,19 +7,21 @@
  * therefore makes the answer arrive in visible jumps.
  *
  * Deltas are queued here instead and drained on an animation frame. The drain
- * is proportional to the backlog rather than a fixed rate: a slow provider
- * reveals a few characters per frame, a fast one speeds up to keep pace, and
- * the visible lag stays at roughly SMOOTHING frames either way. A fixed rate
- * cannot do both — it either crawls behind a fast model or stutters with a
- * slow one.
+ * is proportional to the backlog, with a per-frame ceiling: a slow provider
+ * reveals a few characters per frame, while a large one-shot provider chunk
+ * remains visibly incremental instead of appearing as a whole paragraph.
  */
 
-/** Frames the queue is spread over. ~10 at 60fps is a touch under 200ms. */
+/** The backlog is normally spread over roughly this many frames. */
 const SMOOTHING = 10
+/** Keep even a one-shot final provider chunk visibly incremental. */
+const MAX_CHARS_PER_FRAME = 8
 
 export interface TextStreamer {
   /** Queue a delta for reveal. */
   push(text: string): void
+  /** Resolve once all queued text has been revealed naturally. */
+  drained(): Promise<void>
   /** Reveal everything still queued immediately, and stop the loop. */
   flush(): void
   /** Drop anything still queued and stop the loop. */
@@ -36,19 +38,33 @@ export function createTextStreamer(append: (chunk: string) => void): TextStreame
 
   let queue = ''
   let frame = 0
+  let drainWaiters: Array<() => void> = []
+
+  const resolveDrained = () => {
+    if (queue !== '' || frame !== 0 || drainWaiters.length === 0) return
+
+    const waiters = drainWaiters
+    drainWaiters = []
+    for (const resolve of waiters) resolve()
+  }
 
   const tick = () => {
     frame = 0
 
-    if (queue === '') return
+    if (queue === '') {
+      resolveDrained()
+      return
+    }
 
-    const size = Math.max(1, Math.ceil(queue.length / SMOOTHING))
+    const size = Math.max(1, Math.min(Math.ceil(queue.length / SMOOTHING), MAX_CHARS_PER_FRAME))
 
     append(queue.slice(0, size))
     queue = queue.slice(size)
 
     if (queue !== '') {
       frame = requestAnimationFrame(tick)
+    } else {
+      resolveDrained()
     }
   }
 
@@ -69,6 +85,14 @@ export function createTextStreamer(append: (chunk: string) => void): TextStreame
       }
     },
 
+    drained() {
+      if (queue === '' && frame === 0) return Promise.resolve()
+
+      return new Promise<void>((resolve) => {
+        drainWaiters.push(resolve)
+      })
+    },
+
     flush() {
       if (frame !== 0) {
         cancelAnimationFrame(frame)
@@ -79,6 +103,8 @@ export function createTextStreamer(append: (chunk: string) => void): TextStreame
         append(queue)
         queue = ''
       }
+
+      resolveDrained()
     },
 
     stop() {
@@ -88,6 +114,7 @@ export function createTextStreamer(append: (chunk: string) => void): TextStreame
       }
 
       queue = ''
+      resolveDrained()
     },
   }
 }

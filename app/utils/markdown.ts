@@ -72,6 +72,20 @@ function transformInline(text: string, bare: boolean): string {
     .replace(/`(.+?)`/g, code)
 }
 
+const LINK_ICON = '<svg class="link-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+
+/**
+ * Turn `[text](url)` into an anchor. Only http(s) and mailto targets are
+ * linked, so a model-supplied `javascript:` URL stays inert text. The input is
+ * already HTML-escaped, so the URL is safe to place inside the attribute.
+ */
+function transformLinks(text: string): string {
+  return text.replace(
+    /\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)[^\s()"]+)\)/gi,
+    `<a href="$2" target="_blank" rel="noopener noreferrer">$1${LINK_ICON}</a>`,
+  )
+}
+
 type CitationKind = 'legal' | 'standard' | 'document' | 'web'
 
 function citationKindOf(word: string): CitationKind {
@@ -371,6 +385,7 @@ function renderMarkdownInternal(text: string, bare: boolean): string {
   html = html.replace(/^# (.+)$/gm, bare ? '<h1>$1</h1>' : '<h1 class="mt-6 mb-2 text-xl font-bold">$1</h1>')
   html = transformInline(html, bare)
   html = transformCitations(html)
+  html = transformLinks(html)
 
   const lines = html.split('\n')
   const out: string[] = []

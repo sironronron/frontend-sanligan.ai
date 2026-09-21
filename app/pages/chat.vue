@@ -177,7 +177,8 @@ const searchBarRef = ref<InstanceType<typeof ChatSearchBar> | null>(null)
 const mobileConversations = ref(false)
 
 /** Only ever about the thread on screen — another thread may also be busy. */
-const busy = computed(() => sending.value || streaming.value)
+const sendStarting = ref(false)
+const busy = computed(() => sendStarting.value || sending.value || streaming.value)
 
 const messagesContainer = ref<HTMLElement | null>(null)
 const threadRef = ref<InstanceType<typeof ChatThread> | null>(null)
@@ -476,28 +477,37 @@ async function handleUpgradeRequired(message: string): Promise<boolean> {
 
 async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
-  if (!question || busy.value) return
+  if (!question || busy.value || sendStarting.value) return
 
-  input.value = ''
-  // The files travel with this message; the uploads themselves stay in the
-  // user's library and remain retrievable for the rest of the conversation.
-  const attached = attachmentsState.take()
+  // Creating the first conversation is asynchronous. Without a synchronous
+  // latch, a rapid Enter + click can create two conversations before the first
+  // request has had a chance to mark its turn as streaming.
+  sendStarting.value = true
 
-  const conv = activeConversation.value ?? (await createConversation())
-  if (chatStream.isStreaming(conv.id)) return
+  try {
+    input.value = ''
+    // The files travel with this message; the uploads themselves stay in the
+    // user's library and remain retrievable for the rest of the conversation.
+    const attached = attachmentsState.take()
 
-  // Deliberately not awaited: the answer belongs to the thread from here on,
-  // and this page is free to be left, or unmounted, while it arrives.
-  void chatStream.start({
-    conversationId: conv.id,
-    question,
-    returnTo: `/chat?c=${conv.id}`,
-    attachments: attached,
-    onUpgrade: handleUpgradeRequired,
-  })
+    const conv = activeConversation.value ?? (await createConversation())
+    if (chatStream.isStreaming(conv.id)) return
 
-  await nextTick()
-  scrollToBottom()
+    // Deliberately not awaited: the answer belongs to the thread from here on,
+    // and this page is free to be left, or unmounted, while it arrives.
+    void chatStream.start({
+      conversationId: conv.id,
+      question,
+      returnTo: `/chat?c=${conv.id}`,
+      attachments: attached,
+      onUpgrade: handleUpgradeRequired,
+    })
+
+    await nextTick()
+    scrollToBottom()
+  } finally {
+    sendStarting.value = false
+  }
 }
 
 /**

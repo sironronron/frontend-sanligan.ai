@@ -23,7 +23,7 @@ export interface CitationTarget {
 
 /** A cited source's full text, as the reader popup needs it. */
 export interface CitationReading {
-  kind: 'document' | 'legal' | 'standard'
+  kind: 'document' | 'legal' | 'standard' | 'web'
   id: string
   title: string
   subtitle: string | null
@@ -40,6 +40,12 @@ export interface CitationReading {
   standard_review_date: string | null
   rights_basis: string | null
   chunks: CitationChunk[]
+  /**
+   * Set only for a web page, whose cited passages are worked out from the
+   * search snippets when it is read. Every other source's are known up front,
+   * from the citation itself.
+   */
+  citedChunkIndexes?: number[]
 }
 
 /**

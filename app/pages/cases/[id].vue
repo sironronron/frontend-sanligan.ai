@@ -4,7 +4,6 @@ import { isPdfDocument, useDocumentFile } from '~/composables/useDocumentFile'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
-  FileTextIcon,
   FolderOpenIcon,
   ListChecksIcon,
   Loader2Icon,
@@ -230,6 +229,13 @@ function toggleFullscreen() {
   }
 }
 
+/** Reclaims the rail's width for the chat without leaving fullscreen's other effects. */
+const sidebarCollapsed = ref(false)
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
 function onFullscreenChange() {
   fullscreen.value = !!document.fullscreenElement
 }
@@ -438,6 +444,10 @@ function reportRejectedUpload(name: string) {
   documentsError.value = `"${name}" is not a supported file type. Use PDF, DOCX, TXT, MD, or an image.`
 }
 
+function reportBlockedPdfUpload(_name: string) {
+  documentsError.value = 'PDF uploads are available on paid plans. Choose a DOCX, TXT, MD, or image file instead.'
+}
+
 async function removeCaseDocument(doc: CaseDocument) {
   try {
     await api(`/documents/${doc.id}`, { method: 'DELETE' })
@@ -526,7 +536,8 @@ const citationCount = computed(() => collectCitations(chatMessages.value as Chat
 const citationTarget = ref<CitationTarget | null>(null)
 
 /** Only ever about the thread on screen — another thread may also be busy. */
-const busy = computed(() => sending.value || streaming.value)
+const sendStarting = ref(false)
+const busy = computed(() => sendStarting.value || sending.value || streaming.value)
 
 /**
  * What the case record knows about this matter, handed to the suggestion
@@ -724,26 +735,35 @@ function handleUpgradeRequired(message: string): boolean {
 async function send(questionOverride?: string | Event) {
   const question = (typeof questionOverride === 'string' ? questionOverride : input.value).trim()
   const id = conversationId.value
-  if (!question || busy.value || !id || readOnly.value) return
+  if (!question || busy.value || sendStarting.value || !id || readOnly.value) return
 
-  input.value = ''
-  // The files travel with this message; the uploads themselves stay attached
-  // to the case and remain retrievable in its conversations.
-  const attached = attachmentsState.take()
+  // Keep the synchronous part of a send single-flight. This protects the
+  // composer from a rapid keypress + click pair before the store's reactive
+  // streaming flag has propagated through the page.
+  sendStarting.value = true
 
-  // Deliberately not awaited: the answer belongs to the thread from here on,
-  // and this page is free to be left, or unmounted, while it arrives.
-  void chatStream.start({
-    conversationId: id,
-    question,
-    // The case view, not the progress view: the thread is what to come back to.
-    returnTo: `/cases/${route.params.id}`,
-    attachments: attached,
-    onUpgrade: handleUpgradeRequired,
-  })
+  try {
+    input.value = ''
+    // The files travel with this message; the uploads themselves stay attached
+    // to the case and remain retrievable in its conversations.
+    const attached = attachmentsState.take()
 
-  await nextTick()
-  scrollToBottom()
+    // Deliberately not awaited: the answer belongs to the thread from here on,
+    // and this page is free to be left, or unmounted, while it arrives.
+    void chatStream.start({
+      conversationId: id,
+      question,
+      // The case view, not the progress view: the thread is what to come back to.
+      returnTo: `/cases/${route.params.id}`,
+      attachments: attached,
+      onUpgrade: handleUpgradeRequired,
+    })
+
+    await nextTick()
+    scrollToBottom()
+  } finally {
+    sendStarting.value = false
+  }
 }
 
 /**
@@ -1188,40 +1208,15 @@ watch(
 <template>
   <div class="flex h-dvh flex-col overflow-hidden">
     <!--
-      The same shell as the chat page: the columns are detached panels floating
-      on the page ground with a gutter between them, so fullscreen drops the
-      padding rather than leaving one panel inset inside a blank frame.
+      The same shell as the chat page: sidebar and main panel sit flush,
+      edge-to-edge, with a border-r as the only divider between them. The
+      overview band is a plain strip above the chat section only — it does not
+      span the sidebar or the task/citations rails — so it reads as the chat's
+      own toolbar rather than a page-wide bar.
     -->
-    <!--
-      The overview band sits above the workspace, spanning its full width: it
-      owns case identity, the deadline (and the calendar behind it) and the
-      people, so the left rail is left with just its separated sections.
-    -->
-    <div v-if="caseDetail && !loading" class="px-4 pt-4 md:px-6 lg:px-6">
-      <CaseDetailHeader
-        :case="caseDetail"
-        :view="view"
-        :panel-toggles="panelToggles"
-        :calendar-events="scheduleEvents"
-        :fullscreen="fullscreen"
-        @set-view="setView"
-        @draft="pickerOpen = true"
-        @edit="openEdit"
-        @archive="archiveCase"
-        @restore="restoreCase"
-        @toggle-fullscreen="toggleFullscreen"
-        @change-status="changeStatus"
-      />
-      <CaseDigest
-        :digest="caseDetail.digest"
-        :generated-at="caseDetail.digest_generated_at"
-        class="mt-3"
-      />
-    </div>
-
-    <div class="flex min-h-0 flex-1" :class="fullscreen ? '' : 'gap-3 p-4 md:px-6 lg:gap-4 lg:p-6'">
+    <div class="flex min-h-0 flex-1">
     <CaseSidebar
-      v-if="caseDetail && !loading && !fullscreen"
+      v-if="caseDetail && !loading && !fullscreen && !sidebarCollapsed"
       :threads="threads"
       :active-conversation-id="activeConversationId"
       :creating="creating"
@@ -1239,6 +1234,7 @@ watch(
       @create-thread="createThread"
       @upload="uploadCaseDocuments"
       @rejected-upload="reportRejectedUpload"
+      @blocked-pdf-upload="reportBlockedPdfUpload"
       @view-document="viewingDocument = $event"
        @download-document="downloadDocument($event)"
       @delete-document="removeCaseDocument"
@@ -1250,10 +1246,29 @@ watch(
       @update-tags="saveCaseTags"
     />
 
+    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+    <div v-if="caseDetail && !loading" class="shrink-0">
+      <CaseDetailHeader
+        :case="caseDetail"
+        :view="view"
+        :panel-toggles="panelToggles"
+        :calendar-events="scheduleEvents"
+        :fullscreen="fullscreen"
+        :sidebar-collapsed="sidebarCollapsed"
+        @set-view="setView"
+        @draft="pickerOpen = true"
+        @edit="openEdit"
+        @archive="archiveCase"
+        @restore="restoreCase"
+        @toggle-fullscreen="toggleFullscreen"
+        @toggle-sidebar="toggleSidebar"
+        @change-status="changeStatus"
+      />
+    </div>
+
     <section
       ref="mainChatEl"
-      class="surface flex min-w-0 flex-1 flex-col overflow-hidden"
-      :class="fullscreen ? 'rounded-none border-0 shadow-none' : ''"
+      class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
     >
       <template v-if="loading">
         <div class="space-y-3 p-6">
@@ -1357,75 +1372,6 @@ watch(
           @update-tags="saveCaseTags"
         />
 
-        <div class="relative min-h-0 flex-1">
-          <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto">
-            <ChatEmptyState
-              v-if="chatMessages.length === 0"
-              title="Work on this case"
-              :description="emptyStateDescription"
-              eyebrow="Batayan AI"
-            >
-              <ChatStarters :starters="starters" @select="selectPrompt" />
-              <Button v-if="!readOnly" variant="outline" class="max-w-full gap-2 text-left" @click="pickerOpen = true">
-                <FileTextIcon class="size-4 shrink-0 text-primary" />
-                <span class="min-w-0 truncate text-xs">Draft a letter from a template</span>
-              </Button>
-            </ChatEmptyState>
-
-            <ChatThread
-              v-else
-              ref="threadRef"
-              :messages="chatMessages"
-              :streaming="streaming"
-              :status-label="statusLabelNow"
-              :topic="currentTopic"
-              :current-status="currentStatus"
-              :activity-steps="activitySteps"
-              :awaiting-intake="awaitingIntake"
-              :intake-dismissed="intakeDismissed"
-              :has-intake-fields="intakeFields !== null"
-              :intake-fields="intakeFields"
-              :intake-defaults="intakeDefaults"
-              :intake-draft="turn?.intakeDraft ?? {}"
-              :choice-questions="choiceQuestions"
-              :last-question="lastQuestion"
-              :busy="busy"
-              :stream-error="streamError"
-              :display-content="getDisplayedContent"
-              :search-query="searchQuery"
-              :active-search-id="searchActiveId"
-              :active-search-occurrence="searchActiveOccurrence"
-              :experience-level="experienceLevel"
-              :suggestion-context="suggestionContext"
-              :letter-draft="turn?.letterDraft ?? null"
-              :web-search="turn?.webSearch ?? null"
-              :stream-notices="turn?.notices ?? []"
-              :receipts="turn?.receipts ?? []"
-              :turn-started-at="turn?.startedAt ?? null"
-              @markdown-click="handleMarkdownClick"
-              @rate="rateMessage"
-              @retry="retryLast"
-              @regenerate="(question: string) => send(question)"
-              @open-panel="openReceiptPanel"
-              @abandon-intake="abandonIntake"
-              @reopen-intake="reopenIntake"
-              @submit-intake="handleIntakeSubmit"
-              @cancel-intake="handleIntakeCancel"
-              @save-intake-draft="saveIntakeDraft"
-              @answer-choice="handleChoiceAnswer"
-              @select-suggestion="(prompt) => input = prompt"
-            />
-          </div>
-
-          <ChatScrollToBottom :container="messagesContainer" />
-
-          <!--
-            Anchored to the conversation column, not the viewport, so it stays
-            clear of whichever panel is open in the right rail.
-          -->
-          <AdvisoryReview ref="advisoryReviewRef" :conversation-id="conversationId" :readonly="readOnly" />
-        </div>
-
         <div v-if="searchOpen" class="flex items-center gap-2 border-b px-3 py-2">
           <ChatSearchBar
             ref="searchBarRef"
@@ -1436,32 +1382,127 @@ watch(
           />
         </div>
 
-        <div class="border-t px-3 py-3">
-          <div class="mx-auto w-full max-w-3xl">
-            <ChatComposer
-              ref="composerRef"
-              v-model="input"
-              :disabled="busy"
-              :readonly="readOnly"
-              :streaming="streaming"
-              :attachments="attachmentsState.attachments.value"
-              :can-send="conversationId !== null && !attachmentsState.pending.value"
-              :can-attach="caseDetail !== null && !readOnly"
-              :placeholder="readOnly ? 'This case is closed — you can read it but not message it.' : 'Ask about this case, draft a letter, or summarize the facts…'"
-              help-context="case"
-              @send="send()"
-              @stop="stopStreaming"
-              @attach="attachmentsState.add"
-              @remove-attachment="attachmentsState.remove"
-            />
+        <div class="relative min-h-0 flex-1">
+          <!--
+            Empty thread: the greeting and a full-size composer sit together,
+            centered — the same shell as the chat page's own empty state.
+          -->
+          <div v-if="chatMessages.length === 0" class="absolute inset-0 flex items-center justify-center overflow-y-auto px-4 py-10">
+            <div class="w-full max-w-4xl">
+              <ChatEmptyState title="Work on this case" :description="emptyStateDescription">
+                <ChatStarters :starters="starters" @select="selectPrompt" />
+              </ChatEmptyState>
+
+              <div class="mt-7 w-full">
+                <ChatComposer
+                  ref="composerRef"
+                  v-model="input"
+                  large
+                  :disabled="busy"
+                  :readonly="readOnly"
+                  :streaming="streaming"
+                  :attachments="attachmentsState.attachments.value"
+                  :can-send="conversationId !== null && !attachmentsState.pending.value"
+                  :can-attach="caseDetail !== null && !readOnly"
+                  :placeholder="readOnly ? 'This case is closed — you can read it but not message it.' : 'Ask about this case, draft a letter, or summarize the facts…'"
+                  help-context="case"
+                  @send="send()"
+                  @stop="stopStreaming"
+                  @attach="attachmentsState.add"
+                  @remove-attachment="attachmentsState.remove"
+                />
+              </div>
+              <p v-if="!conversationId" class="mt-2 text-center text-xs text-muted-foreground">
+                This case has no conversation thread yet.
+              </p>
+            </div>
           </div>
-          <p v-if="!conversationId" class="mx-auto mt-1 max-w-3xl text-center text-xs text-muted-foreground">
-            This case has no conversation thread yet.
-          </p>
+
+          <template v-else>
+            <div ref="messagesContainer" class="absolute inset-0 overflow-y-auto pb-36">
+              <ChatThread
+                ref="threadRef"
+                :messages="chatMessages"
+                :streaming="streaming"
+                :status-label="statusLabelNow"
+                :topic="currentTopic"
+                :current-status="currentStatus"
+                :activity-steps="activitySteps"
+                :awaiting-intake="awaitingIntake"
+                :intake-dismissed="intakeDismissed"
+                :has-intake-fields="intakeFields !== null"
+                :intake-fields="intakeFields"
+                :intake-defaults="intakeDefaults"
+                :intake-draft="turn?.intakeDraft ?? {}"
+                :choice-questions="choiceQuestions"
+                :last-question="lastQuestion"
+                :busy="busy"
+                :stream-error="streamError"
+                :display-content="getDisplayedContent"
+                :search-query="searchQuery"
+                :active-search-id="searchActiveId"
+                :active-search-occurrence="searchActiveOccurrence"
+                :experience-level="experienceLevel"
+                :suggestion-context="suggestionContext"
+                :letter-draft="turn?.letterDraft ?? null"
+                :web-search="turn?.webSearch ?? null"
+                :stream-notices="turn?.notices ?? []"
+                :receipts="turn?.receipts ?? []"
+                :turn-started-at="turn?.startedAt ?? null"
+                @markdown-click="handleMarkdownClick"
+                @rate="rateMessage"
+                @retry="retryLast"
+                @regenerate="(question: string) => send(question)"
+                @open-panel="openReceiptPanel"
+                @abandon-intake="abandonIntake"
+                @reopen-intake="reopenIntake"
+                @submit-intake="handleIntakeSubmit"
+                @cancel-intake="handleIntakeCancel"
+                @save-intake-draft="saveIntakeDraft"
+                @answer-choice="handleChoiceAnswer"
+                @select-suggestion="(prompt) => input = prompt"
+              />
+            </div>
+
+            <ChatScrollToBottom :container="messagesContainer" />
+
+            <!--
+              Anchored to the conversation column, not the viewport, so it stays
+              clear of whichever panel is open in the right rail.
+            -->
+            <AdvisoryReview ref="advisoryReviewRef" :conversation-id="conversationId" :readonly="readOnly" />
+
+            <!--
+              The composer floats over the thread rather than sitting in a
+              bordered footer row — same treatment as the chat page.
+            -->
+            <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-3 pb-4 sm:px-6">
+              <div class="h-16 w-full bg-gradient-to-t from-background via-background/85 to-transparent" />
+              <div class="pointer-events-auto -mt-16 w-full max-w-4xl">
+                <ChatComposer
+                  ref="composerRef"
+                  v-model="input"
+                  :disabled="busy"
+                  :readonly="readOnly"
+                  :streaming="streaming"
+                  :attachments="attachmentsState.attachments.value"
+                  :can-send="conversationId !== null && !attachmentsState.pending.value"
+                  :can-attach="caseDetail !== null && !readOnly"
+                  :placeholder="readOnly ? 'This case is closed — you can read it but not message it.' : 'Ask about this case, draft a letter, or summarize the facts…'"
+                  help-context="case"
+                  @send="send()"
+                  @stop="stopStreaming"
+                  @attach="attachmentsState.add"
+                  @remove-attachment="attachmentsState.remove"
+                />
+              </div>
+            </div>
+          </template>
         </div>
         </template>
       </template>
     </section>
+    </div>
 
     <div
       v-if="!fullscreen"
@@ -1524,6 +1565,7 @@ watch(
           @create-thread="createThread"
           @upload="uploadCaseDocuments"
           @rejected-upload="reportRejectedUpload"
+          @blocked-pdf-upload="reportBlockedPdfUpload"
           @view-document="(doc) => { mobileMatterOpen = false; viewingDocument = doc }"
        @download-document="downloadDocument($event)"
           @delete-document="removeCaseDocument"

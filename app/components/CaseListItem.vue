@@ -122,13 +122,10 @@ const peopleLabel = computed(() => {
         {{ props.case.last_message_snippet }}
       </p>
 
-      <CaseDigest
-        v-if="props.case.digest"
-        class="mt-2"
-        compact
-        :digest="props.case.digest"
-        :generated-at="props.case.digest_generated_at"
-      />
+      <!--
+        No inline digest here: the row stays scannable and the full digest
+        opens from the sparkles button via the digest dialog instead.
+      -->
 
       <!--
         Who is on the case closes the block, below the facts about it. It is a
@@ -195,13 +192,13 @@ const peopleLabel = computed(() => {
       <CaseStatusBadge :status="props.case.status" />
 
       <!--
-        Hidden on phones: the row already carries status and a chevron there,
-        and progress is one tap away inside the case.
+        Always rendered (not desktop-only): with no inline digest in the row,
+        this is the only way to reach the digest dialog on every viewport.
       -->
       <Button
         variant="ghost"
         size="icon-sm"
-        class="hidden text-muted-foreground transition-opacity sm:inline-flex lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
+        class="inline-flex text-muted-foreground transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
         :aria-label="`View digest for ${props.case.title}`"
         title="Digest"
         @click.stop="emit('digest', props.case.id)"
@@ -209,6 +206,10 @@ const peopleLabel = computed(() => {
         <SparklesIcon />
       </Button>
 
+      <!--
+        Hidden on phones: the row already carries status and a chevron there,
+        and progress is one tap away inside the case.
+      -->
       <Button
         variant="ghost"
         size="icon-sm"

@@ -211,9 +211,37 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     const turn = turnFor(conversationId)
     if (!turn) return serverMessages
 
-    const pending = turnMessages(turn).filter(
-      (local) => !serverMessages.some((saved) => saved.role === local.role && saved.content === local.content),
-    )
+    const pending = turnMessages(turn).filter((local) => {
+      if (serverMessages.some((saved) => saved.id === local.id)) return false
+
+      // The user row is available as soon as the server starts the turn. Its
+      // body is the only stable fallback before the terminal frame carries its
+      // id (template directives may be normalized by the server, so compare
+      // whitespace-insensitively here).
+      if (local.role === 'user') {
+        const normalized = local.content.trim().replace(/\s+/g, ' ')
+
+        return !serverMessages.some(
+          (saved) => saved.role === 'user'
+            && saved.content.trim().replace(/\s+/g, ' ') === normalized,
+        )
+      }
+
+      // Never hide the current live assistant bubble because an older answer
+      // happens to have the same text. Prior messages belong to an earlier
+      // turn, so they must still reconcile against a refreshed server thread
+      // while this new turn is streaming; otherwise a choice/intake
+      // continuation can render the earlier answer twice.
+      const isCurrentAssistant = local === turn.assistantMessage
+      if (isCurrentAssistant && turn.finishedAt === null) return true
+
+      const normalized = local.content.trim().replace(/\s+/g, ' ')
+
+      return !serverMessages.some(
+        (saved) => saved.role === 'assistant'
+          && saved.content.trim().replace(/\s+/g, ' ') === normalized,
+      )
+    })
 
     return pending.length > 0 ? [...serverMessages, ...pending] : serverMessages
   }
@@ -475,9 +503,23 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       void refreshAdvisories(turn)
       completeStep(turn, 'flag_advisories')
     } else if (event === 'done') {
+      // Laravel persists both messages before the terminal frame. Carry those
+      // durable ids onto the optimistic copies so a post-stream refresh can
+      // identify the exact rows it is replacing, even when persistence has
+      // trimmed or otherwise normalized the answer text.
+      if (typeof payload.user_message_id === 'string' && payload.user_message_id !== '') {
+        turn.userMessage.id = payload.user_message_id
+      }
+      if (typeof payload.message_id === 'string' && payload.message_id !== '' && turn.assistantMessage) {
+        turn.assistantMessage.id = payload.message_id
+      }
       turn.completed = payload.ok === true && turn.error === ''
       if (!turn.completed && !turn.error) turn.error = 'The response could not be completed. Your partial answer is kept below.'
-      streamers.get(turn.conversationId)?.flush()
+      // A successful `done` is not a reason to bypass the text streamer's
+      // animation. The reader loop waits for its queue to drain below. Failed
+      // turns still flush so a partial answer is never stranded behind a
+      // cancelled animation frame.
+      if (!turn.completed) streamers.get(turn.conversationId)?.flush()
       resetUnfinishedLetterDraft(turn)
       completeActiveSteps(turn)
       turn.webSearch = null
@@ -597,6 +639,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
     controllers.set(conversationId, controller)
 
     live.streaming = true
+    const requestId = crypto.randomUUID()
 
     try {
       const response = await fetch(`${apiBase}/api/conversations/${conversationId}/messages`, {
@@ -607,6 +650,7 @@ export const useChatStreamStore = defineStore('chatStream', () => {
         }),
         body: JSON.stringify({
           message: trimmed,
+          request_id: requestId,
           attachment_ids: attachments.map((a) => a.id),
         }),
         signal: controller.signal,
@@ -649,7 +693,8 @@ export const useChatStreamStore = defineStore('chatStream', () => {
       buffer += decoder.decode()
       if (buffer.trim()) handleFrame(live, buffer)
 
-      streamer.flush()
+      if (live.completed && !live.error) await streamer.drained()
+      else streamer.flush()
       if (!live.completed && !live.error) {
         live.error = 'The connection ended before the response completed. Your partial answer is kept below.'
       }

@@ -14,7 +14,10 @@ import {
   MessageSquareIcon,
   MinimizeIcon,
   MoreHorizontalIcon,
+  PanelLeftCloseIcon,
+  PanelLeftIcon,
   PencilIcon,
+  SparklesIcon,
   UserPlusIcon,
 } from '@lucide/vue'
 import { CASE_STATUSES, type LegalCase } from '~/stores/cases'
@@ -50,6 +53,8 @@ const props = defineProps<{
   view: 'chat' | 'progress'
   panelToggles: PanelToggle[]
   fullscreen: boolean
+  /** Whether the case rail (threads/files/drafts) is collapsed. */
+  sidebarCollapsed: boolean
   /** Schedule items pinned to days: the case deadline plus due-dated tasks. */
   calendarEvents: ScheduleEvent[]
 }>()
@@ -61,12 +66,14 @@ const emit = defineEmits<{
   archive: []
   restore: []
   toggleFullscreen: []
+  toggleSidebar: []
   changeStatus: [status: LegalCase['status']]
 }>()
 
 const { formatShortDate, dueState } = useCasePresentation()
 
 const peopleOpen = ref(false)
+const digestOpen = ref(false)
 
 const archived = computed(() => !!props.case.archived_at)
 
@@ -114,7 +121,7 @@ const scheduleSummary = computed(() => {
 </script>
 
 <template>
-  <header class="surface flex flex-col">
+  <header class="flex flex-col">
     <!-- Row 1 — identity. Drops out in fullscreen, where the thread is the point. -->
     <div
       v-if="!props.fullscreen"
@@ -249,7 +256,19 @@ const scheduleSummary = computed(() => {
     </div>
 
     <!-- Row 2 — the control bar, always on. -->
-    <div class="flex flex-wrap items-center gap-2 px-3 py-2" :class="props.fullscreen ? '' : 'border-t'">
+    <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+      <button
+        type="button"
+        :aria-pressed="props.sidebarCollapsed"
+        :aria-label="props.sidebarCollapsed ? 'Show case rail' : 'Collapse case rail'"
+        :title="props.sidebarCollapsed ? 'Show case rail' : 'Collapse case rail'"
+        class="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:size-8"
+        @click="emit('toggleSidebar')"
+      >
+        <PanelLeftIcon v-if="props.sidebarCollapsed" class="size-4" />
+        <PanelLeftCloseIcon v-else class="size-4" />
+      </button>
+
       <div class="flex items-center rounded-lg border bg-muted/40 p-0.5" role="tablist" aria-label="Case view">
         <button
           type="button"
@@ -274,6 +293,18 @@ const scheduleSummary = computed(() => {
           Progress
         </button>
       </div>
+
+      <button
+        type="button"
+        :aria-pressed="digestOpen"
+        aria-label="Case digest"
+        title="Case digest"
+        class="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:h-8 md:min-h-0"
+        @click="digestOpen = true"
+      >
+        <SparklesIcon class="size-4" />
+        <span class="hidden sm:inline">Digest</span>
+      </button>
 
       <div class="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
         <button
@@ -337,6 +368,14 @@ const scheduleSummary = computed(() => {
       :can-manage="props.case.can_manage_assignees"
       :readonly="readOnly"
       @close="peopleOpen = false"
+    />
+
+    <CaseDigestDialog
+      v-if="digestOpen"
+      :digest="props.case.digest"
+      :generated-at="props.case.digest_generated_at"
+      :show-open-action="false"
+      @close="digestOpen = false"
     />
   </header>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertCircleIcon, ArrowUpIcon, Loader2Icon, LockKeyholeIcon, PaperclipIcon, SparklesIcon, SquareIcon, XIcon } from '@lucide/vue'
+import { AlertCircleIcon, ArrowUpIcon, Loader2Icon, PaperclipIcon, SparklesIcon, SquareIcon, XIcon } from '@lucide/vue'
 import type { ChatAttachment } from '~/composables/useChatAttachments'
 import ChatHelpGuide from '~/components/chat/ChatHelpGuide.vue'
 import { isPdfDocument } from '~/composables/useDocumentFile'
@@ -325,10 +325,7 @@ const sendCircleClass = computed(() => (props.large ? 'size-11 rounded-full' : '
      <p v-else-if="attachmentPending" id="chat-composer-status" aria-live="polite" class="mt-1.5 px-1 text-center text-[11px] text-muted-foreground">
        Preparing your attachment — you can send as soon as it is ready.
      </p>
-     <p v-else-if="!canUsePdf && canAttach" id="chat-composer-status" class="mt-1.5 flex items-center justify-center gap-1 px-1 text-center text-[11px] text-muted-foreground">
-       <LockKeyholeIcon class="size-3" /> PDF attachments are available on paid plans.
-     </p>
-    <p class="mt-1.5 flex items-center justify-center gap-1 px-1 text-center text-[11px] text-muted-foreground/80">
+    <p class="mt-8 flex items-center justify-center gap-1 px-1 text-center text-[11px] text-muted-foreground/80">
       <SparklesIcon class="size-3 shrink-0" />
       Batayan AI can make mistakes — verify important legal details before acting on them.
     </p>

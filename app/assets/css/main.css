@@ -426,6 +426,7 @@ body {
 
 .markdown-body a {
   color: var(--primary);
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -979,8 +980,12 @@ body {
  * next section by, which is not enough at a glance on a page of dense text.
  */
 .batayan-prose :is(h1, h2) {
-  padding-block-end: 0.3em;
+  padding-block-end: 0.6em;
   border-block-end: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+.batayan-prose > :is(h1, h2) + * {
+  margin-block-start: 1.25em;
 }
 
 .batayan-prose ul,
@@ -1019,7 +1024,7 @@ body {
 }
 
 .batayan-prose hr {
-  margin-block: 1.5em;
+  margin-block: 2.5em;
   border: 0;
   border-block-start: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
 }
@@ -1303,6 +1308,7 @@ body {
 
 .batayan-prose a {
   color: var(--primary);
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 2px;
   text-decoration-color: color-mix(in oklab, var(--primary) 40%, transparent);
@@ -1310,6 +1316,16 @@ body {
 
 .batayan-prose a:hover {
   text-decoration-color: var(--primary);
+}
+
+.batayan-prose a .link-icon,
+.markdown-body a .link-icon {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-inline-start: 0.25em;
+  vertical-align: -0.1em;
+  flex-shrink: 0;
 }
 
 /*

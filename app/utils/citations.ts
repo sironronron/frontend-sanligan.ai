@@ -22,9 +22,47 @@ export function identityOf(source: ChatSource): string | null {
     : (source.url ? `legal-url:${source.url}` : (source.id ? `legal-chunk:${source.id}` : null))
 }
 
+const ASSET_EXTENSIONS = /\.(webp|png|jpe?g|gif|svg|ico|avif|bmp|tiff?|mp3|mp4|webm|mov|css|js|woff2?)$/i
+const REDIRECT_HOSTS = ['vertexaisearch.cloud.google.com', 'www.google.com', 'news.google.com', 'duckduckgo.com']
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Web results that are not documents a reader can check: images and other
+ * assets, and search-engine redirects that were never resolved to the page.
+ * The API no longer stores these, but answers saved before that still carry
+ * them.
+ */
+function isUncitableWeb(source: ChatSource): boolean {
+  if (source.type !== 'web' || !source.url) return false
+
+  try {
+    if (ASSET_EXTENSIONS.test(new URL(source.url).pathname)) return true
+  } catch {
+    return false
+  }
+
+  const host = hostOf(source.url)
+  return host !== null && REDIRECT_HOSTS.includes(host)
+}
+
+/** A site name a reader recognizes: the host without "www.". */
+function siteOf(source: ChatSource): string | null {
+  const host = source.domain || (source.url ? hostOf(source.url) : null)
+  return host ? host.replace(/^www\./i, '') : null
+}
+
 function labelOf(source: ChatSource): string {
   if (source.type === 'web') {
-    return source.title || source.label || source.domain || source.url || 'Web result'
+    // The title of the page, never its address: a URL is not something a
+    // reader can recognize a source by.
+    return source.title || source.label || siteOf(source) || 'Web result'
   }
   if (source.type === 'standard') {
     return source.label || source.standard_code || source.title || 'International standard'
@@ -34,6 +72,7 @@ function labelOf(source: ChatSource): string {
 
 /** Where a citation can be read in-app, if it can be at all. */
 function readableIdOf(source: ChatSource): string | null {
+  if (source.type === 'web') return source.url ?? null
   if (source.type === 'document') return source.document_id ?? null
   if (source.type === 'legal' || source.type === 'standard') return source.page_id ?? null
   return null
@@ -86,6 +125,8 @@ export function collectCitations(messages: ChatMessage[]): CitationEntry[] {
     if (message.role !== 'assistant') continue
 
     for (const source of message.sources ?? []) {
+      if (isUncitableWeb(source)) continue
+
       const identity = identityOf(source)
       if (identity === null) continue
 

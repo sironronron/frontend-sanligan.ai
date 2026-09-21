@@ -179,7 +179,7 @@ onMounted(() => {
 
 <template>
   <Sidebar variant="sidebar" collapsible="icon" side="left">
-    <SidebarHeader class="pr-12 md:pr-2">
+    <SidebarHeader class="pr-12 md:pr-2 group-data-[collapsible=icon]:pr-0">
       <!-- The brand mark, not the account — the account lives at the bottom of the rail. -->
       <SidebarMenu>
         <SidebarMenuItem>
