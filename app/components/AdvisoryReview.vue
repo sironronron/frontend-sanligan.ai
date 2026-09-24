@@ -179,40 +179,45 @@ watch(() => props.conversationId, () => {
 
 <template>
   <!--
-    Anchored inside the conversation column rather than to the viewport, so it
-    never lands on top of the tasks or sources rail on a wide screen.
+    Rendered in-flow above the composer (same bottom stack, outside the
+    chatbox), so a taller composer can never cover it. The wrapper aligns
+    the pill to the end and leaves a generous gap to the chatbox below.
   -->
   <Transition name="advisory-pill">
-    <button
+    <div
       v-if="visible && !open"
-      type="button"
-      class="absolute bottom-16 right-4 z-20 flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium shadow-lg backdrop-blur transition-colors"
-      :class="openItems.length > 0
-        ? 'border-destructive/25 bg-card/95 text-foreground hover:bg-accent'
-        : 'border-border bg-card/90 text-muted-foreground hover:bg-accent'"
-      :aria-label="`Review what to watch out for: ${pillLabel}`"
-      @click="open = true"
+      class="flex justify-end pb-6"
     >
-      <span class="relative flex size-4 items-center justify-center">
-        <span
-          v-if="highCount > 0"
-          class="absolute size-full animate-ping rounded-full bg-destructive/25"
-          aria-hidden="true"
-        />
-        <TriangleAlertIcon
-          class="size-4"
-          :class="openItems.length > 0 ? 'text-destructive' : 'text-muted-foreground'"
-        />
-      </span>
-      <span>{{ pillLabel }}</span>
-      <Badge
-        v-if="openItems.length > 0"
-        variant="secondary"
-        class="px-1.5 py-0 text-[10px] tabular-nums"
+      <button
+        type="button"
+        class="flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium shadow-lg backdrop-blur transition-colors"
+        :class="openItems.length > 0
+          ? 'border-destructive/25 bg-card/95 text-foreground hover:bg-accent'
+          : 'border-border bg-card/90 text-muted-foreground hover:bg-accent'"
+        :aria-label="`Review what to watch out for: ${pillLabel}`"
+        @click="open = true"
       >
-        {{ openItems.length }}
-      </Badge>
-    </button>
+        <span class="relative flex size-4 items-center justify-center">
+          <span
+            v-if="highCount > 0"
+            class="absolute size-full animate-ping rounded-full bg-destructive/25"
+            aria-hidden="true"
+          />
+          <TriangleAlertIcon
+            class="size-4"
+            :class="openItems.length > 0 ? 'text-destructive' : 'text-muted-foreground'"
+          />
+        </span>
+        <span>{{ pillLabel }}</span>
+        <Badge
+          v-if="openItems.length > 0"
+          variant="secondary"
+          class="px-1.5 py-0 text-[10px] tabular-nums"
+        >
+          {{ openItems.length }}
+        </Badge>
+      </button>
+    </div>
   </Transition>
 
   <Teleport to="body">

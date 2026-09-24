@@ -186,7 +186,7 @@ onMounted(() => {
           <SidebarMenuButton as-child :is-active="isActive('/chat')" tooltip="Batayan">
             <NuxtLink to="/chat">
               <span class="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-                <BatayanMark class="size-4" />
+                <BatayanMark class="size-5" slab-class="fill-peach dark:fill-current" />
               </span>
               <span class="font-heading font-semibold">Batayan</span>
             </NuxtLink>

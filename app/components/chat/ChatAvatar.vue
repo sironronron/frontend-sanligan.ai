@@ -24,17 +24,7 @@ defineProps<{
       class="relative flex size-7 items-center justify-center rounded-[9px] bg-primary text-primary-foreground shadow-sm"
       :class="working ? 'batayan-breathe' : ''"
     >
-      <!-- The Batayan mark: a foundation stone, drawn rather than imported so
-           it inherits currentColor and stays crisp at 28px. -->
-      <svg viewBox="0 0 24 24" class="size-4" fill="none" aria-hidden="true">
-        <path
-          d="M4 17.5 12 21l8-3.5M4 12.5 12 16l8-3.5M12 3 4 7.5 12 11l8-3.5L12 3Z"
-          stroke="currentColor"
-          stroke-width="1.7"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
+      <BatayanMark class="size-[18px]" slab-class="fill-peach dark:fill-current" />
     </span>
     <span class="sr-only">Batayan</span>
   </span>

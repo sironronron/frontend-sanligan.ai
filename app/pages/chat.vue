@@ -784,7 +784,7 @@ watch(activeId, async (id) => {
         </div>
 
         <template v-else>
-        <div ref="messagesContainer" data-tour="chat-sources" class="absolute inset-0 overflow-y-auto pb-36">
+        <div ref="messagesContainer" data-tour="chat-sources" class="absolute inset-0 overflow-y-auto pb-56">
         <ChatThread
           ref="threadRef"
           :messages="thread"
@@ -832,19 +832,16 @@ watch(activeId, async (id) => {
         <ChatScrollToBottom :container="messagesContainer" />
 
         <!--
-          Anchored to the conversation column, not the viewport, so it stays
-          clear of whichever panel is open in the right rail.
-        -->
-        <AdvisoryReview ref="advisoryReviewRef" :conversation-id="activeId" />
-
-        <!--
           The composer floats over the thread rather than sitting in a bordered
           footer row: a gradient wash behind it keeps the last lines of an
-          answer legible as they scroll underneath.
+          answer legible as they scroll underneath. The advisories pill lives
+          in this same bottom stack, in-flow above the chatbox, so a taller
+          composer can never cover it.
         -->
         <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col items-center px-3 pb-4 sm:px-6">
           <div class="h-16 w-full bg-gradient-to-t from-background via-background/85 to-transparent" />
           <div data-tour="chat-composer" class="pointer-events-auto -mt-16 w-full max-w-4xl">
+            <AdvisoryReview ref="advisoryReviewRef" :conversation-id="activeId" />
             <ChatComposer
               ref="composerRef"
               v-model="input"

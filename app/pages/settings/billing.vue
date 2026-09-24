@@ -164,19 +164,31 @@ function formatResetDate(value: string | null) {
 const priceLabel = computed(() => {
   const plan = sub.value?.plan
   if (!plan) return ''
-  return sub.value?.interval === 'annual' ? plan.price_annual_label : plan.price_label
+  const annual = sub.value?.interval === 'annual'
+
+  // A founding member keeps the founding price across plan changes.
+  if (sub.value?.founding_member && plan.founding_price_label !== null) {
+    return annual ? plan.founding_price_annual_label : plan.founding_price_label
+  }
+
+  return annual ? plan.price_annual_label : plan.price_label
 })
 
 /**
  * A contract-priced plan is invoiced outside the app, so the card states the
  * arrangement rather than a per-month figure the subscription does not carry.
+ * The annual label is the yearly charge, so it is never quoted "per month".
  */
 const billingSummary = computed(() => {
   if (sub.value?.plan?.contact_sales) {
     return 'Priced by contract · invoiced by your account manager'
   }
 
-  return `${priceLabel.value} per month · billed ${sub.value?.interval === 'annual' ? 'yearly' : 'monthly'}`
+  const summary = sub.value?.interval === 'annual'
+    ? `${priceLabel.value} billed yearly`
+    : `${priceLabel.value} per month · billed monthly`
+
+  return sub.value?.founding_member ? `${summary} · founding-member price` : summary
 })
 
 function formatPesos(value: number) {

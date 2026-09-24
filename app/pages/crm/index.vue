@@ -13,6 +13,9 @@ const editItem = ref<PipelineItem | null>(null)
 const history = ref<PipelineItem | null>(null)
 const historyRows = ref<Awaited<ReturnType<typeof store.fetchHistory>>>([])
 const historyLoading = ref(false)
+const firstUse = ref(false)
+const firstUseTemplate = ref<string | undefined>()
+const provisionError = ref<unknown>(null)
 const offline = ref(false)
 const announcement = ref('')
 const access = ref<'loading' | 'ready' | 'error' | 'unauthorized' | 'forbidden'>('loading')
@@ -30,6 +33,12 @@ function setOffline() {
 async function load() {
   try {
     await store.fetchPipelines()
+    if (!store.pipelines.length) {
+      firstUse.value = true
+      await store.fetchTemplates()
+      access.value = 'ready'
+      return
+    }
     if (!selectedId.value && store.pipelines[0]) selectedId.value = store.pipelines[0].id
     if (pipeline.value) await store.fetchItems(pipeline.value.id)
     access.value = 'ready'
@@ -37,6 +46,21 @@ async function load() {
     const status = statusOf(error)
     access.value = status === 401 ? 'unauthorized' : status === 403 ? 'forbidden' : 'error'
     offline.value = !status
+  }
+}
+
+async function provision() {
+  provisionError.value = null
+  try {
+    const result = await store.provisionPipeline(firstUseTemplate.value)
+    firstUse.value = false
+    selectedId.value = result.pipeline.id
+    await store.fetchPipelines()
+    announcement.value = result.replay ? 'This intake pipeline was already set up. No duplicate was created.' : 'Your intake pipeline is configured.'
+    await store.fetchItems(result.pipeline.id)
+  } catch (error) {
+    provisionError.value = error
+    if (statusOf(error) === 422) await store.fetchTemplates().catch(() => undefined)
   }
 }
 
@@ -135,7 +159,11 @@ async function openHistory(item: PipelineItem) {
       <h2 class="text-lg font-semibold">Pipelines could not load</h2>
       <Button variant="outline" class="mt-5 min-h-11" @click="load">Retry</Button>
     </div>
-    <template v-else-if="!store.pipelines.length">
+     <template v-else-if="firstUse">
+       <PipelineTemplatePicker :templates="store.templates" :loading="store.templatesLoading" :error="store.templatesError || provisionError" :forbidden="access === 'forbidden'" :busy="store.saving" submit-label="Set up intake" @select="firstUseTemplate = $event" @retry="load" @confirm="provision" />
+       <p class="mt-3 text-center text-sm text-muted-foreground">You can leave this screen and create a pipeline explicitly from Pipeline settings.</p>
+     </template>
+     <template v-else-if="!store.pipelines.length">
       <EmptyState :icon="InboxIcon" title="No intake pipeline yet" description="Create a pipeline and add stages to start tracking intake progress." />
       <div class="mt-4 text-center"><NuxtLink to="/crm/pipelines" class="inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">Create pipeline</NuxtLink></div>
     </template>

@@ -9,6 +9,8 @@ export interface PipelineStage {
   outcome_kind: PipelineOutcome
   archived_at: string | null
 }
+export interface PipelineTemplateStage { name: string; outcome_kind: PipelineOutcome; position: number }
+export interface PipelineTemplate { template_key: string; name: string; description: string; stages: PipelineTemplateStage[] }
 
 export interface PipelineCapabilities { update?: boolean; archive?: boolean; restore?: boolean; configure_stages?: boolean }
 export interface Pipeline {
@@ -17,6 +19,8 @@ export interface Pipeline {
   organization_id: string | null
   owner_id: string
   is_default: boolean
+  template_key: string | null
+  auto_provisioned: boolean
   archived_at: string | null
   stages: PipelineStage[]
   capabilities?: PipelineCapabilities
@@ -53,6 +57,6 @@ export interface StageHistoryEntry {
 }
 
 export interface PipelineItemInput { client_id: string; pipeline_id: string; stage_id: string; title: string; source?: string | null; note?: string | null; next_action_at?: string | null }
-export interface PipelineInput { name: string; description?: string | null }
+export interface PipelineInput { name?: string; description?: string | null; template_key?: string }
 export interface StageInput { name: string; outcome_kind: PipelineOutcome }
 export interface PipelinePagination { current_page: number; last_page: number; per_page: number; total: number }

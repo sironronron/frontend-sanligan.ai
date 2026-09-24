@@ -37,6 +37,13 @@ export interface Plan {
   /** Null means the plan sells no extra seats — not that they are free. */
   seat_price: number | null
   seat_price_label: string | null
+  /** The founding-member price of this tier, in centavos; null on contact-sales plans. */
+  founding_price: number | null
+  founding_price_label: string | null
+  founding_price_annual: number | null
+  founding_price_annual_label: string | null
+  founding_seat_price: number | null
+  founding_seat_price_label: string | null
   limits: {
     active_cases: number | null
     documents_uploaded: number | null
@@ -109,6 +116,18 @@ export interface TopUpOptions {
 
 export type BillingInterval = 'monthly' | 'annual'
 
+/**
+ * The founding-member offer: the first `slots_total` subscribers pay
+ * `discount_percent` off any plan for as long as they stay subscribed.
+ * Checkout decides who gets the price; this only says whether it is on offer.
+ */
+export interface FoundingOffer {
+  open: boolean
+  slots_total: number
+  slots_remaining: number
+  discount_percent: number
+}
+
 export interface Subscription {
   id: string
   organization_id: string | null
@@ -122,6 +141,8 @@ export interface Subscription {
   current_period_start: string | null
   current_period_end: string | null
   cancelled_at: string | null
+  /** Billed at the founding-member price, including after plan changes. */
+  founding_member: boolean
   trial: {
     /** Gate on this, not on `status`: a lapsed trial keeps status `trialing`. */
     on_trial: boolean
@@ -169,6 +190,7 @@ export const useBillingStore = defineStore('billing', () => {
   // Ships with the plans so the labels live in one place — the same place that
   // enforces the features — rather than being retyped in each client.
   const featureCatalogue = ref<FeatureCatalogue>({})
+  const foundingOffer = ref<FoundingOffer | null>(null)
   const plansLoaded = ref(false)
   const subscription = ref<Subscription | null>(null)
   /**
@@ -183,14 +205,32 @@ export const useBillingStore = defineStore('billing', () => {
   const plansError = ref(false)
   const subscriptionError = ref(false)
 
+  /**
+   * Whether prices should be quoted at the founding-member rate for this
+   * account: it already is a founding member, or the offer still has places
+   * and the account is not yet paying (a trial converting counts as new).
+   */
+  const foundingPricing = computed(() => {
+    const sub = subscription.value
+    if (sub?.founding_member && sub.status !== 'cancelled') return true
+
+    const paying = sub !== null && sub.status !== 'cancelled' && !sub.trial.on_trial
+
+    return foundingOffer.value?.open === true && !paying
+  })
+
   async function fetchPlans(force = false, includeTrial = false) {
     if (plansLoaded.value && !force && (!includeTrial || trialPlan.value !== null)) return plans.value
     try {
       const endpoint = includeTrial ? '/plans?include_trial=1' : '/plans'
-      const { data, meta } = await api<{ data: Plan[]; meta?: { features?: FeatureCatalogue } }>(endpoint)
+      const { data, meta } = await api<{
+        data: Plan[]
+        meta?: { features?: FeatureCatalogue; founding_offer?: FoundingOffer }
+      }>(endpoint)
       trialPlan.value = data.find(plan => plan.slug === 'trial') ?? trialPlan.value
       plans.value = data.filter(plan => plan.slug !== 'trial').sort((a, b) => a.sort_order - b.sort_order)
       featureCatalogue.value = meta?.features ?? {}
+      foundingOffer.value = meta?.founding_offer ?? null
       plansError.value = false
     } catch {
       // Preserve the last good list so a transient failure never renders as
@@ -438,6 +478,8 @@ export const useBillingStore = defineStore('billing', () => {
     plans,
     trialPlan,
     featureCatalogue,
+    foundingOffer,
+    foundingPricing,
     plansLoaded,
     plansError,
     topUp,

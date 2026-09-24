@@ -201,12 +201,36 @@ function peso(centavos: number): string {
 
 /** The yearly charge, mirroring the API's fallback when no annual price is set. */
 function annualPrice(plan: Plan): number {
+  if (billing.foundingPricing && plan.founding_price_annual !== null) return plan.founding_price_annual
+
+  return listAnnualPrice(plan)
+}
+
+/** The yearly list price, before any founding-member discount. */
+function listAnnualPrice(plan: Plan): number {
   return plan.price_annual || plan.price * 12
+}
+
+/** The monthly charge this account would pay: the founding price while it applies. */
+function basePrice(plan: Plan): number {
+  if (billing.foundingPricing && plan.founding_price !== null) return plan.founding_price
+
+  return plan.price
+}
+
+/**
+ * The regular per-month figure, struck through beside the founding price so
+ * the discount is visible rather than asserted. Null when no discount applies.
+ */
+function listPriceFor(plan: Plan, interval: BillingInterval = activeInterval.value): string | null {
+  if (!billing.foundingPricing || plan.contact_sales || !isIntervalAvailable(plan, interval)) return null
+
+  return peso(interval === 'annual' ? listAnnualPrice(plan) / 12 : plan.price)
 }
 
 /** What one month costs on the given interval — annual spread over twelve. */
 function monthlyPrice(plan: Plan, interval: BillingInterval): number {
-  return interval === 'annual' ? annualPrice(plan) / 12 : plan.price
+  return interval === 'annual' ? annualPrice(plan) / 12 : basePrice(plan)
 }
 
 function isIntervalAvailable(plan: Plan, interval: BillingInterval): boolean {
@@ -226,7 +250,7 @@ function priceFor(plan: Plan, interval: BillingInterval = activeInterval.value) 
 
 /** The total charged when checkout completes, for the given interval. */
 function billedAmount(plan: Plan, interval: BillingInterval): number {
-  return interval === 'annual' ? annualPrice(plan) : plan.price
+  return interval === 'annual' ? annualPrice(plan) : basePrice(plan)
 }
 
 function billedLabel(plan: Plan, interval: BillingInterval = activeInterval.value) {
@@ -237,7 +261,7 @@ function billedLabel(plan: Plan, interval: BillingInterval = activeInterval.valu
 
 /** What the annual interval saves against paying monthly for a year. */
 function annualSavingsLabel(plan: Plan) {
-  return peso(plan.price * 12 - annualPrice(plan))
+  return peso(basePrice(plan) * 12 - annualPrice(plan))
 }
 
 function isPro(plan: Plan) {
@@ -290,7 +314,9 @@ function seatLines(plan: Plan): string[] {
 
   return [
     `${plan.included_seats} seats included`,
-    ...(plan.seat_price_label === null ? [] : [`Extra seats ${plan.seat_price_label}/mo each`]),
+    ...(plan.seat_price_label === null
+      ? []
+      : [`Extra seats ${billing.foundingPricing ? plan.founding_seat_price_label : plan.seat_price_label}/mo each`]),
   ]
 }
 
@@ -333,7 +359,9 @@ function seatCell(plan: Plan): Cell {
   if (plan.contact_sales) return 'By contract'
   if (plan.seat_price_label === null) return `${plan.included_seats}`
 
-  return `${plan.included_seats}, then ${plan.seat_price_label}`
+  const seatPrice = billing.foundingPricing ? plan.founding_seat_price_label : plan.seat_price_label
+
+  return `${plan.included_seats}, then ${seatPrice}`
 }
 
 /**
@@ -634,6 +662,10 @@ onMounted(async () => {
             <span class="ml-1 text-xs text-forest dark:text-peach">2 months free</span>
           </button>
         </div>
+        <FoundingOfferBanner
+          v-if="billing.foundingPricing && billing.foundingOffer?.open"
+          :offer="billing.foundingOffer"
+        />
       </div>
 
       <!--
@@ -752,7 +784,14 @@ onMounted(async () => {
                   stored ₱0 would be quoting a number nobody agreed to, so the
                   column says what is actually true and points at a conversation.
                 -->
-                <div class="mt-5 flex items-end justify-start gap-1.5">
+                <p
+                  v-if="listPriceFor(plan)"
+                  class="mt-5 text-[0.8125rem] leading-none line-through"
+                  :class="isPro(plan) ? 'text-cream/50' : 'text-muted-foreground'"
+                >
+                  <span class="sr-only">Regular price </span>{{ listPriceFor(plan) }}
+                </p>
+                <div class="flex items-end justify-start gap-1.5" :class="listPriceFor(plan) ? 'mt-1.5' : 'mt-5'">
                   <span
                     class="font-heading text-[1.75rem] font-medium leading-none tracking-tight"
                     :class="isPro(plan) ? 'text-cream' : 'text-foreground'"
