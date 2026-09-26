@@ -26,6 +26,34 @@ export default defineNuxtConfig({
 
   vite: {
     plugins: [tailwindcss()],
+    // Pre-bundle up front. Left to lazy discovery, Vite finds these in waves
+    // on the first page load after a cold start (e.g. `docker compose up`),
+    // re-optimizes mid-load, and answers the in-flight imports with
+    // "504 Outdated Optimize Dep" — the SPA never mounts and the page is blank
+    // until a manual reload.
+    optimizeDeps: {
+      include: [
+        '@lucide/vue',
+        '@supabase/supabase-js',
+        '@tiptap/core',
+        '@tiptap/extension-highlight',
+        '@tiptap/extension-image',
+        '@tiptap/extension-placeholder',
+        '@tiptap/pm/state',
+        '@tiptap/starter-kit',
+        '@tiptap/suggestion',
+        '@tiptap/vue-3',
+        '@vueuse/core',
+        'class-variance-authority',
+        'clsx',
+        'docx',
+        'pdfmake/build/pdfmake',
+        'pdfmake/build/vfs_fonts',
+        'reka-ui',
+        'tailwind-merge',
+        'vue-sonner',
+      ],
+    },
   },
 
   css: ['~/assets/css/main.css'],
@@ -43,6 +71,9 @@ export default defineNuxtConfig({
       // Where the contact-sales plans point. Configurable so the address can
       // move without a release.
       salesEmail: process.env.NUXT_PUBLIC_SALES_EMAIL || 'secretary@batayan.co',
+      // GA4 measurement ID, shared with the marketing site. Empty disables
+      // analytics entirely.
+      gaMeasurementId: process.env.NUXT_PUBLIC_GA_MEASUREMENT_ID || '',
     },
   },
 
@@ -51,7 +82,12 @@ export default defineNuxtConfig({
       title: 'Batayan',
       charset: 'utf-8',
       htmlAttrs: { lang: 'en' },
-      meta: [{ name: 'theme-color', content: '#1D4533' }],
+      meta: [
+        { name: 'theme-color', content: '#1D4533' },
+        // The marketing site (batayan.co) is the indexed surface; app screens
+        // are thin or private. /login and /register override this.
+        { name: 'robots', content: 'noindex, nofollow' },
+      ],
       link: [
         { rel: 'icon', href: '/favicon.ico', sizes: '32x32' },
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },

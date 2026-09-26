@@ -6,8 +6,16 @@ definePageMeta({
   layout: 'default',
 })
 
+useHead({
+  meta: [
+    { name: 'robots', content: 'index, follow' },
+    { name: 'description', content: 'Create your Batayan account and start a 14-day free trial. No credit card required.' },
+  ],
+})
+
 const auth = useAuthStore()
 const route = useRoute()
+const { trackSignUp } = useSiteEvents()
 
 const name = ref('')
 const email = ref('')
@@ -21,7 +29,9 @@ const submitting = ref(false)
 const showEmailForm = ref(false)
 // Decides where a fresh account lands after email confirmation. A lawyer is
 // sent on to their application; a researcher into the KYC questions.
-const intent = ref<'researcher' | 'lawyer'>('researcher')
+// Preselected from ?intent=lawyer so the landing page's "Apply as a Lawyer"
+// CTA doesn't land on the researcher choice.
+const intent = ref<'researcher' | 'lawyer'>(route.query.intent === 'lawyer' ? 'lawyer' : 'researcher')
 
 const postAuthRedirect = computed(() => {
   if (intent.value === 'lawyer') return '/lawyer/register'
@@ -76,6 +86,16 @@ async function handleSubmit() {
 
   try {
     const { confirmationRequired } = await auth.register(name.value, email.value, password.value)
+
+    trackSignUp(email.value.trim().toLowerCase(), {
+      method: 'email',
+      account_type: intent.value,
+      plan: typeof route.query.plan === 'string' ? route.query.plan : undefined,
+      // Which landing-page button sent them here (?cta=hero, pricing_table, …).
+      cta_location: typeof route.query.cta === 'string' ? route.query.cta : undefined,
+      // Partner or referral code carried over from batayan.co/?ref=…
+      referral: typeof route.query.ref === 'string' ? route.query.ref : undefined,
+    })
 
     // Parked now so it survives the email-confirmation -> sign-in hop. The
     // researcher sees the free/paid choice before entering the workspace.

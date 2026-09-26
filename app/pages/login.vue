@@ -7,6 +7,13 @@ definePageMeta({
   layout: 'default',
 })
 
+useHead({
+  meta: [
+    { name: 'robots', content: 'index, follow' },
+    { name: 'description', content: 'Sign in to Batayan, the AI legal assistant for Philippine businesses.' },
+  ],
+})
+
 const auth = useAuthStore()
 const api = useApi()
 
