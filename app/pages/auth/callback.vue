@@ -11,6 +11,14 @@ definePageMeta({
 
 const auth = useAuthStore()
 const error = ref('')
+const { trackSignUp } = useSiteEvents()
+
+/**
+ * Google OAuth has no separate sign-up step: Supabase creates the account on
+ * first consent. An account created in the last few minutes is treated as a
+ * sign-up; anything older is a returning sign-in.
+ */
+const NEW_ACCOUNT_WINDOW_MS = 10 * 60 * 1000
 
 /**
  * A refused or cancelled consent comes back on the URL rather than as a thrown
@@ -73,6 +81,12 @@ onMounted(async () => {
     error.value = 'Signed in with Google, but your Batayan profile could not be loaded.'
 
     return
+  }
+
+  const createdAt = Date.parse(auth.user.created_at)
+
+  if (Number.isFinite(createdAt) && Date.now() - createdAt < NEW_ACCOUNT_WINDOW_MS) {
+    trackSignUp(auth.user.id, { method: 'google' })
   }
 
   // Same order the email/password sign-up walks: terms, then the KYC

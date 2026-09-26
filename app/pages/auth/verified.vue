@@ -10,6 +10,7 @@ definePageMeta({
 })
 
 const auth = useAuthStore()
+const { trackOnce } = useSiteEvents()
 
 const state = ref<'checking' | 'verified' | 'failed'>('checking')
 const continuing = ref(false)
@@ -74,6 +75,10 @@ onMounted(async () => {
   }
 
   state.value = 'verified'
+
+  // The email sign_up fires when the form is submitted; this marks the
+  // accounts that actually confirmed, so the funnel shows the drop-off.
+  trackOnce('email_verified', auth.user.id)
 
   isLawyerSignup.value = getPostAuthRedirect() === '/lawyer/register'
 
